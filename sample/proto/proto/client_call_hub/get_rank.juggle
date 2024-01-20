@@ -1,0 +1,6 @@
+import common
+
+entity_service get_rank {
+    get_self_rank req(string entity_id) rsp(role_rank_info rank) err(error_code err);
+    get_rank req(int32 start, int32 end) rsp(list<role_rank_info> rank_list) err(error_code err);
+}

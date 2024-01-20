@@ -1,0 +1,14 @@
+enum error_code {
+    success = 0;
+}
+
+struct role_rank_info {
+    string role_name;
+    string entity_id;
+    int32 rank;
+}
+
+struct client_time_info {
+    string entity_id;
+    int32 timetmp;
+}

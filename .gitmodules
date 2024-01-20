@@ -1,0 +1,6 @@
+[submodule "external/behavior3"]
+	path = external/behavior3
+	url = git@github.com:behavior3/behavior3py.git
+[submodule "tools/behavior3editor"]
+	path = tools/behavior3editor
+	url = git@github.com:behavior3/behavior3editor.git

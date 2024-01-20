@@ -1,0 +1,5 @@
+import common
+
+global_service notice {
+    notice ntf(string msg);
+}

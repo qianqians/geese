@@ -1,0 +1,5 @@
+import common
+
+entity_service login {
+    login req(string sdk_uuid) rsp(bool is_displace) err(error_code err);
+}

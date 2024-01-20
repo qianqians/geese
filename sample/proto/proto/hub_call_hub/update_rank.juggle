@@ -1,0 +1,5 @@
+import common
+
+entity_service update_rank {
+    call_update_rank req(string entity_id) rsp() err(error_code err);
+}

@@ -1,0 +1,5 @@
+import common
+
+entity_service heartbeat {
+    call_heartbeat req(string entity_id) rsp(client_time_info time_info) err(error_code err);
+}

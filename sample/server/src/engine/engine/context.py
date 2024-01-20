@@ -1,0 +1,127 @@
+# -*- coding: UTF-8 -*-
+from threading import Timer
+from .pyhub import HubContext
+
+class context(object):
+    def __init__(self, cfg_file:str) -> None:
+        self.ctx = HubContext(cfg_file)
+        self.flush_hub_host_cache()
+
+    def hub_name(self) -> str:
+        return self.ctx.hub_name()
+
+    def log(self, level:str, content:str):
+        self.ctx.log(level, content)
+        
+    def register_service(self, service:str):
+        self.ctx.register_service(service)
+        
+    def set_health_state(self, status:bool):
+        self.ctx.set_health_state(status)
+        
+    def entry_dbproxy_service(self) -> str:
+        return self.ctx.entry_dbproxy_service()
+        
+    def entry_hub_service(self, service_name:str) -> str:
+        return self.ctx.entry_hub_service(service_name)
+    
+    def entry_direct_hub_server(self, hub_name:str):
+        return self.ctx.entry_direct_hub_server(hub_name)
+    
+    def check_connect_hub_server(self, hub_name:str) -> bool:
+        return self.ctx.check_connect_hub_server(hub_name)
+    
+    def entry_gate_service(self, gate_name:str, gate_host:str):
+        return self.ctx.entry_gate_service(gate_name, gate_host)
+    
+    def gate_host(self, gate_name:str):
+        return self.ctx.gate_host(gate_name)
+    
+    def flush_hub_host_cache(self):
+        tick = Timer(10, self.flush_hub_host_cache)
+        tick.start()
+        return self.ctx.flush_hub_host_cache()
+        
+    def reg_hub_to_hub(self, hub_name:str) -> bool:
+        return self.ctx.reg_hub_to_hub(hub_name)
+    
+    def query_service(self, hub_name:str, service_name:str) -> bool:
+        return self.ctx.query_service(hub_name, service_name)
+    
+    def create_service_entity(self, hub_name:str, service_name:str, entity_id:str, entity_type:str, argvs:bytes) -> bool:
+        return self.ctx.create_service_entity(hub_name, service_name, entity_id, entity_type, argvs)
+    
+    def forward_client_request_service(self, hub_name:str, service_name:str, gate_name:str, gate_host:str, conn_id:str) -> bool:
+        return self.ctx.forward_client_request_service(hub_name, service_name, gate_name, gate_host, conn_id)
+    
+    def hub_call_hub_rpc(self, hub_name:str, entity_id:str, msg_cb_id:int, method:str, argvs:bytes) -> bool:
+        return self.ctx.hub_call_hub_rpc(hub_name, entity_id, msg_cb_id, method, argvs)
+    
+    def hub_call_hub_rsp(self, hub_name:str, entity_id:str, msg_cb_id:int, argvs:bytes) -> bool:
+        return self.ctx.hub_call_hub_rsp(hub_name, entity_id, msg_cb_id, argvs)
+        
+    def hub_call_hub_err(self, hub_name:str, entity_id:str, msg_cb_id:int, argvs:bytes) -> bool:
+        return self.ctx.hub_call_hub_err(hub_name, entity_id, msg_cb_id, argvs) 
+    
+    def hub_call_hub_ntf(self, hub_name:str, entity_id:str, method:str, argvs:bytes) -> bool:
+        return self.ctx.hub_call_hub_ntf(hub_name, entity_id, method, argvs)
+    
+    def hub_call_client_create_remote_entity(self, gate_name:str, conn_id:list[str], main_conn_id:str, entity_id:str, entity_type:str, argvs:bytes) -> bool:
+        return self.ctx.hub_call_client_create_remote_entity(gate_name, conn_id, main_conn_id, entity_id, entity_type, argvs)
+    
+    def hub_call_client_delete_remote_entity(self, gate_name:str, entity_id:str) -> bool:
+        return self.ctx.hub_call_client_delete_remote_entity(gate_name, entity_id)
+    
+    def hub_call_client_refresh_entity(self, gate_name:str, conn_id:str, is_main:bool, entity_id:str, entity_type:str, argvs:bytes):
+        return self.ctx.hub_call_client_refresh_entity(gate_name, conn_id, is_main, entity_id, entity_type, argvs)
+    
+    def hub_call_client_rpc(self, gate_name:str, entity_id:str, msg_cb_id:int, method:str, argvs:bytes) -> bool:
+        return self.ctx.hub_call_client_rpc(gate_name, entity_id, msg_cb_id, method, argvs)
+    
+    def hub_call_client_rsp(self, gate_name:str, conn_id:str, entity_id:str, msg_cb_id:int, argvs:bytes) -> bool:
+        return self.ctx.hub_call_client_rsp(gate_name, conn_id, entity_id, msg_cb_id, argvs)
+    
+    def hub_call_client_err(self, gate_name:str, conn_id:str, entity_id:str, msg_cb_id:int, argvs:bytes) -> bool:
+        return self.ctx.hub_call_client_err(gate_name, conn_id, entity_id, msg_cb_id, argvs)
+    
+    def hub_call_client_ntf(self, gate_name:str, conn_id:str, entity_id:str, method:str, argvs:bytes) -> bool:
+        return self.ctx.hub_call_client_ntf(gate_name, conn_id, entity_id, method, argvs)
+    
+    def hub_call_client_global(self, gate_name:str, method:str, argvs:bytes) -> bool:
+        return self.ctx.hub_call_client_global(gate_name, method, argvs)
+    
+    def hub_call_kick_off_client(self, gate_name:str, conn_id:str, prompt_info:str) -> bool:
+        return self.ctx.hub_call_kick_off_client(gate_name, conn_id, None, None, False, prompt_info)
+    
+    def hub_call_replace_client(self, old_gate_name:str, old_conn_id:str, new_gate_name:str, new_conn_id:str, is_replace:bool, prompt_info:str) -> bool:
+        return self.ctx.hub_call_kick_off_client(old_gate_name, old_conn_id, new_gate_name, new_conn_id, is_replace, prompt_info)
+    
+    def hub_call_transfer_client_complete(self, gate_name:str, conn_id:str) -> bool:
+        return self.ctx.hub_call_transfer_client_complete(gate_name, conn_id)
+    
+    def hub_call_kick_off_client_complete(self, gate_name:str, conn_id:str) -> bool:
+        return self.ctx.hub_call_kick_off_client_complete(gate_name, conn_id)
+
+    def get_guid(self, dbproxy_name:str, db:str, collection:str, callback_id:str) -> bool:
+        return self.ctx.get_guid(dbproxy_name, db, collection, callback_id)
+    
+    def create_object(self, dbproxy_name:str, db:str, collection:str, callback_id:str, object_info:bytes) -> bool:
+        return self.ctx.create_object(dbproxy_name, db, collection, callback_id, object_info)
+    
+    def update_object(self, dbproxy_name:str, db:str, collection:str, callback_id:str, query_info:bytes, updata_info:bytes, _upsert:bool) -> bool:
+        return self.ctx.update_object(dbproxy_name, db, collection, callback_id, query_info, updata_info, _upsert)
+    
+    def find_and_modify(self, dbproxy_name:str, db:str, collection:str, callback_id:str, query_info:bytes, updata_info:bytes, _new:bool, _upsert:bool) -> bool:
+        return self.ctx.find_and_modify(dbproxy_name, db, collection, callback_id, query_info, updata_info, _new, _upsert)
+    
+    def remove_object(self, dbproxy_name:str, db:str, collection:str, callback_id:str, query_info:bytes) -> bool:
+        return self.ctx.remove_object(dbproxy_name, db, collection, callback_id, query_info)
+    
+    def get_object_info(self, dbproxy_name:str, db:str, collection:str, callback_id:str, query_info:bytes, skip:int, limit:int, sort:str, ascending:bool) -> bool:
+        return self.ctx.get_object_info(dbproxy_name, db, collection, callback_id, query_info, skip, limit, sort, ascending)
+    
+    def get_object_count(self, dbproxy_name:str, db:str, collection:str, callback_id:str, query_info:bytes) -> bool:
+        return self.ctx.get_object_count(dbproxy_name, db, collection, callback_id, query_info)
+    
+    def get_object_one(self, dbproxy_name:str, db:str, collection:str, callback_id:str, query_info:bytes) -> bool:
+        return self.ctx.get_object_one(dbproxy_name, db, collection, callback_id, query_info)
