@@ -1,6 +1,7 @@
 # -*- coding: UTF-8 -*-
 from collections.abc import Callable
 import uuid
+import asyncio
 from .bson import *
 
 from .context import context
@@ -11,6 +12,12 @@ class DBExtensionError(Exception):
         self.db = db
         self.collection = collection
         self.operate = operate
+
+async def __get_object_one_callback_set_future__(future:asyncio.Future, data:dict):
+    future.set_result(data)
+
+async def __get_object_one_callback_set_future_error__(future:asyncio.Future, err):
+    future.set_exception(err)
 
 class dbproxy(object):
     def __init__(self, dbproxy_name:str, ctx:context, handle:dbproxy_msg_handle):
@@ -58,19 +65,22 @@ class dbproxy(object):
     def get_object_info_simple(self, db:str, collection:str, query:dict, callback:Callable[[list],None], end_callback:Callable[[],None]):
         return self.get_object_info(db, collection, query, 0, 100, "", False, callback, end_callback)
     
-    def __get_object_one_callback_data__(data_list:list, db:str, collection:str, callback:Callable[[dict, DBExtensionError],None]):
+    def __get_object_one_callback_data__(data_list:list, db:str, collection:str, future:asyncio.Future):
         print(f"__get_object_one_callback_data__ data_list:{data_list}")
-        if len(data_list) > 1:
-            callback(None, DBExtensionError(db, collection, "db error more then one object"))
-        elif len(data_list) == 1:
-            callback(data_list[0], None)
+        from app import app
+        if len(data_list) == 1:
+            app().run_coroutine_async(__get_object_one_callback_set_future__(future, data_list[0]))
+        elif len(data_list) == 0:
+            app().run_coroutine_async(__get_object_one_callback_set_future__(future, None))
         else:
-            callback(None, None)
+            app().run_coroutine_async(__get_object_one_callback_set_future_error__(future, DBExtensionError(db, collection, "db error more then one object")))
     
-    def get_object_one(self, db:str, collection:str, query:dict, callback:Callable[[dict, DBExtensionError],None]):
+    async def get_object_one(self, db:str, collection:str, query:dict) -> dict:
+        future = asyncio.Future()
         self.get_object_info(db, collection, query, 0, 100, "", False, 
-            lambda _list: dbproxy.__get_object_one_callback_data__(_list, db, collection, callback),
+            lambda _list: dbproxy.__get_object_one_callback_data__(_list, db, collection, future),
             lambda : print("get_object_one end!"))
+        return await future
         
 class dbproxy_manager(object):
     def __init__(self, ctx:context, handle:dbproxy_msg_handle):

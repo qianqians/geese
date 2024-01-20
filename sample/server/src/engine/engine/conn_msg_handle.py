@@ -5,11 +5,11 @@ from .msgpack import *
 class conn_msg_handle(object):
     def on_client_request_login(self, gate_name:str, conn_id:str, sdk_uuid:str):
         from app import app
-        app().login_handle.login(gate_name, conn_id, sdk_uuid)
+        app().run_coroutine_async(app().login_handle.login(gate_name, conn_id, sdk_uuid))
 
     def on_client_request_reconnect(self, gate_name:str, conn_id:str, entity_id:str, token:str):
         from app import app
-        app().login_handle.reconnect(gate_name, conn_id, entity_id, token)
+        app().run_coroutine_async(app().login_handle.reconnect(gate_name, conn_id, entity_id, token))
         
     def on_transfer_msg_end(self, gate_name:str, conn_id:str, is_kick_off:bool):
         from app import app

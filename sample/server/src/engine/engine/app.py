@@ -10,6 +10,7 @@ from collections.abc import Callable
 import json
 import uuid
 import signal
+import asyncio
 
 from .redis import *
 
@@ -28,15 +29,18 @@ from .login import *
 from .get_guid import *
 from .dbproxy import *
 
-def handle_exception(exc_type, exc_value, tb):
+def __handle_exception__(exc_type, exc_value, tb):
     app().ctx.log("error", "error Uncaught exception:{}, exc_value:{}, tb:{}".format(exc_type, exc_value, tb))
-sys.excepthook = handle_exception
+sys.excepthook = __handle_exception__
 
-def handle_sigterm(signal, frame):
+def __handle_sigterm__(signal, frame):
     app().close()
 
-def handle_poll_db_msg_thread(_app:app):
+def __handle_poll_db_msg_thread__(_app:app):
     _app.poll_db_msg_thread()
+
+def __handle_poll_coroutine_thread__(_app:app):
+    _app.poll_coroutine_thread()
 
 def singleton(cls):
     _instance = {}
@@ -55,6 +59,7 @@ class app(object):
         self.__dbproxy_handle__:dbproxy_msg_handle = None
         self.__conn_handle__:conn_msg_handle = None
         self.__entity_create_method__:dict[str, Callable[[str, str, dict]]] = {}
+        self.__loop__ = None
         self.__conn_pump__ = None
         self.__db_pump__ = None
         
@@ -69,7 +74,7 @@ class app(object):
         self.subentity_mgr:subentity_manager = None
         self.receiver_mgr:receiver_manager = None
         
-        signal.signal(signal.SIGTERM, handle_sigterm)
+        signal.signal(signal.SIGTERM, __handle_sigterm__)
         
     def build(self, cfg_file:str):
         self.config = json.load(open(cfg_file))
@@ -115,15 +120,18 @@ class app(object):
         except:
             self.ctx.log("error", "unlock distributed lock faild key:{} value:{}".format(key, value))
 
-    def distributed_lock(self, key:str, timeout:int) -> Callable[[], None] | None:
+    async def distributed_lock(self, key:str, timeout:int) -> Callable[[], None] | None:
         try:
             value = str(uuid.uuid4())
             while not self.redis_proxy.set(key, value, ex=timeout, nx=True):
-                time.sleep(0.08)
+                asyncio.sleep(0.08)
             return lambda : self.__unlock_distributed_lock__(key, value)
         except:
             self.ctx.log("error", "distributed lock faild key:{}".format(key))
         return None
+    
+    def run_coroutine_async(self, coro):
+        asyncio.run_coroutine_threadsafe(coro, self.__loop__)
         
     def close(self):
         self.__is_run__ = False
@@ -146,6 +154,11 @@ class app(object):
             if tick < 0.033:
                 time.sleep(0.033 - tick)
 
+    def poll_coroutine_thread(self):
+        self.__loop__ = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.__loop__)
+        self.__loop__.run_forever()
+
     def poll(self):
         while self.__is_run__:
             start = time.time()
@@ -157,5 +170,6 @@ class app(object):
         self.save_mgr.for_each_entity(lambda entt: entt.save_entity())
             
     def run(self):
-        _thread.start_new_thread(handle_poll_db_msg_thread, (self,))
+        _thread.start_new_thread(__handle_poll_db_msg_thread__, (self,))
+        _thread.start_new_thread(__handle_poll_coroutine_thread__, (self,))
         self.poll()
