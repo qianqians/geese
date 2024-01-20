@@ -1,0 +1,30 @@
+[package]
+name = "hub"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+thrift = "0.17.0"
+tracing = "0.1.37"
+rand = "0.8.5"
+async-trait = "0.1.68"
+serde = "1.0.163"
+serde_json = "1.0.96"
+uuid = "1.3.3"
+consulrs = "0.1.0"
+tracing-appender = "0.2.2"
+tokio = { version = "1.35.1", features = ["full"] }
+pyo3 = { version = "0.20.0", features = ["extension-module"] }
+net = { path = "../net", version = "0.1.0" }
+redis_service = { path = "../redis_service", version = "0.1.0" }
+tcp = { path = "../tcp", version = "0.1.0" }
+proto = { path = "../proto", version = "0.1.0" }
+queue = { path = "../queue", version = "0.1.0" }
+config = { path = "../config", version = "0.1.0" }
+log = { path = "../log", version = "0.1.0" }
+close_handle = { path = "../close_handle", version = "0.1.0" }
+local_ip = { path = "../local_ip", version = "0.1.0" }
+health = { path = "../health", version = "0.1.0" }
+consul = { path = "../consul", version = "0.1.0" }
