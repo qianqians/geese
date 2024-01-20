@@ -14,11 +14,11 @@ class login_event_handle(ABC, base_dbproxy_handle):
         self.kick_off_client_callback:dict[str, Callable[[bool],None]]
     
     @abstractmethod
-    def on_login(self, new_gate_name:str, new_conn_id:str, sdk_uuid:str):
+    async def on_login(self, new_gate_name:str, new_conn_id:str, sdk_uuid:str):
         pass
     
     @abstractmethod
-    def on_reconnect(self, new_gate_name:str, new_conn_id:str, sdk_uuid:str, token:str):
+    async def on_reconnect(self, new_gate_name:str, new_conn_id:str, sdk_uuid:str, token:str):
         pass
     
     def on_entry_entity(self, entity_id:str, is_main:bool, is_reconnect:bool, new_gate_name:str, new_conn_id:str):
@@ -46,11 +46,11 @@ class login_service(object):
     def __init__(self, login_event_handle:login_event_handle) -> None:
         self.__login_event_handle__ = login_event_handle
 
-    def login(self, gate_name:str, conn_id:str, sdk_uuid:str):
-        self.__login_event_handle__.on_login(gate_name, conn_id, sdk_uuid)
+    async def login(self, gate_name:str, conn_id:str, sdk_uuid:str):
+        await self.__login_event_handle__.on_login(gate_name, conn_id, sdk_uuid)
         
-    def reconnect(self, gate_name:str, conn_id:str, sdk_uuid:str, token:str):
-        self.__login_event_handle__.on_reconnect(gate_name, conn_id, sdk_uuid, token)
+    async def reconnect(self, gate_name:str, conn_id:str, sdk_uuid:str, token:str):
+        await self.__login_event_handle__.on_reconnect(gate_name, conn_id, sdk_uuid, token)
         
     def on_transfer_end(self, old_gate_name:str, old_conn_id:str, is_kick_off:bool):
         self.__login_event_handle__.on_transfer_end(old_gate_name, old_conn_id, is_kick_off)
