@@ -73,20 +73,6 @@ impl HubProxy {
     }
 }
 
-pub struct DelayHubMsg {
-    pub hubproxy: Arc<Mutex<HubProxy>>,
-    pub ev: HubService
-}
-
-impl DelayHubMsg {
-    pub fn new(proxy: Arc<Mutex<HubProxy>>, _ev: HubService) -> DelayHubMsg {
-        DelayHubMsg {
-            hubproxy: proxy,
-            ev: _ev
-        }
-    }
-}
-
 pub struct HubReaderCallback {
     hubproxy: Arc<Mutex<HubProxy>>
 }

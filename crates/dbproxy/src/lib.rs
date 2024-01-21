@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tracing::info;
 
@@ -18,6 +19,37 @@ mod db;
 mod handle;
 
 use crate::handle::DBProxyHubMsgHandle;
+
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct GuidCfg {
+    pub db: String,
+    pub collection: String,
+    pub initial_guid: u32,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct IndexCfg {
+    pub db: String,
+    pub collection: String,
+    pub key: String,
+    pub is_unique: bool,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct DBProxyCfg {
+    pub namespace: String,
+    pub consul_url: String,
+    pub health_port: u16,
+    pub jaeger_url: Option<String>,
+    pub redis_url: String,
+    pub mongo_url: String,
+    pub guid: Vec<GuidCfg>,
+    pub index: Vec<IndexCfg>,
+    pub log_level: String,
+    pub log_file: String,
+    pub log_dir: String
+}
 
 pub struct DBProxyHubReaderCallback {
     msg_handle: Arc<Mutex<DBProxyHubMsgHandle>>, 
@@ -74,8 +106,22 @@ pub struct DBProxyServer {
 }
 
 impl DBProxyServer {
-    pub async fn new(name:String, redis_url:String, mongo_url:String, health_handle: Arc<Mutex<HealthHandle>>) -> Result<DBProxyServer, Box<dyn std::error::Error>> {
-        let _mongo = MongoProxy::new(mongo_url).await?;
+    pub async fn new(
+        name:String, 
+        redis_url:String, 
+        mongo_url:String,
+        index: Vec<IndexCfg>,
+        guid: Vec<GuidCfg>,
+        health_handle: Arc<Mutex<HealthHandle>>) -> Result<DBProxyServer, Box<dyn std::error::Error>> 
+    {
+        let mut _mongo = MongoProxy::new(mongo_url).await?;
+        for _index in index {
+            _mongo.create_index(_index.db, _index.collection, _index.key, _index.is_unique).await;
+        }
+        for _guid in guid {
+            _mongo.check_int_guid(_guid.db, _guid.collection, _guid.initial_guid).await;
+        }
+
         let _handle = DBProxyHubMsgHandle::new(_mongo).await?;
         let _close = Arc::new(Mutex::new(CloseHandle::new()));
         let _s = RedisService::listen(

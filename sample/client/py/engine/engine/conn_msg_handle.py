@@ -1,8 +1,14 @@
 # -*- coding: UTF-8 -*-
 from collections.abc import Callable
+import asyncio
 from .msgpack import *
 
 class conn_msg_handle(object):
+    def on_conn_id(self, conn_id:str):
+        from app import app
+        app().__conn_id__ = conn_id
+        app().__conn_id_callback__(conn_id)
+
     def on_create_remote_entity(self, entity_type:str, entity_id:str, argvs:bytes):
         from app import app
         app().create_entity(entity_type, entity_id, loads(argvs))
