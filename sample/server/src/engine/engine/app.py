@@ -74,6 +74,8 @@ class app(object):
         self.subentity_mgr:subentity_manager = None
         self.receiver_mgr:receiver_manager = None
         
+        self.__loop__ = asyncio.new_event_loop()
+        
         signal.signal(signal.SIGTERM, __handle_sigterm__)
         
     def build(self, cfg_file:str):
@@ -155,7 +157,6 @@ class app(object):
                 time.sleep(0.033 - tick)
 
     def poll_coroutine_thread(self):
-        self.__loop__ = asyncio.new_event_loop()
         asyncio.set_event_loop(self.__loop__)
         self.__loop__.run_forever()
 

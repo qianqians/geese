@@ -141,12 +141,15 @@ impl GateMsgHandle {
             ClientService::ConnId(ev) => {
                 println!("GateMsgHandle ClientService ConnId begin!");
 
-                let mut _p_handle = _proxy.as_ref().lock().unwrap();
-                _p_handle.conn_id = ev.conn_id.unwrap();
+                let conn_id = ev.conn_id.unwrap();
+                {
+                    let mut _p_handle = _proxy.as_ref().lock().unwrap();
+                    _p_handle.conn_id = conn_id.clone();
+                }
 
-                let argvs = ();
-                if let Err(e) = py_handle.call_method1(py, "on_create_remote_entity", argvs) {
-                    println!("on_create_remote_entity python callback error:{}", e)
+                let argvs = (conn_id.clone(), );
+                if let Err(e) = py_handle.call_method1(py, "on_conn_id", argvs) {
+                    println!("on_conn_id python callback error:{}", e)
                 }
             },
             ClientService::CreateRemoteEntity(ev) => {
