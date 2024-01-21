@@ -16,11 +16,16 @@ class SamplePlayer(player):
     def Creator(entity_id: str, description: dict):
         print(f"SamplePlayer:{entity_id}")
 
+def conn_callback(conn_id:str):
+    print("conn_callback begin!")
+    app().login(str(uuid.uuid4()))
+    print("conn_callback end!")
+
 def main():
     _app = app()
     _app.build(ClientEventHandle())
     _app.register("SamplePlayer", SamplePlayer.Creator)
-    app().connect_tcp("127.0.0.1", 8000, lambda conn_id: app().login(str(uuid.uuid4())))
+    _app.connect_tcp("127.0.0.1", 8000, conn_callback)
     print(f"run begin!")
     _app.run()
     

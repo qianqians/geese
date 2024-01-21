@@ -5,9 +5,12 @@ from .msgpack import *
 
 class conn_msg_handle(object):
     def on_conn_id(self, conn_id:str):
+        print("on_conn_id begin")
         from app import app
         app().__conn_id__ = conn_id
         app().__conn_id_callback__(conn_id)
+        app().__conn_id_callback__ = None
+        print("on_conn_id end")
 
     def on_create_remote_entity(self, entity_type:str, entity_id:str, argvs:bytes):
         from app import app

@@ -54,6 +54,8 @@ class app(object):
         self.__hub_global_callback__:dict[str, Callable[[str, bytes]]] = {}
 
         self.client_event_handle = None
+        
+        self.__loop__ = asyncio.new_event_loop()
     
     def build(self, handle:client_event_handle):
         self.ctx = context()
@@ -120,7 +122,6 @@ class app(object):
         self.__is_run__ = False
             
     def poll_coroutine_thread(self):
-        self.__loop__ = asyncio.new_event_loop()
         asyncio.set_event_loop(self.__loop__)
         self.__loop__.run_forever()
 
