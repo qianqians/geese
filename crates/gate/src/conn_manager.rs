@@ -112,7 +112,8 @@ impl ConnManager {
         let _clientproxy = proxy.clone();
         let _client = proxy.as_ref().lock().await;
         let conn_id = _client.get_conn_id().clone();
-        self.clients.insert(conn_id, _clientproxy);
+        self.clients.insert(conn_id.clone(), _clientproxy);
+        trace!("add_client_proxy conn_id:{}", conn_id);
     }
 
     pub fn get_client_proxy(&self, conn_id: &String) -> Option<&Arc<Mutex<ClientProxy>>> {
@@ -120,6 +121,7 @@ impl ConnManager {
     }
 
     pub fn delete_client_proxy(&mut self, conn_id: &String) {
+        trace!("delete_client_proxy conn_id:{}", conn_id);
         let _ = self.clients.remove(conn_id);
     }
 

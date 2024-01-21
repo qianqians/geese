@@ -17,10 +17,7 @@ use wss::wss_connect::WSSConnect;
 use close_handle::CloseHandle;
 use queue::Queue;
 
-use proto::gate::{
-    GateClientService,
-    ClientCallGateHeartbeats,
-};
+use proto::gate::GateClientService;
 use proto::client::ClientService;
 
 pub struct GateProxy {
@@ -243,12 +240,7 @@ impl GateMsgHandle {
             },
             ClientService::Heartbeats(_) => {
                 let mut _p_handle = _proxy.as_ref().lock().unwrap();
-                let rt = tokio::runtime::Runtime::new().unwrap();
-                rt.block_on(async move {
-                    if !_p_handle.send_msg(GateClientService::Heartbeats(ClientCallGateHeartbeats::new())).await {
-                        println!("Heartbeats send_msg ClientCallGateHeartbeats faild!")
-                    }
-                });
+                println!("ClientService::Heartbeats, conn_id:{}", _p_handle.conn_id);
             },
         }
         

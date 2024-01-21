@@ -20,6 +20,9 @@ class context(object):
     def request_hub_service(self, service_name:str) -> bool:
         return self.ctx.request_hub_service(service_name)
         
+    def heartbeats(self) -> bool:
+        return self.ctx.heartbeats()
+    
     def call_rpc(self, entity_id:str, msg_cb_id:int, method:str, argvs:bytes) -> bool:
         return self.ctx.call_rpc(entity_id, msg_cb_id, method, argvs)
     
