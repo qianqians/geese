@@ -1,6 +1,7 @@
 # -*- coding: UTF-8 -*-
 from __future__ import annotations
 import time
+from threading import Timer
 import _thread
 
 from collections.abc import Callable
@@ -52,17 +53,22 @@ class app(object):
         self.receiver_mgr:receiver_manager = None
 
         self.__hub_global_callback__:dict[str, Callable[[str, bytes]]] = {}
-
-        self.client_event_handle = None
-        
         self.__loop__ = asyncio.new_event_loop()
+        
+        self.client_event_handle = None
     
     def build(self, handle:client_event_handle):
         self.ctx = context()
         self.client_event_handle = handle
         self.__conn_handle__ = conn_msg_handle()
         self.__pump__ = ClientPump(self.ctx.ctx)
+        self.heartbeats()
         return self
+    
+    def heartbeats(self):
+        tick = Timer(3, self.heartbeats)
+        tick.start()
+        return self.ctx.heartbeats()
     
     def on_kick_off(self, prompt_info:str):
         self.client_event_handle.on_kick_off(prompt_info)

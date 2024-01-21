@@ -11,6 +11,7 @@ use proto::gate::{
     ClientCallHubRsp,
     ClientCallHubErr,
     ClientCallHubNtf,
+    ClientCallGateHeartbeats,
 };
 
 use proto::common::{
@@ -86,7 +87,10 @@ impl ClientContext {
             ClientCallHubNtf::new(entity_id, Msg::new(method, argvs))))
     }
 
-    
+    pub fn heartbeats(slf: PyRefMut<'_, Self>) -> bool {
+        let mut _ctx_handle = slf.ctx.as_ref().lock().unwrap();
+        _ctx_handle.send_msg(GateClientService::Heartbeats(ClientCallGateHeartbeats::new()))
+    }
 }
 
 #[pyclass]
