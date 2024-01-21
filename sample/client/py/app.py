@@ -20,10 +20,7 @@ def main():
     _app = app()
     _app.build(ClientEventHandle())
     _app.register("SamplePlayer", SamplePlayer.Creator)
-    print(f"connect_tcp begin!")
-    _app.connect_tcp("127.0.0.1", 8000)
-    print(f"login begin!")
-    _app.login(str(uuid.uuid4()))
+    app().connect_tcp("127.0.0.1", 8000, lambda conn_id: app().login(str(uuid.uuid4())))
     print(f"run begin!")
     _app.run()
     

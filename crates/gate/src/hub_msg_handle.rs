@@ -49,7 +49,7 @@ use queue::Queue;
 
 use crate::entity_manager::Entity;
 use crate::conn_manager::ConnManager;
-use crate::hub_proxy_manager::{DelayHubMsg, HubProxy};
+use crate::hub_proxy_manager::HubProxy;
 
 struct HubEvent {
     proxy: Weak<Mutex<HubProxy>>,
@@ -196,9 +196,13 @@ impl GateHubMsgHandle {
 
             let mut main_send_ret = false;
             if let Some(main_conn_id) = ev.main_conn_id.clone() {
+                trace!("do_create_remote_entity main_conn_id:{}!", main_conn_id);
                 let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
+                trace!("do_create_remote_entity main _conn_mgr lock!");
                 if let Some(_client_arc) = _conn_mgr.get_client_proxy(&main_conn_id.clone()) {
+                    trace!("do_create_remote_entity main _conn_mgr get_client_proxy!");
                     let mut _client = _client_arc.as_ref().lock().await;
+                    trace!("do_create_remote_entity main _client_arc lock!");
                     if _client.send_client_msg(ClientService::CreateRemoteEntity(CreateRemoteEntity::new(entity_id.clone(), entity_type.clone(), true, argvs.clone()))).await {
                         main_send_ret = true;
                         _client.entities.insert(entity_id.clone());
@@ -235,8 +239,11 @@ impl GateHubMsgHandle {
                     let mut send_ret = false;
                     {
                         let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
+                        trace!("do_create_remote_entity _conn_mgr lock and get client proxy conn_id:{}!", id);
                         if let Some(_client_arc) = _conn_mgr.get_client_proxy(id) {
+                            trace!("do_create_remote_entity _conn_mgr get_client_proxy!");
                             let mut _client = _client_arc.as_ref().lock().await;
+                            trace!("do_create_remote_entity _client_arc lock!");
                             if _client.send_client_msg(ClientService::CreateRemoteEntity(CreateRemoteEntity::new(entity_id.clone(), entity_type.clone(), false, argvs.clone()))).await {
                                 send_ret = true;
                                 _client.entities.insert(entity_id.clone());
@@ -628,7 +635,7 @@ impl GateHubMsgHandle {
                     _client.ntf_client_offline(_proxy_clone).await;
                 }
                 else {
-                    _conn_mgr.add_delay_hub_msg(DelayHubMsg::new(_proxy_clone, HubService::TransferMsgEnd(TransferMsgEnd::new(conn_id, false))));
+                    _p.send_hub_msg(HubService::TransferMsgEnd(TransferMsgEnd::new(conn_id, false))).await;
                 }
             }
             else if ev.new_gate.is_some() && ev.new_conn_id.is_some() {
@@ -654,7 +661,7 @@ impl GateHubMsgHandle {
                         is_kick_off = true;
                     }
                 }
-                _conn_mgr.add_delay_hub_msg(DelayHubMsg::new(_proxy_clone, HubService::TransferMsgEnd(TransferMsgEnd::new(conn_id, is_kick_off))));
+                _p.send_hub_msg(HubService::TransferMsgEnd(TransferMsgEnd::new(conn_id, is_kick_off))).await;
             }
         }
         else {

@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 
 use tokio::sync::Mutex;
 
-use queue::Queue;
 use consul::ConsulImpl;
 use close_handle::CloseHandle;
 use redis_service::redis_service::RedisService;
@@ -15,8 +14,8 @@ use proto::hub::{
 };
 use tracing::trace;
 
-use crate::client_proxy_manager::{ClientProxy, DelayClientMsg};
-use crate::hub_proxy_manager::{HubProxy, DelayHubMsg};
+use crate::client_proxy_manager::ClientProxy;
+use crate::hub_proxy_manager::HubProxy;
 use crate::entity_manager::{Entity, EntityManager};
 use crate::hub_msg_handle::GateHubMsgHandle;
 use crate::client_msg_handle::GateClientMsgHandle;
@@ -27,10 +26,8 @@ pub struct ConnManager {
     redis_service: Option<Arc<Mutex<RedisService>>>,
     locks: BTreeMap<String, String>,
     hubs: BTreeMap<String, Arc<Mutex<HubProxy>>>,
-    delay_hub_msg: Queue<DelayHubMsg>,
     hub_msg_handle: Arc<Mutex<GateHubMsgHandle>>,
     clients: BTreeMap<String, Arc<Mutex<ClientProxy>>>,
-    delay_client_msg: Queue<DelayClientMsg>,
     client_msg_handle: Arc<Mutex<GateClientMsgHandle>>,
     entities: EntityManager,
     consul_impl: Arc<Mutex<ConsulImpl>>,
@@ -52,10 +49,8 @@ impl ConnManager {
             redis_service: None,
             locks: BTreeMap::new(),
             hubs: BTreeMap::new(),
-            delay_hub_msg: Queue::new(),
             hub_msg_handle: _hub_handle,
             clients: BTreeMap::new(),
-            delay_client_msg: Queue::new(),
             client_msg_handle: _client_handle,
             entities: EntityManager::new(),
             consul_impl: _consul_impl,
@@ -166,14 +161,6 @@ impl ConnManager {
         }
     }
 
-    pub fn add_delay_hub_msg(&mut self, ev: DelayHubMsg) {
-        self.delay_hub_msg.enque(ev)
-    }
-
-    pub fn add_delay_client_msg(&mut self, ev: DelayClientMsg) {
-        self.delay_client_msg.enque(ev)
-    }
-
     pub async fn poll(&mut self) {
         let _timetmp = utc_unix_time();
         let _clients = self.get_all_client_proxy();
@@ -198,26 +185,6 @@ impl ConnManager {
                     self.delete_hub_proxy(&invaild_hub_name);
                 }
             }
-        }
-
-        loop {
-            let opt_ev_data = self.delay_hub_msg.deque();
-            let mut_ev_data = match opt_ev_data {
-                None => break,
-                Some(ev_data) => ev_data
-            };
-            let mut _proxy = mut_ev_data.hubproxy.as_ref().lock().await;
-            _proxy.send_hub_msg(mut_ev_data.ev).await;
-        }
-
-        loop {
-            let opt_ev_data = self.delay_client_msg.deque();
-            let mut_ev_data = match opt_ev_data {
-                None => break,
-                Some(ev_data) => ev_data
-            };
-            let mut _proxy = mut_ev_data.clientproxy.as_ref().lock().await;
-            _proxy.send_client_msg(mut_ev_data.ev).await;
         }
     }
 }

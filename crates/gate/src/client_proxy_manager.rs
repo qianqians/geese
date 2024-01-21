@@ -23,7 +23,7 @@ use tracing::{trace, info, error};
 
 use crate::conn_manager::ConnManager;
 use crate::client_msg_handle::GateClientMsgHandle;
-use crate::hub_proxy_manager::{DelayHubMsg, HubProxy, HubReaderCallback};
+use crate::hub_proxy_manager::{HubProxy, HubReaderCallback};
 
 use proto::hub::{
     HubService,
@@ -201,7 +201,8 @@ impl ClientProxy {
                 let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
                 let tmp_conn_id = self.conn_id.clone();
                 _conn_mgr.close_client(&tmp_conn_id).await;
-                _conn_mgr.add_delay_hub_msg(DelayHubMsg::new(_proxy.clone(), HubService::TransferMsgEnd(TransferMsgEnd::new(self.conn_id.clone(), false))));
+                let mut _p = _proxy.as_ref().lock().await;
+                _p.send_hub_msg(HubService::TransferMsgEnd(TransferMsgEnd::new(self.conn_id.clone(), false))).await;
             }
         }
     }
@@ -228,20 +229,6 @@ impl ClientProxy {
 
     pub fn set_timetmp(&mut self, timetmp: i64) {
         self.last_heartbeats_timetmp = timetmp
-    }
-}
-
-pub struct DelayClientMsg {
-    pub clientproxy: Arc<Mutex<ClientProxy>>,
-    pub ev: ClientService
-}
-
-impl DelayClientMsg {
-    pub fn new(proxy: Arc<Mutex<ClientProxy>>, _ev: ClientService) -> DelayClientMsg {
-        DelayClientMsg {
-            clientproxy: proxy,
-            ev: _ev
-        }
     }
 }
 
@@ -281,13 +268,13 @@ impl TcpListenCallback for TcpClientProxyManager {
         let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
         let _clientproxy = Arc::new(Mutex::new(ClientProxy::new(_conn_id.clone(), _wr_arc.clone(), _conn_mgr_clone)));
         let _clientproxy_clone = _clientproxy.clone();
+        _conn_mgr.add_client_proxy(_clientproxy_clone.clone()).await;
         let join = rd.start(Arc::new(Mutex::new(Box::new(ClientReaderCallback::new(_clientproxy_clone.clone())))), self.close_handle.clone());
         {
             let mut _client_tmp = _clientproxy.as_ref().lock().await;
             _client_tmp.set_join(join);
+            _client_tmp.send_client_msg(ClientService::ConnId(NtfConnId::new(_conn_id.clone()))).await;
         }
-        _conn_mgr.add_delay_client_msg(DelayClientMsg::new(_clientproxy_clone.clone(), ClientService::ConnId(NtfConnId::new(_conn_id.clone()))));
-        _conn_mgr.add_client_proxy(_clientproxy_clone.clone()).await;
     }
 }
 
@@ -316,13 +303,13 @@ impl WSSListenCallback for WSSClientProxyManager {
         let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
         let _clientproxy = Arc::new(Mutex::new(ClientProxy::new(_conn_id.clone(), _wr_arc, _conn_mgr_clone.clone())));
         let _clientproxy_clone = _clientproxy.clone();
+        _conn_mgr.add_client_proxy(_clientproxy_clone.clone()).await;
         let join = rd.start(Arc::new(Mutex::new(Box::new(ClientReaderCallback::new(_clientproxy_clone.clone())))), self.close_handle.clone());
         {
             let mut _client_tmp = _clientproxy.as_ref().lock().await;
             _client_tmp.set_join(join);
+            _client_tmp.send_client_msg(ClientService::ConnId(NtfConnId::new(_conn_id.clone()))).await;
         }
-        _conn_mgr.add_delay_client_msg(DelayClientMsg::new(_clientproxy_clone.clone(), ClientService::ConnId(NtfConnId::new(_conn_id.clone()))));
-        _conn_mgr.add_client_proxy(_clientproxy_clone.clone()).await;
     }
 }
 

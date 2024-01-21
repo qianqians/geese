@@ -1,6 +1,5 @@
 use std::env;
 
-use serde::{Deserialize, Serialize};
 use tracing::{info, error};
 use uuid::Uuid;
 use consulrs::api::check::common::AgentServiceCheckBuilder;
@@ -12,20 +11,7 @@ use log;
 use config::{load_data_from_file, load_cfg_from_data};
 use local_ip::get_local_ip;
 
-use dbproxy::DBProxyServer;
-
-#[derive(Deserialize, Serialize, Debug)]
-struct DBProxyCfg {
-    namespace: String,
-    consul_url: String,
-    health_port: u16,
-    jaeger_url: Option<String>,
-    redis_url: String,
-    mongo_url: String,
-    log_level: String,
-    log_file: String,
-    log_dir: String
-}
+use dbproxy::{DBProxyServer, DBProxyCfg};
 
 #[tokio::main]
 async fn main() {
@@ -56,7 +42,7 @@ async fn main() {
     let health_host = format!("0.0.0.0:{}", health_port);
     let health_handle = HealthHandle::new(health_host.clone());
 
-    let mut server = match DBProxyServer::new(_name.clone(), cfg.redis_url, cfg.mongo_url, health_handle.clone()).await {
+    let mut server = match DBProxyServer::new(_name.clone(), cfg.redis_url, cfg.mongo_url, cfg.index, cfg.guid, health_handle.clone()).await {
         Err(e) => {
             error!("DBProxy DBProxyServer new faild {}!", e);
             return;

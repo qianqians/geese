@@ -1,8 +1,10 @@
 # -*- coding: UTF-8 -*-
 from __future__ import annotations
 import time
+import _thread
 
 from collections.abc import Callable
+import asyncio
 
 from .pyclient import ClientPump
 from .context import context
@@ -10,6 +12,9 @@ from .conn_msg_handle import conn_msg_handle
 from .player import *
 from .subentity import *
 from .receiver import *
+
+def __handle_poll_coroutine_thread__(_app:app):
+    _app.poll_coroutine_thread()
 
 class client_event_handle(ABC):
     @abstractmethod
@@ -37,6 +42,9 @@ class app(object):
         self.__is_run__ = True
         self.__conn_handle__:conn_msg_handle = None
         self.__entity_create_method__:dict[str, Callable[[str, dict]]] = {}
+        self.__loop__ = None
+        self.__conn_id__:str = None
+        self.__conn_id_callback__:Callable[[str], None] = None
         self.__pump__ = None
         
         self.player_mgr:player_manager = None
@@ -70,14 +78,13 @@ class app(object):
     def register_global_method(self, method:str, callback:Callable[[str, bytes]]):
         self.__hub_global_callback__[method] = callback
     
-    def connect_tcp(self, addr:str, port:int) -> bool:
+    def connect_tcp(self, addr:str, port:int, callback:Callable[[str], None]) -> bool:
+        self.__conn_id_callback__ = callback
         return self.ctx.connect_tcp(addr, port)
     
-    def connect_ws(self, host:str) -> bool:
+    def connect_ws(self, host:str, callback:Callable[[str], None]) -> bool:
+        self.__conn_id_callback__ = callback
         return self.ctx.connect_ws(host)
-    
-    def connect_wss(self, host:str) -> bool:
-        return self.ctx.connect_wss(host)
     
     def login(self, sdk_uuid:str) -> bool:
         return self.ctx.login(sdk_uuid)
@@ -105,10 +112,18 @@ class app(object):
         self.player_mgr.del_player(entity_id)
         self.subentity_mgr.del_subentity(entity_id)
         self.receiver_mgr.del_receiver(entity_id)
+    
+    def run_coroutine_async(self, coro):
+        asyncio.run_coroutine_threadsafe(coro, self.__loop__)
         
     def close(self):
         self.__is_run__ = False
             
+    def poll_coroutine_thread(self):
+        self.__loop__ = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.__loop__)
+        self.__loop__.run_forever()
+
     def poll_conn_msg(self):
         while True:
             if not self.__pump__.poll_conn_msg(self.__conn_handle__):
@@ -123,5 +138,6 @@ class app(object):
                 time.sleep(0.033 - tick)
             
     def run(self):
+        _thread.start_new_thread(__handle_poll_coroutine_thread__, (self,))
         self.poll()
     
