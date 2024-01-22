@@ -198,9 +198,11 @@ impl ClientProxy {
     async fn check_all_hub_kick_off(&mut self) {
         if self.hub_proxies.len() <= 0 {
             if let Some(_proxy) = &self.originate_kick_off_hub {
-                let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
-                let tmp_conn_id = self.conn_id.clone();
-                _conn_mgr.close_client(&tmp_conn_id).await;
+                {
+                    let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
+                    let tmp_conn_id = self.conn_id.clone();
+                    _conn_mgr.close_client(&tmp_conn_id).await;
+                }
                 let mut _p = _proxy.as_ref().lock().await;
                 _p.send_hub_msg(HubService::TransferMsgEnd(TransferMsgEnd::new(self.conn_id.clone(), false))).await;
             }
@@ -264,11 +266,15 @@ impl TcpListenCallback for TcpClientProxyManager {
 
         let _wr_arc: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>> = Arc::new(Mutex::new(Box::new(wr)));
         let _conn_id = Uuid::new_v4().to_string();
+        
         let _conn_mgr_clone = self.conn_mgr.clone();
-        let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
         let _clientproxy = Arc::new(Mutex::new(ClientProxy::new(_conn_id.clone(), _wr_arc.clone(), _conn_mgr_clone)));
         let _clientproxy_clone = _clientproxy.clone();
-        _conn_mgr.add_client_proxy(_clientproxy_clone.clone()).await;
+        {
+            let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
+            _conn_mgr.add_client_proxy(_clientproxy_clone.clone()).await;
+        }
+
         let join = rd.start(Arc::new(Mutex::new(Box::new(ClientReaderCallback::new(_clientproxy_clone.clone())))), self.close_handle.clone());
         {
             let mut _client_tmp = _clientproxy.as_ref().lock().await;
@@ -299,11 +305,15 @@ impl WSSListenCallback for WSSClientProxyManager {
 
         let _wr_arc: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>> = Arc::new(Mutex::new(Box::new(wr)));
         let _conn_id = Uuid::new_v4().to_string();
+        
         let _conn_mgr_clone = self.conn_mgr.clone();
-        let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
-        let _clientproxy = Arc::new(Mutex::new(ClientProxy::new(_conn_id.clone(), _wr_arc, _conn_mgr_clone.clone())));
+        let _clientproxy = Arc::new(Mutex::new(ClientProxy::new(_conn_id.clone(), _wr_arc.clone(), _conn_mgr_clone)));
         let _clientproxy_clone = _clientproxy.clone();
-        _conn_mgr.add_client_proxy(_clientproxy_clone.clone()).await;
+        {
+            let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
+            _conn_mgr.add_client_proxy(_clientproxy_clone.clone()).await;
+        }
+        
         let join = rd.start(Arc::new(Mutex::new(Box::new(ClientReaderCallback::new(_clientproxy_clone.clone())))), self.close_handle.clone());
         {
             let mut _client_tmp = _clientproxy.as_ref().lock().await;

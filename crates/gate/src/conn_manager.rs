@@ -155,8 +155,10 @@ impl ConnManager {
     pub async fn close_client(&mut self, conn_id: &String) {
         if let Some(client) = self.clients.remove(conn_id) {
             let _c = client.as_ref().lock().await;
-            let mut _wr = _c.wr.as_ref().lock().await;
-            _wr.close().await;
+            {
+                let mut _wr = _c.wr.as_ref().lock().await;
+                _wr.close().await;
+            }
             if let Some(_j) = &_c.join {
                 _j.abort();
             }
@@ -167,18 +169,22 @@ impl ConnManager {
         let _timetmp = utc_unix_time();
         let _clients = self.get_all_client_proxy();
         for _client_arc in _clients.iter() {
-            let _client = _client_arc.as_ref().lock().await;
-            if (_timetmp - _client.last_heartbeats_timetmp) < 6000 {
-                continue;
+            let _client_conn_id:String;
+            {
+                let _client = _client_arc.as_ref().lock().await;
+                if (_timetmp - _client.last_heartbeats_timetmp) < 6000 {
+                    continue;
+                }
+                _client_conn_id = _client.conn_id.clone();
             }
             
-            self.delete_client_proxy(&_client.conn_id);
-            if let Some(vec_hub) = self.entities.delete_client(&_client.conn_id) {
+            self.delete_client_proxy(&_client_conn_id);
+            if let Some(vec_hub) = self.entities.delete_client(&_client_conn_id) {
                 let mut invaild_hubs: Vec<String> = Vec::new();
                 for hub_name in vec_hub.iter() {
                     if let Some(_hub_arc) = self.get_hub_proxy(hub_name) {
                         let mut _hub = _hub_arc.as_ref().lock().await;
-                        if !_hub.send_hub_msg(HubService::ClientDisconnnect(ClientDisconnnect::new(_client.conn_id.clone()))).await {
+                        if !_hub.send_hub_msg(HubService::ClientDisconnnect(ClientDisconnnect::new(_client_conn_id.clone()))).await {
                             invaild_hubs.push(hub_name.to_string());
                         }
                     }

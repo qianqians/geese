@@ -90,15 +90,20 @@ impl GateHubMsgHandle {
         trace!("do_hub_event begin!");
 
         let _proxy_clone = _proxy.clone();
-        let mut _p = _proxy.as_ref().lock().await;
-        let _ev = match deserialize(data) {
-            Err(e) => {
-                error!("GateHubMsgHandle do_event err:{}", e);
-                return;
-            }
-            Ok(d) => d
-        };
-        let _handle_arc = _p.get_msg_handle().await;
+
+        let _ev: GateHubService;
+        let _handle_arc: Arc<Mutex<GateHubMsgHandle>>;
+        {
+            let mut _p = _proxy.as_ref().lock().await;
+            _ev = match deserialize(data) {
+                Err(e) => {
+                    error!("GateHubMsgHandle do_event err:{}", e);
+                    return;
+                }
+                Ok(d) => d
+            };
+            _handle_arc = _p.get_msg_handle().await;
+        }
         let mut _handle = _handle_arc.as_ref().lock().await;
         _handle.enque_event(HubEvent {
             proxy: Arc::downgrade(&_proxy_clone),
@@ -110,12 +115,15 @@ impl GateHubMsgHandle {
 
     pub async fn poll(_handle: Arc<Mutex<GateHubMsgHandle>>) {
         loop {
-            let mut _self = _handle.as_ref().lock().await;
-            let opt_ev_data = _self.queue.deque();
-            let mut_ev_data = match opt_ev_data {
-                None => break,
-                Some(ev_data) => ev_data
-            };
+            let mut_ev_data: Box<HubEvent>;
+            {
+                let mut _self = _handle.as_ref().lock().await;
+                let opt_ev_data = _self.queue.deque();
+                mut_ev_data = match opt_ev_data {
+                    None => break,
+                    Some(ev_data) => ev_data
+                };
+            }
             let proxy = mut_ev_data.proxy.clone();
             match mut_ev_data.ev {
                 GateHubService::RegServer(ev) => GateHubMsgHandle::do_reg_hub(proxy, ev).await,
@@ -142,6 +150,7 @@ impl GateHubMsgHandle {
             let name = ev.name.unwrap();
             HubProxy::set_hub_info(_proxy_handle.clone(), name).await;
 
+            let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
             let mut _hub = _proxy_handle.as_ref().lock().await;
             let _conn_mgr_arc = _hub.get_conn_mgr();
             let _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
@@ -163,8 +172,11 @@ impl GateHubMsgHandle {
         if let Some(_proxy_handle) = _proxy.upgrade() {
             let name = ev.name.unwrap();
 
-            let mut _hub = _proxy_handle.as_ref().lock().await;
-            let _conn_mgr_arc = _hub.get_conn_mgr();
+            let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
+            {
+                let mut _hub = _proxy_handle.as_ref().lock().await;
+                _conn_mgr_arc = _hub.get_conn_mgr();
+            }
             let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
 
             let lock_key = create_lock_key(name, _conn_mgr.get_gate_name());
@@ -186,10 +198,15 @@ impl GateHubMsgHandle {
 
         if let Some(_proxy_handle) = _proxy.upgrade() {
             let _proxy_clone = _proxy_handle.clone();
-            let mut _p = _proxy_handle.as_ref().lock().await;
-            let _conn_mgr_arc = _p.get_conn_mgr();
-            let _source_hub_name = _p.get_hub_name();
-            
+
+            let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
+            let _source_hub_name: String;
+            {
+                let mut _p = _proxy_handle.as_ref().lock().await;
+                _conn_mgr_arc = _p.get_conn_mgr();
+                _source_hub_name = _p.get_hub_name();
+            }
+
             let entity_id = ev.entity_id.unwrap();
             let entity_type = ev.entity_type.unwrap();
             let argvs = ev.argvs.unwrap();
@@ -213,7 +230,7 @@ impl GateHubMsgHandle {
                 let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
                 let _entity = match _conn_mgr.get_entity_mut(&entity_id) {
                     None => {
-                        let e = Entity::new(entity_id.clone(), _p.get_hub_name().to_string());
+                        let e = Entity::new(entity_id.clone(), _source_hub_name.clone());
                         _conn_mgr.update_entity(e);
                         _conn_mgr.get_entity_mut(&entity_id.clone()).unwrap()
                     }
@@ -254,7 +271,7 @@ impl GateHubMsgHandle {
                         let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
                         let _entity = match _conn_mgr.get_entity_mut(&entity_id) {
                             None => {
-                                let e = Entity::new(entity_id.clone(), _p.get_hub_name().to_string());
+                                let e = Entity::new(entity_id.clone(), _source_hub_name.clone());
                                 _conn_mgr.update_entity(e);
                                 _conn_mgr.get_entity_mut(&entity_id.clone()).unwrap()
                             }
@@ -293,8 +310,7 @@ impl GateHubMsgHandle {
                 if let Some(main_conn_id) = _entity.get_main_conn_id() {
                     let mut main_send_ret = false;
                     {
-                        let mut _conn_mgr_tmp = _conn_mgr_arc.as_ref().lock().await;
-                        if let Some(_client_arc) = _conn_mgr_tmp.get_client_proxy(&main_conn_id) {
+                        if let Some(_client_arc) = _conn_mgr.get_client_proxy(&main_conn_id) {
                             let mut _client = _client_arc.as_ref().lock().await;
                             if _client.send_client_msg(ClientService::DeleteRemoteEntity(DeleteRemoteEntity::new(entity_id.clone()))).await {
                                 main_send_ret = true;
@@ -303,15 +319,13 @@ impl GateHubMsgHandle {
                         }
                     }
                     if !main_send_ret {
-                        let mut _conn_mgr_tmp = _conn_mgr_arc.as_ref().lock().await;
-                        _conn_mgr_tmp.delete_client_proxy(&main_conn_id);
+                        _conn_mgr.delete_client_proxy(&main_conn_id);
                     }
                 }
                 for id in _entity.get_conn_ids().iter() {
                     let mut send_ret = false;
                     {
-                        let mut _conn_mgr_tmp = _conn_mgr_arc.as_ref().lock().await;
-                        if let Some(_client_arc) = _conn_mgr_tmp.get_client_proxy(id) {
+                        if let Some(_client_arc) = _conn_mgr.get_client_proxy(id) {
                             let mut _client = _client_arc.as_ref().lock().await;
                             if _client.send_client_msg(ClientService::DeleteRemoteEntity(DeleteRemoteEntity::new(entity_id.clone()))).await {
                                 send_ret = true;
@@ -320,8 +334,7 @@ impl GateHubMsgHandle {
                         }
                     }
                     if !send_ret {
-                        let mut _conn_mgr_tmp = _conn_mgr_arc.as_ref().lock().await;
-                        _conn_mgr_tmp.delete_client_proxy(id);
+                        _conn_mgr.delete_client_proxy(id);
                     }
                 }
             }
@@ -338,9 +351,14 @@ impl GateHubMsgHandle {
 
         if let Some(_proxy_handle) = _proxy.upgrade() {
             let _proxy_clone = _proxy_handle.clone();
-            let mut _p = _proxy_handle.as_ref().lock().await;
-            let _conn_mgr_arc = _p.get_conn_mgr();
-            let _source_hub_name = _p.get_hub_name();
+
+            let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
+            let _source_hub_name: String;
+            {
+                let mut _p = _proxy_handle.as_ref().lock().await;
+                _conn_mgr_arc = _p.get_conn_mgr();
+                _source_hub_name = _p.get_hub_name();
+            }
             
             let is_main = ev.is_main.unwrap();
             let conn_id = ev.conn_id.unwrap();
@@ -363,7 +381,7 @@ impl GateHubMsgHandle {
                 let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
                 let _entity = match _conn_mgr.get_entity_mut(&entity_id) {
                     None => {
-                        let e = Entity::new(entity_id.clone(), _p.get_hub_name().to_string());
+                        let e = Entity::new(entity_id.clone(), _source_hub_name.clone());
                         _conn_mgr.update_entity(e);
                         _conn_mgr.get_entity_mut(&entity_id.clone()).unwrap()
                     }
@@ -396,11 +414,14 @@ impl GateHubMsgHandle {
         trace!("do_hub_event call_client_rpc begin!");
 
         if let Some(_proxy_handle) = _proxy.upgrade() {
-            let mut _p = _proxy_handle.as_ref().lock().await;
-            let _conn_mgr_arc = _p.get_conn_mgr();
-
-            let hub_name = _p.get_hub_name();
-
+            let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
+            let hub_name: String;
+            {
+                let mut _p = _proxy_handle.as_ref().lock().await;
+                _conn_mgr_arc = _p.get_conn_mgr();
+                hub_name = _p.get_hub_name();
+            }
+            
             let event = ev.message.unwrap();
             let entity_id = ev.entity_id.unwrap();
             let msg_cb_id = ev.msg_cb_id.unwrap();
@@ -436,9 +457,12 @@ impl GateHubMsgHandle {
         trace!("do_hub_event call_client_rpc begin!");
 
         if let Some(_proxy_handle) = _proxy.upgrade() {
-            let mut _p = _proxy_handle.as_ref().lock().await;
-            let _conn_mgr_arc = _p.get_conn_mgr();
-
+            let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
+            {
+                let mut _p = _proxy_handle.as_ref().lock().await;
+                _conn_mgr_arc = _p.get_conn_mgr();
+            }
+            
             let event = ev.rsp.unwrap();
             let conn_id = ev.conn_id.unwrap();
             let entity_id = event.clone().entity_id.unwrap();
@@ -472,9 +496,12 @@ impl GateHubMsgHandle {
         trace!("do_hub_event call_client_rpc begin!");
 
         if let Some(_proxy_handle) = _proxy.upgrade() {
-            let mut _p = _proxy_handle.as_ref().lock().await;
-            let _conn_mgr_arc = _p.get_conn_mgr();
-
+            let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
+            {
+                let mut _p = _proxy_handle.as_ref().lock().await;
+                _conn_mgr_arc = _p.get_conn_mgr();
+            }
+            
             let event = ev.err.unwrap();
             let conn_id = ev.conn_id.unwrap();
             let entity_id = event.clone().entity_id.unwrap();
@@ -508,13 +535,14 @@ impl GateHubMsgHandle {
         trace!("do_hub_event call_client_ntf begin!");
 
         if let Some(_proxy_handle) = _proxy.upgrade() {
-            let mut _p = _proxy_handle.as_ref().lock().await;
-            let _conn_mgr_arc = _p.get_conn_mgr();
-
-            let hub_name = _p.get_hub_name();
-            let hub_name_tmp = hub_name.clone();
-            let hub_name_tmp_other = hub_name.clone();
-
+            let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
+            let hub_name: String;
+            {
+                let mut _p = _proxy_handle.as_ref().lock().await;
+                _conn_mgr_arc = _p.get_conn_mgr();
+                hub_name = _p.get_hub_name();
+            }
+            
             let entity_id = ev.entity_id.unwrap();
             let entity_id_clone = entity_id.clone();
             let event = ev.message.unwrap();
@@ -527,7 +555,7 @@ impl GateHubMsgHandle {
                         let mut _conn_mgr_tmp = _conn_mgr_arc.as_ref().lock().await;
                         if let Some(_client_arc) = _conn_mgr_tmp.get_client_proxy(&conn_id) {
                             let mut _client = _client_arc.as_ref().lock().await;
-                            if _client.send_client_msg(ClientService::CallNtf(CallNtf::new(hub_name, entity_id.clone(), event.clone()))).await {
+                            if _client.send_client_msg(ClientService::CallNtf(CallNtf::new(hub_name.clone(), entity_id.clone(), event.clone()))).await {
                                 conn_send_ret = true;
                             }
                         }
@@ -545,7 +573,7 @@ impl GateHubMsgHandle {
                             let mut _conn_mgr_tmp = _conn_mgr_arc.as_ref().lock().await;
                             if let Some(_client_arc) = _conn_mgr_tmp.get_client_proxy(&main_conn_id) {
                                 let mut _client = _client_arc.as_ref().lock().await;
-                                if _client.send_client_msg(ClientService::CallNtf(CallNtf::new(hub_name_tmp, entity_id, event.clone()))).await {
+                                if _client.send_client_msg(ClientService::CallNtf(CallNtf::new(hub_name.clone(), entity_id, event.clone()))).await {
                                     main_send_ret = true;
                                 }
                             }
@@ -565,8 +593,7 @@ impl GateHubMsgHandle {
                             if let Some(_client_arc) = _conn_mgr_tmp.get_client_proxy(id) {
                                 let mut _client = _client_arc.as_ref().lock().await;
                                 let _entity_id_tmp = entity_id_clone.clone();
-                                let _hub_name_tmp_other = hub_name_tmp_other.clone();
-                                if _client.send_client_msg(ClientService::CallNtf(CallNtf::new(_hub_name_tmp_other, _entity_id_tmp, event.clone()))).await {
+                                if _client.send_client_msg(ClientService::CallNtf(CallNtf::new(hub_name.clone(), _entity_id_tmp, event.clone()))).await {
                                     send_ret = true;
                                 }
                             }
@@ -594,19 +621,21 @@ impl GateHubMsgHandle {
         trace!("do_hub_event call_client_global begin!");
 
         if let Some(_proxy_handle) = _proxy.upgrade() {
-            let mut _p = _proxy_handle.as_ref().lock().await;
-            let _conn_mgr_arc = _p.get_conn_mgr();
-
-            let hub_name = _p.get_hub_name();
+            let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
+            let hub_name: String;
+            {
+                let mut _p = _proxy_handle.as_ref().lock().await;
+                _conn_mgr_arc = _p.get_conn_mgr();
+                hub_name = _p.get_hub_name();
+            }
+            
             let event = ev.message.unwrap();
-
             let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
             let _clients = _conn_mgr.get_all_client_proxy();
             for _client_arc in _clients.iter() {
                 let mut _client = _client_arc.as_ref().lock().await;
                 let _event_tmp = event.clone();
-                let _hub_name_clone = hub_name.clone();
-                if !_client.send_client_msg(ClientService::CallGlobal(CallGlobal::new(_hub_name_clone, _event_tmp))).await {
+                if !_client.send_client_msg(ClientService::CallGlobal(CallGlobal::new(hub_name.clone(), _event_tmp))).await {
                     _conn_mgr.delete_client_proxy(&_client.get_conn_id())
                 }
             }
@@ -623,6 +652,7 @@ impl GateHubMsgHandle {
 
         if let Some(_proxy_handle) = _proxy.upgrade() {
             let _proxy_clone = _proxy_handle.clone();
+
             let mut _p = _proxy_handle.as_ref().lock().await;
             let _conn_mgr_arc = _p.get_conn_mgr();
             let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
@@ -675,10 +705,13 @@ impl GateHubMsgHandle {
         trace!("do_hub_event transfer_client_complete begin!");
 
         if let Some(_proxy_handle) = _proxy.upgrade() {
-            let mut _p = _proxy_handle.as_ref().lock().await;
-            let _conn_mgr_arc = _p.get_conn_mgr();
-            let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
+            let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
+            {
+                let mut _p = _proxy_handle.as_ref().lock().await;
+                _conn_mgr_arc = _p.get_conn_mgr();
+            }
 
+            let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
             if let Some(_client_arc) = _conn_mgr.get_client_proxy(&ev.conn_id.unwrap()) {
                 let mut _client = _client_arc.as_ref().lock().await;
                 _client.send_client_msg(ClientService::TransferComplete(TransferComplete::new())).await;
