@@ -35,13 +35,16 @@ impl HubProxy {
     pub async fn set_hub_info(p: Arc<Mutex<HubProxy>>, name: String) {
         let _p_clone = p.clone();
         let _name_clone = name.clone();
-        let mut _p = p.as_ref().clone().lock().await;
 
-        let _name = name.clone();
-        _p.name = Some(name);
+        let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
+        {
+            let mut _p = p.as_ref().lock().await;
+            _p.name = Some(name);
+            _conn_mgr_arc = _p.conn_mgr.clone();
+        }
 
-        let mut _conn_mgr = _p.conn_mgr.as_ref().lock().await;
-        _conn_mgr.add_hub_proxy(_name, _p_clone).await;
+        let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
+        _conn_mgr.add_hub_proxy(_name_clone, _p_clone).await;
     }
 
     pub fn get_hub_name(&self) -> String {
