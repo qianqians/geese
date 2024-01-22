@@ -37,18 +37,24 @@ impl NetReader for WSSReader {
         tokio::spawn(async move {
             let mut net_pack = NetPack::new();
             loop {
-                let mut _client_ref = _p.s.as_ref().lock().await;
-                let message = _client_ref.read().unwrap();
+                let message: Message;
+                {
+                    let mut _client_ref = _p.s.as_ref().lock().await;
+                    message = _client_ref.read().unwrap();
+                }
+                
                 match message {
                     Message::Close(_) => {
                         error!("network Close!");
 
                         let message = Message::Close(None);
+                        let mut _client_ref = _p.s.as_ref().lock().await;
                         _client_ref.send(message).unwrap();
                         return;
                     },
                     Message::Ping(ping) => {
                         let message = Message::Pong(ping);
+                        let mut _client_ref = _p.s.as_ref().lock().await;
                         _client_ref.send(message).unwrap();
                     },
                     Message::Binary(buf) => {
