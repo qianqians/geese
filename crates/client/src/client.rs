@@ -121,12 +121,15 @@ impl GateMsgHandle {
     }
     
     pub fn poll(_handle: Arc<StdMutex<GateMsgHandle>>, py: Python<'_>, py_handle: Py<PyAny>) -> bool {
-        let mut _self = _handle.as_ref().lock().unwrap();
-        let opt_ev_data = _self.queue.deque();
-        let ev_data = match opt_ev_data {
-            None => return false,
-            Some(ev_data) => ev_data
-        };
+        let ev_data: Box<ConnEvent>;
+        {
+            let mut _self = _handle.as_ref().lock().unwrap();
+            let opt_ev_data = _self.queue.deque();
+            ev_data = match opt_ev_data {
+                None => return false,
+                Some(ev_data) => ev_data
+            };
+        }
         let _proxy = match ev_data.gate_proxy.upgrade() {
             None => return false,
             Some(_p) => _p

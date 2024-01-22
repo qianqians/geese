@@ -37,6 +37,7 @@ use time::{utc_unix_time, utc_unix_time_with_offset};
 
 use crate::client_proxy_manager::{ClientProxy, request_login, request_reconnect};
 use crate::client_proxy_manager::entry_hub_service;
+use crate::conn_manager::ConnManager;
 
 struct ClientEvent {
     proxy: Weak<Mutex<ClientProxy>>,
@@ -92,12 +93,15 @@ impl GateClientMsgHandle {
 
     pub async fn poll(_handle: Arc<Mutex<GateClientMsgHandle>>) {
         loop {
-            let mut _self = _handle.as_ref().lock().await;
-            let opt_ev_data = _self.queue.deque();
-            let mut_ev_data = match opt_ev_data {
-                None => break,
-                Some(ev_data) => ev_data
-            };
+            let mut_ev_data: Box<ClientEvent>;
+            {
+                let mut _self = _handle.as_ref().lock().await;
+                let opt_ev_data = _self.queue.deque();
+                mut_ev_data = match opt_ev_data {
+                    None => break,
+                    Some(ev_data) => ev_data
+                };
+            }
             let proxy = mut_ev_data.proxy.clone();
             match mut_ev_data.ev {
                 GateClientService::Login(ev) => GateClientMsgHandle::do_client_request_hub_login(proxy, ev).await,
@@ -121,8 +125,13 @@ impl GateClientMsgHandle {
         }
 
         if let Some(_proxy_handle) = _proxy.upgrade() {
-            let mut _p = _proxy_handle.as_ref().lock().await;
-            let _conn_mgr = _p.get_conn_mgr();
+            let _conn_mgr: Arc<Mutex<ConnManager>>;
+            let _conn_id: String;
+            {
+                let mut _p = _proxy_handle.as_ref().lock().await;
+                _conn_mgr = _p.get_conn_mgr();
+                _conn_id = _p.get_conn_id().clone();
+            }
 
             let _hub_proxy = entry_hub_service(_conn_mgr.clone()).await;
             if let Some(_hub) = _hub_proxy {
@@ -131,7 +140,7 @@ impl GateClientMsgHandle {
                 let _gate_name = _conn_mgr_handle.get_gate_name();
                 let _gate_host = _conn_mgr_handle.get_gate_host();
 
-                if !request_login(_hub.clone(), _gate_name, _gate_host, _p.get_conn_id().clone(), ev.sdk_uuid.unwrap()).await {
+                if !request_login(_hub.clone(), _gate_name, _gate_host, _conn_id, ev.sdk_uuid.unwrap()).await {
                     let _hub_handle = _hub.as_ref().lock().await;
                     _conn_mgr_handle.delete_hub_proxy(&_hub_handle.get_hub_name());
                 }
@@ -156,8 +165,13 @@ impl GateClientMsgHandle {
         }
 
         if let Some(_proxy_handle) = _proxy.upgrade() {
-            let mut _p = _proxy_handle.as_ref().lock().await;
-            let _conn_mgr = _p.get_conn_mgr();
+            let _conn_mgr: Arc<Mutex<ConnManager>>;
+            let _conn_id: String;
+            {
+                let mut _p = _proxy_handle.as_ref().lock().await;
+                _conn_mgr = _p.get_conn_mgr();
+                _conn_id = _p.get_conn_id().clone();
+            }
             
             let _hub_proxy = entry_hub_service(_conn_mgr.clone()).await;
             if let Some(_hub) = _hub_proxy {
@@ -165,7 +179,7 @@ impl GateClientMsgHandle {
                 let _gate_name = _conn_mgr_handle.get_gate_name();
                 let _gate_host = _conn_mgr_handle.get_gate_host();
 
-                if !request_reconnect(_hub.clone(), _gate_name, _gate_host, _p.get_conn_id().clone(), ev.account_id.unwrap(), ev.token.unwrap()).await {
+                if !request_reconnect(_hub.clone(), _gate_name, _gate_host, _conn_id, ev.account_id.unwrap(), ev.token.unwrap()).await {
                     let _hub_handle = _hub.as_ref().lock().await;
                     _conn_mgr_handle.delete_hub_proxy(&_hub_handle.get_hub_name());
                 }
@@ -185,18 +199,22 @@ impl GateClientMsgHandle {
         }
 
         if let Some(_proxy_handle) = _proxy.upgrade() {
-            let mut _p = _proxy_handle.as_ref().lock().await;
-            let _conn_mgr = _p.get_conn_mgr();
+            let _conn_mgr: Arc<Mutex<ConnManager>>;
+            let _conn_id: String;
+            {
+                let mut _p = _proxy_handle.as_ref().lock().await;
+                _conn_mgr = _p.get_conn_mgr();
+                _conn_id = _p.get_conn_id().clone();
+            }
             
             let _hub_proxy = entry_hub_service(_conn_mgr.clone()).await;
             if let Some(_hub) = _hub_proxy {
                 let mut _conn_mgr_handle = _conn_mgr.as_ref().lock().await;
-                let _close_arc = _conn_mgr_handle.get_close_handle();
                 let _gate_name = _conn_mgr_handle.get_gate_name();
 
                 let mut _hub_handle = _hub.as_ref().lock().await;
                 if !_hub_handle.send_hub_msg(HubService::ClientRequestService(
-                    ClientRequestService::new(ev.service_name.unwrap(), _gate_name, _p.get_conn_id().clone()))).await
+                    ClientRequestService::new(ev.service_name.unwrap(), _gate_name, _conn_id))).await
                 {
                     _conn_mgr_handle.delete_hub_proxy(&_hub_handle.get_hub_name());
                 }
@@ -227,9 +245,14 @@ impl GateClientMsgHandle {
 
         if let Some(_proxy_handle) = _proxy.upgrade() {
             let mut delete_hub_name: Option<String> = None; 
-
-            let mut _p = _proxy_handle.as_ref().lock().await;
-            let _conn_mgr_arc = _p.get_conn_mgr();
+            
+            let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
+            let _conn_id: String;
+            {
+                let mut _p = _proxy_handle.as_ref().lock().await;
+                _conn_mgr_arc = _p.get_conn_mgr();
+                _conn_id = _p.get_conn_id().clone();
+            }
 
             let event = ev.message.unwrap();
             let entity_id = ev.entity_id.unwrap();
@@ -237,9 +260,8 @@ impl GateClientMsgHandle {
             if let Some(_entity) = _conn_mgr.get_entity(&entity_id) {
                 let hub_name = _entity.get_hub_name();
                 if let Some(_hub_arc) = _conn_mgr.get_hub_proxy(hub_name) {
-                    let conn_id = _p.get_conn_id();
                     let mut _hub = _hub_arc.as_ref().lock().await;
-                    if !_hub.send_hub_msg(HubService::ClientCallRpc(ClientCallRpc::new(conn_id.to_string(), entity_id, ev.msg_cb_id.unwrap(), event))).await {
+                    if !_hub.send_hub_msg(HubService::ClientCallRpc(ClientCallRpc::new(_conn_id, entity_id, ev.msg_cb_id.unwrap(), event))).await {
                         delete_hub_name = Some(hub_name.clone());
                     }
                 }
@@ -266,8 +288,11 @@ impl GateClientMsgHandle {
         if let Some(_proxy_handle) = _proxy.upgrade() {
             let mut delete_hub_name: Option<String> = None; 
 
-            let mut _p = _proxy_handle.as_ref().lock().await;
-            let _conn_mgr_arc = _p.get_conn_mgr();
+            let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
+            {
+                let mut _p = _proxy_handle.as_ref().lock().await;
+                _conn_mgr_arc = _p.get_conn_mgr();
+            }
 
             if let Some(event) = ev.rsp {
                 if event.entity_id.is_none() {
@@ -320,8 +345,11 @@ impl GateClientMsgHandle {
         if let Some(_proxy_handle) = _proxy.upgrade() {
             let mut delete_hub_name: Option<String> = None; 
 
-            let mut _p = _proxy_handle.as_ref().lock().await;
-            let _conn_mgr_arc = _p.get_conn_mgr();
+            let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
+            {
+                let mut _p = _proxy_handle.as_ref().lock().await;
+                _conn_mgr_arc = _p.get_conn_mgr();
+            }
 
             if let Some(event) = ev.err {
                 if event.entity_id.is_none() {
@@ -379,16 +407,21 @@ impl GateClientMsgHandle {
         if let Some(_proxy_handle) = _proxy.upgrade() {
             let mut delete_hub_name: Option<String> = None; 
 
-            let mut _p = _proxy_handle.as_ref().lock().await;
-            let _conn_mgr_arc = _p.get_conn_mgr();
+            let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
+            let conn_id: String;
+            {
+                let mut _p = _proxy_handle.as_ref().lock().await;
+                _conn_mgr_arc = _p.get_conn_mgr();
+                conn_id = _p.get_conn_id().clone();
+            }
 
             let event = ev.message.unwrap();
             let entity_id = ev.entity_id.unwrap();
             let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
             if let Some(_entity) = _conn_mgr.get_entity(&entity_id) {
-                let conn_id = _p.get_conn_id();
+                
                 let main_conn_id = _entity.get_main_conn_id();
-                if main_conn_id.is_some() && conn_id.to_string() != main_conn_id.unwrap() {
+                if main_conn_id.is_some() && conn_id != main_conn_id.unwrap() {
                     error!("client ntf rpc to hub need main entity or global entity!");
                     return;
                 }
@@ -419,8 +452,12 @@ impl GateClientMsgHandle {
             let mut _client = _proxy_handle.as_ref().lock().await;
             _client.set_timetmp(utc_unix_time());
             if !_client.send_client_msg(ClientService::Heartbeats(GateCallHeartbeats::new(utc_unix_time_with_offset()))).await {
-                let mut _p = _proxy_handle.as_ref().lock().await;
-                let _conn_mgr_arc = _p.get_conn_mgr();
+                let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
+                {
+                    let mut _p = _proxy_handle.as_ref().lock().await;
+                    _conn_mgr_arc = _p.get_conn_mgr();
+                }
+
                 let mut _conn_mgr_tmp = _conn_mgr_arc.as_ref().lock().await;
                 _conn_mgr_tmp.delete_client_proxy(_client.get_conn_id());
             }
