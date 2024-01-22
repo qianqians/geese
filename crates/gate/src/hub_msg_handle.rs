@@ -151,12 +151,21 @@ impl GateHubMsgHandle {
             HubProxy::set_hub_info(_proxy_handle.clone(), name).await;
 
             let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
-            let mut _hub = _proxy_handle.as_ref().lock().await;
-            let _conn_mgr_arc = _hub.get_conn_mgr();
-            let _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
+            {
+                let mut _hub = _proxy_handle.as_ref().lock().await;
+                _conn_mgr_arc = _hub.get_conn_mgr();
+            }
 
-            let cb_msg = RegServerCallback::new(_conn_mgr.get_gate_name().clone());
+            let gate_name: String;
+            {
+                let _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
+                gate_name = _conn_mgr.get_gate_name();
+            }
+
+            let cb_msg = RegServerCallback::new(gate_name);
             let msg = HubService::RegServerCallback(cb_msg);
+
+            let mut _hub = _proxy_handle.as_ref().lock().await;
             _hub.send_hub_msg(msg).await;
         }
         else {
@@ -653,18 +662,22 @@ impl GateHubMsgHandle {
         if let Some(_proxy_handle) = _proxy.upgrade() {
             let _proxy_clone = _proxy_handle.clone();
 
-            let mut _p = _proxy_handle.as_ref().lock().await;
-            let _conn_mgr_arc = _p.get_conn_mgr();
-            let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
+            let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
+            {
+                let mut _p = _proxy_handle.as_ref().lock().await;
+                _conn_mgr_arc = _p.get_conn_mgr();
+            }
 
             let conn_id = ev.conn_id.unwrap();
             if ev.new_gate.is_none() || ev.new_conn_id.is_none() {
+                let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
                 if let Some(_client_arc) = _conn_mgr.get_client_proxy(&conn_id) {
                     let mut _client = _client_arc.as_ref().lock().await;
                     let _ = _client.send_client_msg(ClientService::KickOff(KickOff::new(ev.prompt_info.unwrap()))).await;
                     _client.ntf_client_offline(_proxy_clone).await;
                 }
                 else {
+                    let mut _p = _proxy_handle.as_ref().lock().await;
                     _p.send_hub_msg(HubService::TransferMsgEnd(TransferMsgEnd::new(conn_id, false))).await;
                 }
             }
@@ -674,6 +687,7 @@ impl GateHubMsgHandle {
 
                 let mut is_kick_off = false;
                 {
+                    let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
                     if let Some(_client_arc) = _conn_mgr.get_client_proxy(&conn_id) {
                         let mut _client = _client_arc.as_ref().lock().await;
                         let _ = _client.send_client_msg(ClientService::KickOff(KickOff::new(ev.prompt_info.unwrap()))).await;
@@ -691,6 +705,7 @@ impl GateHubMsgHandle {
                         is_kick_off = true;
                     }
                 }
+                let mut _p = _proxy_handle.as_ref().lock().await;
                 _p.send_hub_msg(HubService::TransferMsgEnd(TransferMsgEnd::new(conn_id, is_kick_off))).await;
             }
         }
