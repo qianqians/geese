@@ -12,7 +12,7 @@ class notice_module(object):
     def __init__(self):
         pass
 
-        self.on_notice:list[Callable[[session, str]]] = []
+        self.on_notice:list[Callable[[session, str], None]] = []
         app.instance().register_global_method("notice", self.notice)
 
     def notice(self, hub_name:str, bin:bytes):

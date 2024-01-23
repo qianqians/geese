@@ -53,7 +53,7 @@ def gen_entity_caller(module_name, funcs, dependent_struct, dependent_enum, enum
                 count += 1
                 if count < len(i[4]):
                     rsp_fn += ", "
-            rsp_fn += "]]"
+            rsp_fn += "], None]"
             
             err_fn = "Callable[["
             count = 0
@@ -62,7 +62,7 @@ def gen_entity_caller(module_name, funcs, dependent_struct, dependent_enum, enum
                 count += 1
                 if count < len(i[6]):
                     err_fn += ", "
-            err_fn += "]]"
+            err_fn += "], None]"
 
             cb_code += "class " + module_name + "_" + func_name + "_cb(object):\n"
             cb_code += "    def __init__(self, _cb_uuid:int, _entity:subentity|player):\n"

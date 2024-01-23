@@ -11,8 +11,8 @@ from .common_svr import *
 class update_rank_call_update_rank_cb(object):
     def __init__(self, _cb_uuid:int, _entity:subentity):
         self.entity = _entity
-        self.cb:Callable[[]] = None
-        self.err:Callable[[error_code]] = None
+        self.cb:Callable[[], None] = None
+        self.err:Callable[[error_code], None] = None
         self.rsp = callback(lambda: self.entity.del_callback(_cb_uuid))
         self.entity.reg_hub_callback(_cb_uuid, self.rsp)
 
@@ -26,7 +26,7 @@ class update_rank_call_update_rank_cb(object):
 
         self.err(_err)
 
-    def callBack(self, _cb:Callable[[]], _err:Callable[[error_code]]):
+    def callBack(self, _cb:Callable[[], None], _err:Callable[[error_code], None]):
         self.cb = _cb
         self.err = _err
         self.rsp.callback(self.on_rsp, self.on_err)
@@ -72,7 +72,7 @@ class update_rank_module(object):
     def __init__(self, entity:player|entity):
         self.entity = entity
 
-        self.on_call_update_rank:list[Callable[[update_rank_call_update_rank_rsp, str]]] = []
+        self.on_call_update_rank:list[Callable[[update_rank_call_update_rank_rsp, str], None]] = []
         self.entity.reg_hub_request_callback("call_update_rank", self.call_update_rank)
 
     def call_update_rank(self, source:str, msg_cb_id:int, bin:bytes):

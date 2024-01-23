@@ -67,9 +67,9 @@ class get_rank_module(object):
     def __init__(self, entity:player|entity):
         self.entity = entity
 
-        self.on_get_self_rank:list[Callable[[get_rank_get_self_rank_rsp, str]]] = []
+        self.on_get_self_rank:list[Callable[[get_rank_get_self_rank_rsp, str], None]] = []
         self.entity.reg_client_request_callback("get_self_rank", self.get_self_rank)
-        self.on_get_rank:list[Callable[[get_rank_get_rank_rsp, int, int]]] = []
+        self.on_get_rank:list[Callable[[get_rank_get_rank_rsp, int, int], None]] = []
         self.entity.reg_client_request_callback("get_rank", self.get_rank)
 
     def get_self_rank(self, gate_name:str, conn_id:str, msg_cb_id:int, bin:bytes):

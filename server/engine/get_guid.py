@@ -20,7 +20,7 @@ class get_guid(base_dbproxy_handle):
         print("get_guid gen begin!")
         future = asyncio.Future()
         from app import app
-        while not self.__get_dbproxy__().get_guid(self.__db__, self.__collection__, lambda guid: self.__gen_callback__(guid)):
+        while not self.__get_dbproxy__().get_guid(self.__db__, self.__collection__, lambda guid: self.__gen_callback__(guid, future)):
             app().ctx.log("error", "gen guid exception dbproxy:{} __db__:{} __collection__:{}".format(self.__dbproxy__, self.__db__, self.__collection__))
             self.__random_new_dbproxy__()
         print("get_guid gen end!")
