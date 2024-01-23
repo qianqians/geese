@@ -69,7 +69,7 @@ def gen_entity_module(module_name, funcs, dependent_struct, dependent_enum, enum
             
             code_func += "    def " + func_name + "(self, gate_name:str, conn_id:str, msg_cb_id:int, bin:bytes):\n"
             code_func += "        inArray = loads(bin)\n"
-            count = 1 
+            count = 0
             for _type, _name, _parameter in i[2]:
                 type_ = check_type(_type, dependent_struct, dependent_enum)
                 type_ = check_type(_type, dependent_struct, dependent_enum)
@@ -92,7 +92,7 @@ def gen_entity_module(module_name, funcs, dependent_struct, dependent_enum, enum
                 count = count + 1
                 if count < len(i[2]):
                     code_func += ", "
-            code_func += ")\n"
+            code_func += ")\n\n"
 
             _hub_uuid = '_'.join(str(uuid.uuid3(uuid.NAMESPACE_DNS, func_name)).split('-'))
             _rsp_uuid = '_'.join(str(uuid.uuid3(uuid.NAMESPACE_X500, func_name)).split('-'))

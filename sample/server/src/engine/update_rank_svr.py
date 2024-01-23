@@ -78,9 +78,10 @@ class update_rank_module(object):
 
     def call_update_rank(self, source:str, msg_cb_id:int, bin:bytes):
         inArray = loads(bin)
-        _entity_id = inArray[1]
+        _entity_id = inArray[0]
         rsp = update_rank_call_update_rank_rsp(source, msg_cb_id)
         for fn in self.on_call_update_rank:
             fn(rsp, _entity_id)
+
 
 

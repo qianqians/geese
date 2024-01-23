@@ -43,10 +43,11 @@ class heartbeat_module(object):
 
     def call_heartbeat(self, hub_name:str, msg_cb_id:int, bin:bytes):
         inArray = loads(bin)
-        _entity_id = inArray[1]
+        _entity_id = inArray[0]
         rsp = heartbeat_call_heartbeat_rsp(hub_name, msg_cb_id, self.entity)
         for fn in self.on_call_heartbeat:
             fn(rsp, _entity_id)
+
 
 
 

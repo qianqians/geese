@@ -44,10 +44,11 @@ class login_module(object):
 
     def login(self, gate_name:str, conn_id:str, msg_cb_id:int, bin:bytes):
         inArray = loads(bin)
-        _sdk_uuid = inArray[1]
+        _sdk_uuid = inArray[0]
         rsp = login_login_rsp(gate_name, conn_id, msg_cb_id, self.entity)
         for fn in self.on_login:
             fn(rsp, _sdk_uuid)
+
 
 
 
