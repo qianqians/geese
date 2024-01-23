@@ -13,6 +13,7 @@ def gen_python_import(_import):
     code += "from collections.abc import Callable\n"
     code += "from enum import Enum\n"
     code += "from .engine import *\n"
+    code += "from .engine.msgpack import *\n"
     for _i in _import:
         code += "from ." + _i + "_svr import *\n"
     code += "\n"
