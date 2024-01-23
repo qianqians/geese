@@ -1,12 +1,19 @@
 import sys
 from engine.engine import *
+from engine.login_svr import *
 
 class SamplePlayer(player):
     def __init__(self, entity_id: str, gate_name: str, conn_id: str):
         player.__init__(self, "SamplePlayer", entity_id, gate_name, conn_id)
+        self.login_module = login_module(self)
+        
+        self.login_module.on_login.append(lambda rsp, _sdk_uuid: self.login_callback(rsp, _sdk_uuid))
         
     def info(self) -> dict:
         return {}
+    
+    def login_callback(self, rsp:login_login_rsp, _sdk_uuid:str):
+        rsp.rsp(True)
 
 class LoginEventHandle(login_event_handle):
     def __init__(self, db:str, collection:str):
