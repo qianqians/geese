@@ -14,7 +14,7 @@ def gen_python_import(_import):
     code += "from enum import Enum\n"
     code += "from .engine import *\n"
     for _i in _import:
-        code += "from " + _i + "_svr import *\n"
+        code += "from ." + _i + "_svr import *\n"
     code += "\n"
     return code
 
