@@ -75,17 +75,19 @@ class get_rank_module(object):
 
     def get_self_rank(self, gate_name:str, conn_id:str, msg_cb_id:int, bin:bytes):
         inArray = loads(bin)
-        _entity_id = inArray[1]
+        _entity_id = inArray[0]
         rsp = get_rank_get_self_rank_rsp(gate_name, conn_id, msg_cb_id, self.entity)
         for fn in self.on_get_self_rank:
             fn(rsp, _entity_id)
+
     def get_rank(self, gate_name:str, conn_id:str, msg_cb_id:int, bin:bytes):
         inArray = loads(bin)
-        _start = inArray[1]
-        _end = inArray[2]
+        _start = inArray[0]
+        _end = inArray[1]
         rsp = get_rank_get_rank_rsp(gate_name, conn_id, msg_cb_id, self.entity)
         for fn in self.on_get_rank:
             fn(rsp, _start, _end)
+
 
 
 
