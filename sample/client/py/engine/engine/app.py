@@ -43,7 +43,6 @@ class app(object):
         self.__is_run__ = True
         self.__conn_handle__:conn_msg_handle = None
         self.__entity_create_method__:dict[str, Callable[[str, dict]]] = {}
-        self.__loop__ = None
         self.__conn_id__:str = None
         self.__conn_id_callback__:Callable[[str], None] = None
         self.__pump__ = None
@@ -62,6 +61,11 @@ class app(object):
         self.client_event_handle = handle
         self.__conn_handle__ = conn_msg_handle()
         self.__pump__ = ClientPump(self.ctx.ctx)
+        
+        self.player_mgr = player_manager()
+        self.subentity_mgr = subentity_manager()
+        self.receiver_mgr = receiver_manager()
+        
         self.heartbeats()
         return self
     

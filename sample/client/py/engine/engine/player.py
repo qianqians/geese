@@ -8,7 +8,7 @@ from .callback import callback
 
 class player(ABC, base_entity):
     def __init__(self, entity_type:str, entity_id:str) -> None:
-        base_entity.__init__(entity_type, entity_id)
+        base_entity.__init__(self, entity_type, entity_id)
 
         self.request_msg_cb_id = random.randint(100, 10011)
         self.hub_request_callback:dict[str, Callable[[str, int, bytes],None]] = {}

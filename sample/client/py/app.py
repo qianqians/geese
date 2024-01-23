@@ -21,7 +21,7 @@ class SamplePlayer(player):
         _player.login_caller.login("entity_id-123456").callBack(
             lambda success: print(f"SamplePlayer login success:{success}"),
             lambda _err: print(f"SamplePlayer login _err:{_err}")).timeout(
-            lambda: print(f"SamplePlayer login timeout!"))
+            1000, lambda: print(f"SamplePlayer login timeout!"))
             
     def update_player(self, argvs: dict):
         print(f"SamplePlayer:{self.entity_id} update_player!")
