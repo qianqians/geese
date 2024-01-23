@@ -6,7 +6,7 @@ from .base_entity import base_entity
 
 class receiver(ABC, base_entity):
     def __init__(self, entity_type:str, entity_id:str) -> None:
-        base_entity.__init__(entity_type, entity_id)
+        base_entity.__init__(self, entity_type, entity_id)
 
         self.hub_notify_callback:dict[str, Callable[[str, bytes],None]] = {}
 

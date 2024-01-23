@@ -13,6 +13,7 @@ class SamplePlayer(player):
         return {}
     
     def login_callback(self, rsp:login_login_rsp, _sdk_uuid:str):
+        print(f"SamplePlayer login_callback _sdk_uuid:{_sdk_uuid}")
         rsp.rsp(True)
 
 class LoginEventHandle(login_event_handle):
