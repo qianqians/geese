@@ -11,8 +11,8 @@ from .common_cli import *
 class login_login_cb(object):
     def __init__(self, _cb_uuid:int, _entity:subentity|player):
         self.entity = _entity
-        self.cb:Callable[[bool]] = None
-        self.err:Callable[[error_code]] = None
+        self.cb:Callable[[bool], None] = None
+        self.err:Callable[[error_code], None] = None
         self.rsp = callback(lambda: self.entity.del_callback(_cb_uuid))
         self.entity.reg_hub_callback(_cb_uuid, self.rsp)
 
@@ -26,7 +26,7 @@ class login_login_cb(object):
         _err = inArray[0]
         self.err(_err)
 
-    def callBack(self, _cb:Callable[[bool]], _err:Callable[[error_code]]):
+    def callBack(self, _cb:Callable[[bool], None], _err:Callable[[error_code], None]):
         self.cb = _cb
         self.err = _err
         self.rsp.callback(self.on_rsp, self.on_err)

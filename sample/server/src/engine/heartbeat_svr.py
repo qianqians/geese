@@ -11,8 +11,8 @@ from .common_svr import *
 class heartbeat_call_heartbeat_cb(object):
     def __init__(self, _cb_uuid:int, _entity:player):
         self.entity = _entity
-        self.cb:Callable[[client_time_info]] = None
-        self.err:Callable[[error_code]] = None
+        self.cb:Callable[[client_time_info], None] = None
+        self.err:Callable[[error_code], None] = None
         self.rsp = callback(lambda: self.entity.del_client_callback(_cb_uuid))
         self.entity.reg_client_callback(_cb_uuid, self.rsp)
 
@@ -26,7 +26,7 @@ class heartbeat_call_heartbeat_cb(object):
         _err = inArray[0]
         self.err(_err)
 
-    def callBack(self, _cb:Callable[[client_time_info]], _err:Callable[[error_code]]):
+    def callBack(self, _cb:Callable[[client_time_info], None], _err:Callable[[error_code], None]):
         self.cb = _cb
         self.err = _err
         self.rsp.callback(self.on_rsp, self.on_err)

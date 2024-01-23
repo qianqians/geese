@@ -38,7 +38,7 @@ class login_module(object):
     def __init__(self, entity:player|entity):
         self.entity = entity
 
-        self.on_login:list[Callable[[login_login_rsp, str]]] = []
+        self.on_login:list[Callable[[login_login_rsp, str], None]] = []
         self.entity.reg_client_request_callback("login", self.login)
 
     def login(self, gate_name:str, conn_id:str, msg_cb_id:int, bin:bytes):

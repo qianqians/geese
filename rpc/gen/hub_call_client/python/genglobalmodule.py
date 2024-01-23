@@ -23,7 +23,7 @@ def gen_global_module(module_name, funcs, dependent_struct, dependent_enum, enum
                 count += 1
                 if count < len(i[2]):
                     func_type += ", "
-            func_type += "]]"
+            func_type += "], None]"
             
             code_constructor += "        self.on_" + func_name + ":list[" + func_type + "] = []\n"
             code_constructor += "        app.instance().register_global_method(\"" + func_name + "\", self." + func_name + ")\n"

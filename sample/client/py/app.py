@@ -22,6 +22,9 @@ class SamplePlayer(player):
             lambda success: print(f"SamplePlayer login success:{success}"),
             lambda _err: print(f"SamplePlayer login _err:{_err}")).timeout(
             lambda: print(f"SamplePlayer login timeout!"))
+            
+    def update_player(self, argvs: dict):
+        print(f"SamplePlayer:{self.entity_id} update_player!")
 
 def conn_callback(conn_id:str):
     print("conn_callback begin!")

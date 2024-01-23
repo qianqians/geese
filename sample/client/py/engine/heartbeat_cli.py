@@ -37,7 +37,7 @@ class heartbeat_module(object):
     def __init__(self, entity:player):
         self.entity = entity
 
-        self.on_call_heartbeat:list[Callable[[heartbeat_call_heartbeat_rsp, str]]] = []
+        self.on_call_heartbeat:list[Callable[[heartbeat_call_heartbeat_rsp, str], None]] = []
         self.entity.reg_hub_request_callback("call_heartbeat", self.call_heartbeat)
 
     def call_heartbeat(self, hub_name:str, msg_cb_id:int, bin:bytes):
