@@ -2,6 +2,7 @@ from threading import Timer
 from collections.abc import Callable
 from enum import Enum
 from .engine import *
+from .engine.msgpack import *
 
 # this enum code is codegen by geese codegen for python
 
