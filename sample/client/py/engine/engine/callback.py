@@ -15,8 +15,8 @@ class callback(object):
         self.error = err_callback
 
     def __call_timeout__(self):
-        self.release_handle()
-        self._timeout()
+        if self.release_handle():
+            self._timeout()
 
     def timeout(self, _timeout:int, time_callback:Callable[[],None]):
         self._timeout = time_callback
