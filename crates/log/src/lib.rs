@@ -1,5 +1,8 @@
 use tracing_appender::{non_blocking, non_blocking::WorkerGuard, rolling};
-use tracing_subscriber::{filter::EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::filter::EnvFilter;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::fmt;
 use opentelemetry_sdk::runtime::Tokio;
 
 pub fn init(filter: String, log_dir: String, log_file: String, jaeger_url: Option<String>, s_name: Option<String>) -> (bool, WorkerGuard) {
