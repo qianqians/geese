@@ -22,13 +22,13 @@ class Rank(object):
         app().redis_proxy.set(item.key, item.info())
         app().redis_proxy.zadd(self.rankName, {item.key: item.score})
         
-    def __del_rank__(self, itemKey:str):
+    def del_rank(self, itemKey:str):
         from .app import app
         app().redis_proxy.zrem(self.rankName, itemKey)
         app().redis_proxy.delete(itemKey)
         
     def update_rank(self, item:RankItem):
-        self.__del_rank__(item.key)
+        self.del_rank(item.key)
         self.__add_rank__(item)
         
     def get_rank(self, itemKey:str) -> (int, RankItem):
