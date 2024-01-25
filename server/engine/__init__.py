@@ -1,6 +1,7 @@
 # __init__.py
 
 from .app import *
+from .rank import *
 from .session import *
 from .player import *
 from .entity import *
