@@ -11,7 +11,7 @@ use thrift::transport::{TIoChannel, TBufferChannel};
 use net::{NetReaderCallback, NetWriter};
 use redis_service::redis_service::{RedisService, create_channel_key};
 use close_handle::CloseHandle;
-use consul::ConsulImpl;
+use consul::{ConsulImpl, ServiceInfo};
 
 use proto::dbproxy::{
     DbEvent,
@@ -29,13 +29,15 @@ pub async fn entry_dbproxy_service(
     _consul_impl: Arc<Mutex<ConsulImpl>>,
     _close: Arc<Mutex<CloseHandle>>) -> String
 {
-    let mut _conn_mgr_handle = _conn_mgr.as_ref().lock().unwrap();
+    let mut services: Vec<ServiceInfo>;
+    {
+        let mut _impl = _consul_impl.as_ref().lock().await;
+        services = match _impl.services("dbproxy".to_string()).await {
+            None => return String::new(),
+            Some(s) => s
+        };
+    }
 
-    let mut _impl = _consul_impl.as_ref().lock().await;
-    let mut services = match _impl.services("dbproxy".to_string()).await {
-        None => return String::new(),
-        Some(s) => s
-    };
     loop {
         let mut rng = rand::thread_rng();
         let index = rng.gen_range(0..services.len());
@@ -43,6 +45,8 @@ pub async fn entry_dbproxy_service(
             None => return String::new(),
             Some(s) => s
         };
+        
+        let mut _conn_mgr_handle = _conn_mgr.as_ref().lock().unwrap();    
         if let Some(_dbproxy) = _conn_mgr_handle.get_dbproxy_proxy(&service.id) {
             trace!("entry_dbproxy_service dbproxy already exists name:{}", service.id.clone());
             return service.id.clone();
