@@ -15,7 +15,6 @@ consulrs = "0.1.0"
 signal-hook = "0.3.17"
 tokio = { version = "1.28.2", features = ["full"] }
 pyo3 = { version = "0.20.0", features = ["extension-module"] }
-pyo3-asyncio = { version = "0.20.0", features = ["attributes", "tokio-runtime"] }
 proto = { path = "../crates/proto", version = "0.1.0" }
 dbproxy = { path = "../crates/dbproxy", version = "0.1.0" }
 wss = { path = "../crates/wss", version = "0.1.0" }

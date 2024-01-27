@@ -29,20 +29,20 @@ class service_manager(object):
     def get_service(self, service_name:str) -> service:
         return self.services[service_name]
     
-def query_service(service_name:str):
+async def query_service(service_name:str):
     from app import app
-    hub_name = app().ctx.entry_hub_service(service_name)
+    hub_name = await app().ctx.entry_hub_service(service_name)
     if app().ctx.hub_name() == hub_name:
         _service = app().service_mgr.get_service(service_name)
         _service.hub_query_service_entity(hub_name)
     else:
         app().ctx.query_service(hub_name, service_name)
         
-def forward_client_query_service(service_name:str, gate_name:str, gate_host:str, conn_id:str):
+async def forward_client_query_service(service_name:str, gate_name:str, gate_host:str, conn_id:str):
     from app import app
-    hub_name = app().ctx.entry_hub_service(service_name)
+    hub_name = await app().ctx.entry_hub_service(service_name)
     if app().ctx.hub_name() == hub_name:
-        app().ctx.entry_gate_service(gate_name, gate_host)
+        await app().ctx.entry_gate_service(gate_name, gate_host)
         _service = app().service_mgr.get_service(service_name)
         _service.client_query_service_entity(gate_name, conn_id)
     else:

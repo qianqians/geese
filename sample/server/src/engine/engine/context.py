@@ -22,17 +22,17 @@ class context(object):
     def entry_dbproxy_service(self) -> str:
         return self.ctx.entry_dbproxy_service()
         
-    def entry_hub_service(self, service_name:str) -> str:
-        return self.ctx.entry_hub_service(service_name)
+    async def entry_hub_service(self, service_name:str) -> str:
+        return await self.ctx.entry_hub_service(service_name)
     
-    def entry_direct_hub_server(self, hub_name:str):
-        return self.ctx.entry_direct_hub_server(hub_name)
+    async def entry_direct_hub_server(self, hub_name:str):
+        return await self.ctx.entry_direct_hub_server(hub_name)
     
     def check_connect_hub_server(self, hub_name:str) -> bool:
         return self.ctx.check_connect_hub_server(hub_name)
     
-    def entry_gate_service(self, gate_name:str, gate_host:str):
-        return self.ctx.entry_gate_service(gate_name, gate_host)
+    async def entry_gate_service(self, gate_name:str, gate_host:str):
+        return await self.ctx.entry_gate_service(gate_name, gate_host)
     
     def gate_host(self, gate_name:str):
         return self.ctx.gate_host(gate_name)
