@@ -230,37 +230,33 @@ impl ConnCallbackMsgHandle {
                             let _handle_clone = _handle.clone();
                             let _close = _self.close.clone();
 
-                            let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-                            rt.block_on(async move {
-                                if let Ok(value) = _service.acquire_lock(_lock_key.clone(), 3).await {
-                                    if _conn_mgr.get_gate_proxy(&_gate_name).is_none() {
-                                        _conn_mgr.add_lock(_lock_key, value);
+                            if let Ok(value) = _service.acquire_lock(_lock_key.clone(), 3).await {
+                                if _conn_mgr.get_gate_proxy(&_gate_name).is_none() {
+                                    _conn_mgr.add_lock(_lock_key, value);
 
-                                        if let Some(_wr_arc) = _conn_mgr.direct_connect_server(
-                                            _gate_name.clone(), 
-                                            _gate_host.clone(), 
-                                            _handle_clone.clone(), 
-                                            _close).await
-                                        {
-                                            let _wr_arc_clone = _wr_arc.clone();
-                                            
-                                            let _gate_name_tmp = _gate_name.clone();
-                                            let mut _gate_tmp = GateProxy::new(_wr_arc_clone);
-                                            _gate_tmp.send_gate_msg(GateHubService::RegServer(RegServer::new(_conn_mgr.get_hub_name()))).await;
+                                    if let Some(_wr_arc) = _conn_mgr.direct_connect_server(
+                                        _gate_name.clone(), 
+                                        _gate_host.clone(), 
+                                        _handle_clone.clone(), 
+                                        _close).await
+                                    {
+                                        let _wr_arc_clone = _wr_arc.clone();
                                         
-                                            _gate_tmp.gate_name = Some(_gate_name);
-                                            _gate_tmp.gate_host = Some(_gate_host);
+                                        let _gate_name_tmp = _gate_name.clone();
+                                        let mut _gate_tmp = GateProxy::new(_wr_arc_clone);
+                                        _gate_tmp.send_gate_msg(GateHubService::RegServer(RegServer::new(_conn_mgr.get_hub_name()))).await;
+                                    
+                                        _gate_tmp.gate_name = Some(_gate_name);
+                                        _gate_tmp.gate_host = Some(_gate_host);
 
-                                            let _gateproxy = Arc::new(Mutex::new(_gate_tmp));
-                                            _conn_mgr.add_gate_proxy(_gate_name_tmp, _gateproxy);
-                                        }
-                                    }
-                                    else {
-                                        let _ = _service.release_lock(_lock_key, value).await;
+                                        let _gateproxy = Arc::new(Mutex::new(_gate_tmp));
+                                        _conn_mgr.add_gate_proxy(_gate_name_tmp, _gateproxy);
                                     }
                                 }
-                            });
-
+                                else {
+                                    let _ = _service.release_lock(_lock_key, value).await;
+                                }
+                            }
                         }
                         else {
                             error!("HubService::HubForwardClientRequestService! wrong msg handle!");
@@ -380,10 +376,7 @@ impl ConnCallbackMsgHandle {
 
                         let cb_msg = RegServerCallback::new(_self.hub_name.clone());
                         let msg = GateHubService::RegServerCallback(cb_msg);
-                        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-                        rt.block_on(async move {
-                            _proxy_tmp.send_gate_msg(msg).await;
-                        });
+                        _proxy_tmp.send_gate_msg(msg).await;
                     }
 
                     let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().await;
@@ -415,10 +408,7 @@ impl ConnCallbackMsgHandle {
 
                         let cb_msg = RegServerCallback::new(_self.hub_name.clone());
                         let msg = GateHubService::RegServerCallback(cb_msg);
-                        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-                        rt.block_on(async move {
-                            _proxy_tmp.send_gate_msg(msg).await;
-                        });
+                        _proxy_tmp.send_gate_msg(msg).await;
                     }
 
                     let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().await;
