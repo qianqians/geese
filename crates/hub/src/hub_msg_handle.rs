@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
+use tokio::sync::Mutex;
 use tracing::{trace, error};
 
 use proto::common::RegServer;
@@ -17,14 +18,12 @@ use proto::hub::{
     HubCallHubNtf,
 };
 
-use crate::hub_server::StdMutex;
-
 pub struct HubCallbackMsgHandle {
 }
 
 impl HubCallbackMsgHandle {
-    pub fn new() -> Arc<StdMutex<HubCallbackMsgHandle>> {
-        Arc::new(StdMutex::new(HubCallbackMsgHandle {}))
+    pub fn new() -> Arc<Mutex<HubCallbackMsgHandle>> {
+        Arc::new(Mutex::new(HubCallbackMsgHandle {}))
     }
 
     pub fn do_reg_hub(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: RegServer) {

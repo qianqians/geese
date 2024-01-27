@@ -15,20 +15,19 @@ use consul::ConsulImpl;
 use proto::common::RegServer;
 use proto::hub::HubService;
 
-use crate::hub_server::StdMutex;
 use crate::hub_service_manager::ConnCallbackMsgHandle;
 use crate::conn_manager::ConnManager;
 
 pub async fn entry_direct_hub_server(
     _hub_name: String,
-    _conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>, 
-    _conn_mgr: Arc<StdMutex<ConnManager>>,
-    _redis_mq_service: Arc<StdMutex<RedisService>>,
+    _conn_msg_handle: Arc<Mutex<ConnCallbackMsgHandle>>, 
+    _conn_mgr: Arc<Mutex<ConnManager>>,
+    _redis_mq_service: Arc<Mutex<RedisService>>,
     _close: Arc<Mutex<CloseHandle>>)
 {
     let mut _hub_host: String = "".to_string();
     {
-        let mut _r = _redis_mq_service.as_ref().lock().unwrap();
+        let mut _r = _redis_mq_service.as_ref().lock().await;
         match _r.get(_hub_name.clone()).await {
             Err(e) => {
                 error!("get gate:{} host faild:{}!", _hub_name.clone(), e);
@@ -40,8 +39,8 @@ pub async fn entry_direct_hub_server(
         }
     }
 
-    let mut _conn_mgr_handle = _conn_mgr.as_ref().lock().unwrap();
-    let mut _service = _redis_mq_service.as_ref().lock().unwrap();
+    let mut _conn_mgr_handle = _conn_mgr.as_ref().lock().await;
+    let mut _service = _redis_mq_service.as_ref().lock().await;
     let lock_key = create_lock_key(_conn_mgr_handle.get_hub_name(), _hub_name.clone());
     if let Ok(value) = _service.acquire_lock(lock_key.clone(), 3).await {
         if let Some(_hubproxy) = _conn_mgr_handle.get_hub_proxy(&_hub_name) {
@@ -57,10 +56,10 @@ pub async fn entry_direct_hub_server(
             _conn_msg_handle.clone(), 
             _close.clone()).await
         {
-            let _hubproxy = Arc::new(StdMutex::new(HubProxy::new(_wr_arc)));
+            let _hubproxy = Arc::new(Mutex::new(HubProxy::new(_wr_arc)));
             let _hub_clone = _hubproxy.clone();
-            let mut _hub_send = _hubproxy.as_ref().lock().unwrap();
-            _hub_send.send_hub_msg(HubService::RegServer(RegServer::new(_conn_mgr_handle.get_hub_name())));
+            let mut _hub_send = _hubproxy.as_ref().lock().await;
+            _hub_send.send_hub_msg(HubService::RegServer(RegServer::new(_conn_mgr_handle.get_hub_name()))).await;
             _hub_send.hub_name = Some(_hub_name.clone());
             _conn_mgr_handle.add_hub_proxy(_hub_name.clone(), _hub_clone);
         }
@@ -69,9 +68,9 @@ pub async fn entry_direct_hub_server(
 
 pub async fn entry_hub_service(
     _service: String,
-    _conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>, 
-    _conn_mgr: Arc<StdMutex<ConnManager>>,
-    _redis_mq_service: Arc<StdMutex<RedisService>>,
+    _conn_msg_handle: Arc<Mutex<ConnCallbackMsgHandle>>, 
+    _conn_mgr: Arc<Mutex<ConnManager>>,
+    _redis_mq_service: Arc<Mutex<RedisService>>,
     _consul_impl: Arc<Mutex<ConsulImpl>>,
     _close: Arc<Mutex<CloseHandle>>) -> String
 {
@@ -81,18 +80,21 @@ pub async fn entry_hub_service(
         Some(s) => s
     };
     loop {
-        let mut rng = rand::thread_rng();
-        let index = rng.gen_range(0..services.len());
+        let index:usize;
+        {
+            let mut rng = rand::thread_rng();
+            index = rng.gen_range(0..services.len());
+        }
         let service = match services.get(index) {
             None => return String::new(),
             Some(s) => s
         };
-        let mut _conn_mgr_handle = _conn_mgr.as_ref().lock().unwrap();
+        let mut _conn_mgr_handle = _conn_mgr.as_ref().lock().await;
         if let Some(_hubproxy) = _conn_mgr_handle.get_hub_proxy(&service.id) {
             return service.id.clone();
         }
         else {
-            let mut _service = _redis_mq_service.as_ref().lock().unwrap();
+            let mut _service = _redis_mq_service.as_ref().lock().await;
             let lock_key = create_lock_key(_conn_mgr_handle.get_hub_name(), service.id.clone());
             if let Ok(value) = _service.acquire_lock(lock_key.clone(), 3).await {
                 if let Some(_hubproxy) = _conn_mgr_handle.get_hub_proxy(&service.id) {
@@ -108,11 +110,11 @@ pub async fn entry_hub_service(
                     _conn_msg_handle.clone(), 
                     _close.clone()).await
                 {
-                    let _hubproxy = Arc::new(StdMutex::new(HubProxy::new(_wr_arc)));
+                    let _hubproxy = Arc::new(Mutex::new(HubProxy::new(_wr_arc)));
                     let _hub_clone = _hubproxy.clone();
 
-                    let mut _hub_send = _hubproxy.as_ref().lock().unwrap();
-                    _hub_send.send_hub_msg(HubService::RegServer(RegServer::new(_conn_mgr_handle.get_hub_name())));
+                    let mut _hub_send = _hubproxy.as_ref().lock().await;
+                    _hub_send.send_hub_msg(HubService::RegServer(RegServer::new(_conn_mgr_handle.get_hub_name()))).await;
                     _hub_send.hub_name = Some(service.id.clone());
                     _conn_mgr_handle.add_hub_proxy(service.id.clone(), _hub_clone);
                     return service.id.clone();
@@ -143,7 +145,7 @@ impl HubProxy {
         }
     }
 
-    pub fn send_hub_msg(&mut self, msg: HubService) -> bool {
+    pub async fn send_hub_msg(&mut self, msg: HubService) -> bool {
         let t = TBufferChannel::with_capacity(0, 16384);
         let (rd, wr) = match t.split() {
             Ok(_t) => (_t.0, _t.1),
@@ -155,10 +157,7 @@ impl HubProxy {
         let mut o_prot = TCompactOutputProtocol::new(wr);
         let _ = HubService::write_to_out_protocol(&msg, &mut o_prot);
         let wr = self.wr.clone();
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async move {
-            let mut p_send = wr.as_ref().lock().await;
-            p_send.send(&rd.write_bytes()).await
-        })
+        let mut p_send = wr.as_ref().lock().await;
+        p_send.send(&rd.write_bytes()).await
     }
 }

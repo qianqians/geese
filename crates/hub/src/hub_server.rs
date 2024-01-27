@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-pub type StdMutex<T> = std::sync::Mutex<T>;
-
 use tokio::sync::Mutex;
 use tracing::{trace, debug, info, warn, error};
 
@@ -28,11 +26,11 @@ pub struct HubServer {
     hub_name: String,
     redis_url: String,
     hub_host: String,
-    hub_redis_service: Option<Arc<StdMutex<RedisService>>>,
+    hub_redis_service: Option<Arc<Mutex<RedisService>>>,
     hub_tcp_server: Option<TcpServer>,
-    conn_mgr: Arc<StdMutex<ConnManager>>,
-    db_msg_handle: Arc<StdMutex<DBCallbackMsgHandle>>,
-    conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>,
+    conn_mgr: Arc<Mutex<ConnManager>>,
+    db_msg_handle: Arc<Mutex<DBCallbackMsgHandle>>,
+    conn_msg_handle: Arc<Mutex<ConnCallbackMsgHandle>>,
     consul_impl: Arc<Mutex<ConsulImpl>>,
     close: Arc<Mutex<CloseHandle>>
 }
@@ -45,7 +43,7 @@ impl HubServer {
         _consul_impl: Arc<Mutex<ConsulImpl>>) -> Result<HubServer, Box<dyn std::error::Error>> 
     {
         let _hub_name_server = _hub_name.clone();
-        let _conn_mgr = Arc::new(StdMutex::new(
+        let _conn_mgr = Arc::new(Mutex::new(
             ConnManager::new(
                 _hub_name)
             )
@@ -111,10 +109,10 @@ impl HubServer {
                 error!("listen_hub_service faild err:{}!", e);
                 return false;
             },
-            Ok(s) => Some(Arc::new(StdMutex::new(s)))
+            Ok(s) => Some(Arc::new(Mutex::new(s)))
         };
         {
-            let mut _conn_msg_handle_ref = self.conn_msg_handle.as_ref().lock().unwrap();
+            let mut _conn_msg_handle_ref = self.conn_msg_handle.as_ref().lock().await;
             _conn_msg_handle_ref.redis_service = self.hub_redis_service.clone();
         }
 
@@ -132,7 +130,7 @@ impl HubServer {
 
         {    
             let _rs = self.hub_redis_service.as_mut().unwrap();
-            let mut _r = _rs.as_ref().lock().unwrap();
+            let mut _r = _rs.as_ref().lock().await;
             let _ = _r.set(create_host_cache_key(name.clone()), self.hub_host.clone(), 10);
         }
         trace!("listen_hub_service end!");
@@ -150,8 +148,8 @@ impl HubServer {
             self.close.clone()).await
     }
 
-    pub fn check_connect_hub_server(&self, hub_name: String) -> bool {
-        let mut _conn_mgr = self.conn_mgr.as_ref().lock().unwrap();
+    pub async fn check_connect_hub_server(&self, hub_name: String) -> bool {
+        let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
         let _hub = _conn_mgr.get_hub_proxy(&hub_name);
 
         return _hub.is_some();
@@ -183,7 +181,7 @@ impl HubServer {
         let mut gate_host = "".to_string();
         {
             if let Some(rs) = &self.hub_redis_service {
-                let mut _r = rs.as_ref().lock().unwrap();
+                let mut _r = rs.as_ref().lock().await;
                 match _r.get(_gate_name.clone()).await {
                     Err(e) => {
                         error!("get gate:{} host faild:{}!", _gate_name.clone(), e);
@@ -197,10 +195,10 @@ impl HubServer {
         }
 
         let redis_service = self.hub_redis_service.clone().unwrap();
-        let mut _service = redis_service.as_ref().lock().unwrap();
+        let mut _service = redis_service.as_ref().lock().await;
         let lock_key = create_lock_key( self.hub_name.clone(), _gate_name.clone());
         if let Ok(value) = _service.acquire_lock(lock_key.clone(), 3).await {
-            let mut _conn_mgr = self.conn_mgr.as_ref().lock().unwrap();
+            let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
             if _conn_mgr.get_gate_proxy(&_gate_name).is_none() {
                 _conn_mgr.add_lock(lock_key, value);
 
@@ -218,7 +216,7 @@ impl HubServer {
                 
                     _gate_tmp.gate_name = Some(_gate_name);
     
-                    let _gateproxy = Arc::new(StdMutex::new(_gate_tmp));
+                    let _gateproxy = Arc::new(Mutex::new(_gate_tmp));
                     _conn_mgr.add_gate_proxy(_gate_name_tmp, _gateproxy);
                 }  
             }
@@ -228,18 +226,18 @@ impl HubServer {
         }
     }
 
-    pub fn get_db_msg_handle(&self) -> Arc<StdMutex<DBCallbackMsgHandle>> {
+    pub fn get_db_msg_handle(&self) -> Arc<Mutex<DBCallbackMsgHandle>> {
         self.db_msg_handle.clone()
     }
 
-    pub fn get_conn_msg_handle(&self) -> Arc<StdMutex<ConnCallbackMsgHandle>> {
+    pub fn get_conn_msg_handle(&self) -> Arc<Mutex<ConnCallbackMsgHandle>> {
         self.conn_msg_handle.clone()
     }
 
-    pub fn gate_host(&self, gate_name: String) -> String {
-        let mut _conn_mgr = self.conn_mgr.as_ref().lock().unwrap();
+    pub async fn gate_host(&self, gate_name: String) -> String {
+        let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
         if let Some(_gate_proxy) = _conn_mgr.get_gate_proxy(&gate_name) {
-            let mut _gate = _gate_proxy.as_ref().lock().unwrap();
+            let mut _gate = _gate_proxy.as_ref().lock().await;
             return _gate.gate_host.clone().unwrap();
         }
         return "".to_string();
@@ -247,48 +245,42 @@ impl HubServer {
 
     pub async fn flush_hub_host_cache(&mut self) {
         let _rs = self.hub_redis_service.as_mut().unwrap();
-        let mut _r = _rs.as_ref().lock().unwrap();
+        let mut _r = _rs.as_ref().lock().await;
         let _ = _r.set(create_host_cache_key(self.hub_name.clone()), self.hub_host.clone(), 10).await;
     }
 
-    pub fn send_db_msg(&mut self, db_name: String, msg: DbEvent) -> bool {
-        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-        let success = rt.block_on(async move {
-            let _db_arc: Arc<StdMutex<DBProxyProxy>>;
-            {
-                let mut _conn_mgr = self.conn_mgr.as_ref().lock().unwrap();
-                trace!("send_db_msg conn_mgr lock!");
-                let _db_arc_opt = _conn_mgr.get_dbproxy_proxy(&db_name);
-                _db_arc = _db_arc_opt.unwrap().clone();
-            }
+    pub async fn send_db_msg(&mut self, db_name: String, msg: DbEvent) -> bool {
+        let _db_arc: Arc<Mutex<DBProxyProxy>>;
+        {
+            let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
+            trace!("send_db_msg conn_mgr lock!");
+            let _db_arc_opt = _conn_mgr.get_dbproxy_proxy(&db_name);
+            _db_arc = _db_arc_opt.unwrap().clone();
+        }
             
-            let send_result: bool;
-            {
-                let mut _db = _db_arc.as_ref().lock().unwrap();
-                trace!("send_db_msg _db lock!");
-                send_result = _db.send_db_msg(msg).await;
-            }
-            return send_result;
-        });
-        trace!("send_db_msg end!");
-        return success;
+        let send_result: bool;
+        {
+            let mut _db = _db_arc.as_ref().lock().await;
+            trace!("send_db_msg _db lock!");
+            send_result = _db.send_db_msg(msg).await;
+        }
+        return send_result;
     }
 
-    pub fn send_hub_msg(&mut self, hub_name: String, msg: HubService) -> bool {
-        let mut _conn_mgr = self.conn_mgr.as_ref().lock().unwrap();
+    pub async fn send_hub_msg(&mut self, hub_name: String, msg: HubService) -> bool {
+        let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
         if let Some(_hub_arc) = _conn_mgr.get_hub_proxy(&hub_name) {
-            let mut _hub = _hub_arc.as_ref().lock().unwrap();
-            return _hub.send_hub_msg(msg);
+            let mut _hub = _hub_arc.as_ref().lock().await;
+            return _hub.send_hub_msg(msg).await;
         }
         return false;
     }
 
     pub async fn send_gate_msg(&mut self, gate_name: String, msg: GateHubService) -> bool {
-
         {
-            let mut _conn_mgr = self.conn_mgr.as_ref().lock().unwrap();
+            let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
             if let Some(_gate_arc) = _conn_mgr.get_gate_proxy(&gate_name) {
-                let mut _gate = _gate_arc.as_ref().lock().unwrap();
+                let mut _gate = _gate_arc.as_ref().lock().await;
                 return _gate.send_gate_msg(msg).await;
             }
         }
@@ -296,9 +288,9 @@ impl HubServer {
         {
             self.entry_gate_service(gate_name.clone()).await;
 
-            let mut _conn_mgr = self.conn_mgr.as_ref().lock().unwrap();
+            let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
             if let Some(_gate_arc) = _conn_mgr.get_gate_proxy(&gate_name) {
-                let mut _gate = _gate_arc.as_ref().lock().unwrap();
+                let mut _gate = _gate_arc.as_ref().lock().await;
                 return _gate.send_gate_msg(msg).await;
             }
         }

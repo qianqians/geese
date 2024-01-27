@@ -21,7 +21,6 @@ use proto::common::{RegServer, RegServerCallback};
 use proto::gate::GateHubService;
 use proto::hub::HubService;
 
-use crate::hub_server::StdMutex;
 use crate::hub_proxy_manager::HubProxy;
 use crate::hub_msg_handle::HubCallbackMsgHandle;
 use crate::gate_proxy_manager::GateProxy;
@@ -30,15 +29,15 @@ use crate::conn_manager::ConnManager;
 
 pub struct ConnProxy {
     pub wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>,
-    hubproxy: Option<Arc<StdMutex<HubProxy>>>,
-    gateproxy: Option<Arc<StdMutex<GateProxy>>>,
-    msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>
+    hubproxy: Option<Arc<Mutex<HubProxy>>>,
+    gateproxy: Option<Arc<Mutex<GateProxy>>>,
+    msg_handle: Arc<Mutex<ConnCallbackMsgHandle>>
 }
 
 impl ConnProxy {
     pub fn new(
         _wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>,
-        _msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>) -> ConnProxy
+        _msg_handle: Arc<Mutex<ConnCallbackMsgHandle>>) -> ConnProxy
     {
         ConnProxy {
             wr: _wr,
@@ -48,22 +47,22 @@ impl ConnProxy {
         }
     }
 
-    pub fn get_msg_handle(&mut self) -> Arc<StdMutex<ConnCallbackMsgHandle>> {
+    pub fn get_msg_handle(&mut self) -> Arc<Mutex<ConnCallbackMsgHandle>> {
         self.msg_handle.clone()
     }
 }
 
 pub struct ConnEvent {
-    connproxy: Weak<StdMutex<ConnProxy>>,
+    connproxy: Weak<Mutex<ConnProxy>>,
     ev: HubService,
 }
 
 pub struct ConnCallbackMsgHandle {
-    pub redis_service: Option<Arc<StdMutex<RedisService>>>,
+    pub redis_service: Option<Arc<Mutex<RedisService>>>,
     hub_name: String,
-    hub_msg_handle: Arc<StdMutex<HubCallbackMsgHandle>>,
-    gate_msg_handle: Arc<StdMutex<GateCallbackMsgHandle>>,
-    conn_mgr: Arc<StdMutex<ConnManager>>,
+    hub_msg_handle: Arc<Mutex<HubCallbackMsgHandle>>,
+    gate_msg_handle: Arc<Mutex<GateCallbackMsgHandle>>,
+    conn_mgr: Arc<Mutex<ConnManager>>,
     close: Arc<Mutex<CloseHandle>>,
     queue: Queue<Box<ConnEvent>>
 }
@@ -80,12 +79,12 @@ fn deserialize(data: Vec<u8>) -> Result<HubService, Box<dyn std::error::Error>> 
 impl ConnCallbackMsgHandle {
     pub fn new(
         _hub_name: String,
-        _hub_msg_handle: Arc<StdMutex<HubCallbackMsgHandle>>,
-        _gate_msg_handle: Arc<StdMutex<GateCallbackMsgHandle>>,
-        _conn_mgr: Arc<StdMutex<ConnManager>>,
-        _close: Arc<Mutex<CloseHandle>>) -> Arc<StdMutex<ConnCallbackMsgHandle>> 
+        _hub_msg_handle: Arc<Mutex<HubCallbackMsgHandle>>,
+        _gate_msg_handle: Arc<Mutex<GateCallbackMsgHandle>>,
+        _conn_mgr: Arc<Mutex<ConnManager>>,
+        _close: Arc<Mutex<CloseHandle>>) -> Arc<Mutex<ConnCallbackMsgHandle>> 
     {
-        Arc::new(StdMutex::new(ConnCallbackMsgHandle {
+        Arc::new(Mutex::new(ConnCallbackMsgHandle {
             hub_name: _hub_name,
             hub_msg_handle: _hub_msg_handle,
             gate_msg_handle: _gate_msg_handle,
@@ -100,11 +99,11 @@ impl ConnCallbackMsgHandle {
         self.queue.enque(Box::new(ev))
     }
 
-    pub async fn on_event(_proxy: Arc<StdMutex<ConnProxy>>, data: Vec<u8>) {
+    pub async fn on_event(_proxy: Arc<Mutex<ConnProxy>>, data: Vec<u8>) {
         trace!("do_client_event begin!");
 
         let _proxy_clone = _proxy.clone();
-        let mut _p = _proxy.as_ref().lock().unwrap();
+        let mut _p = _proxy.as_ref().lock().await;
         let _ev = match deserialize(data) {
             Err(e) => {
                 error!("GateClientMsgHandle do_event err:{}", e);
@@ -113,15 +112,15 @@ impl ConnCallbackMsgHandle {
             Ok(d) => d
         };
         let _handle_arc = _p.get_msg_handle();
-        let mut _handle = _handle_arc.as_ref().lock().unwrap();
+        let mut _handle = _handle_arc.as_ref().lock().await;
         _handle.enque_event(ConnEvent{
             connproxy: Arc::downgrade(&_proxy_clone),
             ev: _ev
         })
     }
 
-    pub fn poll(_handle: Arc<StdMutex<ConnCallbackMsgHandle>>, py: Python<'_>, py_handle: Py<PyAny>) -> bool {
-        let mut _self = _handle.as_ref().lock().unwrap();
+    pub async fn poll(_handle: Arc<Mutex<ConnCallbackMsgHandle>>, py: Python<'_>, py_handle: Py<PyAny>) -> bool {
+        let mut _self = _handle.as_ref().lock().await;
         let opt_ev_data = _self.queue.deque();
         let ev_data = match opt_ev_data {
             None => return false,
@@ -133,27 +132,27 @@ impl ConnCallbackMsgHandle {
             HubService::RegServer(ev) => {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     {
-                        let mut _conn_proxy = conn_proxy.as_ref().lock().unwrap();
+                        let mut _conn_proxy = conn_proxy.as_ref().lock().await;
 
                         let hub_name = ev.name.clone().unwrap();
 
-                        let _proxy = Arc::new(StdMutex::new(
+                        let _proxy = Arc::new(Mutex::new(
                             HubProxy::new(_conn_proxy.wr.clone())
                         ));
 
-                        let mut _proxy_tmp = _proxy.as_ref().lock().unwrap();
+                        let mut _proxy_tmp = _proxy.as_ref().lock().await;
                         _proxy_tmp.hub_name = Some(hub_name.clone());
                         
-                        let mut _conn_mgr = _self.conn_mgr.as_ref().lock().unwrap();
+                        let mut _conn_mgr = _self.conn_mgr.as_ref().lock().await;
                         _conn_mgr.add_hub_proxy(hub_name.clone(), _proxy.clone());
                         _conn_proxy.hubproxy = Some(_proxy.clone());
 
                         let cb_msg = RegServerCallback::new(_self.hub_name.clone());
                         let msg = HubService::RegServerCallback(cb_msg);
-                        _proxy_tmp.send_hub_msg(msg);
+                        _proxy_tmp.send_hub_msg(msg).await;
                     }
                     
-                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().unwrap();
+                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().await;
                     _hub_msg_handle.do_reg_hub(py, py_handle, ev);
                 }
                 else {
@@ -161,28 +160,28 @@ impl ConnCallbackMsgHandle {
                 }
             },
             HubService::RegServerCallback(ev) => {
-                let mut _conn_mgr = _self.conn_mgr.as_ref().lock().unwrap();
+                let mut _conn_mgr = _self.conn_mgr.as_ref().lock().await;
                 let lock_key = create_lock_key(_self.hub_name.clone(), ev.name.clone().unwrap());
                 let value = _conn_mgr.remove_lock(lock_key.clone());
                 let _redis_service = _self.redis_service.clone().unwrap();
-                let mut _service = _redis_service.as_ref().lock().unwrap();
+                let mut _service = _redis_service.as_ref().lock().await;
                 let _ = _service.release_lock(lock_key, value);
             },
             HubService::QueryEntity(ev) => {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let mut hub_name: String = "".to_string();
                     {
-                        let mut _conn_proxy = conn_proxy.as_ref().lock().unwrap();
+                        let mut _conn_proxy = conn_proxy.as_ref().lock().await;
                         
                         if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
-                            let _proxy_tmp = _hub_proxy.as_ref().lock().unwrap();
+                            let _proxy_tmp = _hub_proxy.as_ref().lock().await;
                             hub_name = _proxy_tmp.hub_name.clone().unwrap();
                         }
                         else {
                             error!("HubService::QueryEntity! wrong msg handle!");
                         }
                     }
-                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().unwrap();
+                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().await;
                     _hub_msg_handle.do_query_service_entity(py, py_handle, hub_name, ev)
                 }
                 else {
@@ -193,17 +192,17 @@ impl ConnCallbackMsgHandle {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let mut hub_name: String = "".to_string();
                     {
-                        let mut _conn_proxy = conn_proxy.as_ref().lock().unwrap();
+                        let mut _conn_proxy = conn_proxy.as_ref().lock().await;
 
                         if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
-                            let _proxy_tmp = _hub_proxy.as_ref().lock().unwrap();
+                            let _proxy_tmp = _hub_proxy.as_ref().lock().await;
                             hub_name = _proxy_tmp.hub_name.clone().unwrap();
                         }
                         else {
                             error!("HubService::CreateServiceEntity! wrong msg handle!");
                         }
                     }
-                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().unwrap();
+                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().await;
                     _hub_msg_handle.do_create_service_entity(py, py_handle, hub_name, ev)
                 }
                 else {
@@ -214,18 +213,18 @@ impl ConnCallbackMsgHandle {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let mut hub_name: String = "".to_string();
                     {
-                        let mut _conn_proxy = conn_proxy.as_ref().lock().unwrap();
+                        let mut _conn_proxy = conn_proxy.as_ref().lock().await;
 
                         if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
-                            let _proxy_tmp = _hub_proxy.as_ref().lock().unwrap();
+                            let _proxy_tmp = _hub_proxy.as_ref().lock().await;
                             hub_name = _proxy_tmp.hub_name.clone().unwrap();
 
                             let _gate_name = ev.gate_name.clone().unwrap();
                             let _gate_host = ev.gate_host.clone().unwrap(); 
 
-                            let mut _conn_mgr = _self.conn_mgr.as_ref().lock().unwrap();
+                            let mut _conn_mgr = _self.conn_mgr.as_ref().lock().await;
                             let _redis_service = _self.redis_service.clone().unwrap();
-                            let mut _service = _redis_service.as_ref().lock().unwrap();
+                            let mut _service = _redis_service.as_ref().lock().await;
                             let _lock_key = create_lock_key(_gate_name.clone(), _conn_mgr.get_hub_name());
 
                             let _handle_clone = _handle.clone();
@@ -252,7 +251,7 @@ impl ConnCallbackMsgHandle {
                                             _gate_tmp.gate_name = Some(_gate_name);
                                             _gate_tmp.gate_host = Some(_gate_host);
 
-                                            let _gateproxy = Arc::new(StdMutex::new(_gate_tmp));
+                                            let _gateproxy = Arc::new(Mutex::new(_gate_tmp));
                                             _conn_mgr.add_gate_proxy(_gate_name_tmp, _gateproxy);
                                         }
                                     }
@@ -268,7 +267,7 @@ impl ConnCallbackMsgHandle {
                         }
                     }
 
-                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().unwrap();
+                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().await;
                     _hub_msg_handle.do_forward_client_request_service(py, py_handle, hub_name, ev)
                 }
                 else {
@@ -279,17 +278,17 @@ impl ConnCallbackMsgHandle {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let mut hub_name: String = "".to_string();
                     {
-                        let mut _conn_proxy = conn_proxy.as_ref().lock().unwrap();
+                        let mut _conn_proxy = conn_proxy.as_ref().lock().await;
 
                         if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
-                            let _proxy_tmp = _hub_proxy.as_ref().lock().unwrap();
+                            let _proxy_tmp = _hub_proxy.as_ref().lock().await;
                             hub_name = _proxy_tmp.hub_name.clone().unwrap();
                         }
                         else {
                             error!("HubService::HubCallHubRpc! wrong msg handle!");
                         }
                     }
-                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().unwrap();
+                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().await;
                     _hub_msg_handle.do_call_hub_rpc(py, py_handle, hub_name, ev)
                 }
                 else {
@@ -300,17 +299,17 @@ impl ConnCallbackMsgHandle {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let mut hub_name: String = "".to_string();
                     {
-                        let mut _conn_proxy = conn_proxy.as_ref().lock().unwrap();
+                        let mut _conn_proxy = conn_proxy.as_ref().lock().await;
 
                         if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
-                            let _proxy_tmp = _hub_proxy.as_ref().lock().unwrap();
+                            let _proxy_tmp = _hub_proxy.as_ref().lock().await;
                             hub_name = _proxy_tmp.hub_name.clone().unwrap();
                         }
                         else {
                             error!("HubService::HubCallRsp! wrong msg handle!");
                         }
                     }
-                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().unwrap();
+                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().await;
                     _hub_msg_handle.do_call_hub_rsp(py, py_handle, hub_name, ev)
                 }
                 else {
@@ -321,17 +320,17 @@ impl ConnCallbackMsgHandle {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let mut hub_name: String = "".to_string();
                     {
-                        let mut _conn_proxy = conn_proxy.as_ref().lock().unwrap();
+                        let mut _conn_proxy = conn_proxy.as_ref().lock().await;
                         
                         if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
-                            let _proxy_tmp = _hub_proxy.as_ref().lock().unwrap();
+                            let _proxy_tmp = _hub_proxy.as_ref().lock().await;
                             hub_name = _proxy_tmp.hub_name.clone().unwrap();
                         }
                         else {
                             error!("HubService::HubCallErr! wrong msg handle!");
                         }
                     }
-                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().unwrap();
+                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().await;
                     _hub_msg_handle.do_call_hub_err(py, py_handle, hub_name, ev)
                 }
                 else {
@@ -342,17 +341,17 @@ impl ConnCallbackMsgHandle {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let mut hub_name: String = "".to_string();
                     {
-                        let mut _conn_proxy = conn_proxy.as_ref().lock().unwrap();
+                        let mut _conn_proxy = conn_proxy.as_ref().lock().await;
 
                         if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
-                            let _proxy_tmp = _hub_proxy.as_ref().lock().unwrap();
+                            let _proxy_tmp = _hub_proxy.as_ref().lock().await;
                             hub_name = _proxy_tmp.hub_name.clone().unwrap();
                         }
                         else {
                             error!("HubService::HubCallNtf! wrong msg handle!");
                         }
                     }
-                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().unwrap();
+                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().await;
                     _hub_msg_handle.do_call_hub_ntf(py, py_handle, hub_name, ev)
                 }
                 else {
@@ -364,18 +363,18 @@ impl ConnCallbackMsgHandle {
             HubService::ClientRequestLogin(ev) => {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     {
-                        let mut _conn_proxy = conn_proxy.as_ref().lock().unwrap();
+                        let mut _conn_proxy = conn_proxy.as_ref().lock().await;
 
                         let _gate_name = ev.gate_name.clone().unwrap();
-                        let _proxy = Arc::new(StdMutex::new(
+                        let _proxy = Arc::new(Mutex::new(
                             GateProxy::new(_conn_proxy.wr.clone())
                         ));
 
-                        let mut _conn_mgr = _self.conn_mgr.as_ref().lock().unwrap();
+                        let mut _conn_mgr = _self.conn_mgr.as_ref().lock().await;
                         _conn_mgr.add_gate_proxy(_gate_name.clone(), _proxy.clone());
                         _conn_proxy.gateproxy = Some(_proxy.clone());
 
-                        let mut _proxy_tmp = _proxy.as_ref().lock().unwrap();
+                        let mut _proxy_tmp = _proxy.as_ref().lock().await;
                         _proxy_tmp.gate_name = Some(_gate_name.clone());
                         _proxy_tmp.gate_host = Some(ev.clone().gate_host.unwrap());
 
@@ -387,7 +386,7 @@ impl ConnCallbackMsgHandle {
                         });
                     }
 
-                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
+                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().await;
                     _gate_msg_handle.do_client_request_login(py, py_handle, ev);
                 }
                 else {
@@ -398,19 +397,19 @@ impl ConnCallbackMsgHandle {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let _ev_tmp = ev.clone();
                     {
-                        let mut _conn_proxy = conn_proxy.as_ref().lock().unwrap();
+                        let mut _conn_proxy = conn_proxy.as_ref().lock().await;
 
                         let _gate_name = ev.gate_name.clone().unwrap();
 
-                        let _proxy = Arc::new(StdMutex::new(
+                        let _proxy = Arc::new(Mutex::new(
                             GateProxy::new(_conn_proxy.wr.clone())
                         ));
-                        let mut _proxy_tmp = _proxy.as_ref().lock().unwrap();
+                        let mut _proxy_tmp = _proxy.as_ref().lock().await;
 
                         _proxy_tmp.gate_name = Some(_gate_name.clone());
                         _proxy_tmp.gate_host = ev.gate_host;
 
-                        let mut _conn_mgr = _self.conn_mgr.as_ref().lock().unwrap();
+                        let mut _conn_mgr = _self.conn_mgr.as_ref().lock().await;
                         _conn_mgr.add_gate_proxy(_gate_name.clone(), _proxy.clone());
                         _conn_proxy.gateproxy = Some(_proxy.clone());
 
@@ -422,7 +421,7 @@ impl ConnCallbackMsgHandle {
                         });
                     }
 
-                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
+                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().await;
                     _gate_msg_handle.do_client_request_reconnect(py, py_handle, _ev_tmp);
                 }
                 else {
@@ -433,17 +432,17 @@ impl ConnCallbackMsgHandle {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let mut gate_name: String = "".to_string();
                     {
-                        let mut _conn_proxy = conn_proxy.as_ref().lock().unwrap();
+                        let mut _conn_proxy = conn_proxy.as_ref().lock().await;
 
                         if let Some(_gate_proxy) = _conn_proxy.gateproxy.clone() {
-                            let mut _proxy_tmp = _gate_proxy.as_ref().lock().unwrap();
+                            let mut _proxy_tmp = _gate_proxy.as_ref().lock().await;
                             gate_name = _proxy_tmp.gate_name.clone().unwrap();
                         }
                         else {
                             error!("HubService::TransferMsgEnd! wrong msg handle!");
                         }
                     }
-                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
+                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().await;
                     _gate_msg_handle.do_transfer_msg_end(py, py_handle, gate_name, ev);
                 }
                 else {
@@ -451,24 +450,24 @@ impl ConnCallbackMsgHandle {
                 }
             },
             HubService::TransferEntityControl(ev) => {
-                let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
+                let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().await;
                 _gate_msg_handle.do_transfer_entity_control(py, py_handle, ev);
             }
             HubService::ClientDisconnnect(ev) => {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let mut gate_name: String = "".to_string();
                     {
-                        let mut _conn_proxy = conn_proxy.as_ref().lock().unwrap();
+                        let mut _conn_proxy = conn_proxy.as_ref().lock().await;
 
                         if let Some(_gate_proxy) = _conn_proxy.gateproxy.clone() {
-                            let _proxy_tmp = _gate_proxy.as_ref().lock().unwrap();
+                            let _proxy_tmp = _gate_proxy.as_ref().lock().await;
                             gate_name = _proxy_tmp.gate_name.clone().unwrap();
                         }
                         else {
                             error!("HubService::ClientDisconnnect! wrong msg handle!");
                         }
                     }
-                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
+                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().await;
                     _gate_msg_handle.do_client_disconnnect(py, py_handle, gate_name, ev);
                 }
                 else {
@@ -479,17 +478,17 @@ impl ConnCallbackMsgHandle {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let mut gate_name: String = "".to_string();
                     {
-                        let mut _conn_proxy = conn_proxy.as_ref().lock().unwrap();
+                        let mut _conn_proxy = conn_proxy.as_ref().lock().await;
 
                         if let Some(_gate_proxy) = _conn_proxy.gateproxy.clone() {
-                            let _proxy_tmp = _gate_proxy.as_ref().lock().unwrap();
+                            let _proxy_tmp = _gate_proxy.as_ref().lock().await;
                             gate_name = _proxy_tmp.gate_name.clone().unwrap();
                         }
                         else {
                             error!("HubService::ClientDisconnnect! wrong msg handle!");
                         }
                     }
-                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
+                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().await;
                     _gate_msg_handle.do_client_request_service(py, py_handle, gate_name, ev);
                 }
                 else {
@@ -500,17 +499,17 @@ impl ConnCallbackMsgHandle {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let mut gate_name: String = "".to_string();
                     {
-                        let mut _conn_proxy = conn_proxy.as_ref().lock().unwrap();
+                        let mut _conn_proxy = conn_proxy.as_ref().lock().await;
 
                         if let Some(_gate_proxy) = _conn_proxy.gateproxy.clone() {
-                            let _proxy_tmp = _gate_proxy.as_ref().lock().unwrap();
+                            let _proxy_tmp = _gate_proxy.as_ref().lock().await;
                             gate_name = _proxy_tmp.gate_name.clone().unwrap();
                         }
                         else {
                             error!("HubService::ClientCallRpc! wrong msg handle!")
                         }
                     }
-                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
+                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().await;
                     _gate_msg_handle.do_client_call_rpc(py, py_handle, gate_name, ev)
                 }
                 else {
@@ -521,17 +520,17 @@ impl ConnCallbackMsgHandle {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let mut gate_name: String = "".to_string();
                     {
-                        let mut _conn_proxy = conn_proxy.as_ref().lock().unwrap();
+                        let mut _conn_proxy = conn_proxy.as_ref().lock().await;
 
                         if let Some(_gate_proxy) = _conn_proxy.gateproxy.clone() {
-                            let _proxy_tmp = _gate_proxy.as_ref().lock().unwrap();
+                            let _proxy_tmp = _gate_proxy.as_ref().lock().await;
                             gate_name = _proxy_tmp.gate_name.clone().unwrap();
                         }
                         else {
                             error!("HubService::ClientCallRsp! wrong msg handle!")
                         }
                     }
-                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
+                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().await;
                     _gate_msg_handle.do_client_call_rsp(py, py_handle, gate_name, ev)
                 }
                 else {
@@ -542,17 +541,17 @@ impl ConnCallbackMsgHandle {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let mut gate_name: String = "".to_string();
                     {
-                        let mut _conn_proxy = conn_proxy.as_ref().lock().unwrap();
+                        let mut _conn_proxy = conn_proxy.as_ref().lock().await;
 
                         if let Some(_gate_proxy) = _conn_proxy.gateproxy.clone() {
-                            let _proxy_tmp = _gate_proxy.as_ref().lock().unwrap();
+                            let _proxy_tmp = _gate_proxy.as_ref().lock().await;
                             gate_name = _proxy_tmp.gate_name.clone().unwrap();
                         }
                         else {
                             error!("HubService::ClientCallErr! wrong msg handle!")
                         }
                     }
-                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
+                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().await;
                     _gate_msg_handle.do_client_call_err(py, py_handle, gate_name, ev)
                 }
                 else {
@@ -563,17 +562,17 @@ impl ConnCallbackMsgHandle {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let mut gate_name: String = "".to_string();
                     {
-                        let mut _conn_proxy = conn_proxy.as_ref().lock().unwrap();
+                        let mut _conn_proxy = conn_proxy.as_ref().lock().await;
 
                         if let Some(_gate_proxy) = _conn_proxy.gateproxy.clone() {
-                            let _proxy_tmp = _gate_proxy.as_ref().lock().unwrap();
+                            let _proxy_tmp = _gate_proxy.as_ref().lock().await;
                             gate_name = _proxy_tmp.gate_name.clone().unwrap();
                         }
                         else {
                             error!("HubService::ClientCallNtf! wrong msg handle!")
                         }
                     }
-                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
+                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().await;
                     _gate_msg_handle.do_client_call_ntf(py, py_handle, gate_name, ev)    
                 }
                 else {
@@ -587,7 +586,7 @@ impl ConnCallbackMsgHandle {
 }
 
 pub struct ConnProxyReaderCallback {
-    connproxy: Arc<StdMutex<ConnProxy>>
+    connproxy: Arc<Mutex<ConnProxy>>
 }
 
 #[async_trait]
@@ -598,7 +597,7 @@ impl NetReaderCallback for ConnProxyReaderCallback {
 }
 
 impl ConnProxyReaderCallback {
-    pub fn new(_connproxy: Arc<StdMutex<ConnProxy>>) -> ConnProxyReaderCallback {
+    pub fn new(_connproxy: Arc<Mutex<ConnProxy>>) -> ConnProxyReaderCallback {
         ConnProxyReaderCallback {
             connproxy: _connproxy
         }
@@ -606,7 +605,7 @@ impl ConnProxyReaderCallback {
 }
 
 pub struct ConnProxyManager {
-    conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>, 
+    conn_msg_handle: Arc<Mutex<ConnCallbackMsgHandle>>, 
     close_handle: Arc<Mutex<CloseHandle>>,
     join_list: Vec<JoinHandle<()>>
 }
@@ -614,7 +613,7 @@ pub struct ConnProxyManager {
 #[async_trait]
 impl RedisMQListenCallback for ConnProxyManager {
     async fn redis_mq_cb(&mut self, rd: Arc<Mutex<RedisMQReader>>, wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>){
-        let _connproxy = Arc::new(StdMutex::new(ConnProxy::new(wr, self.conn_msg_handle.clone())));
+        let _connproxy = Arc::new(Mutex::new(ConnProxy::new(wr, self.conn_msg_handle.clone())));
         let mut _rd_ref = rd.as_ref().lock().await;
         self.join_list.push(_rd_ref.start(Arc::new(Mutex::new(Box::new(ConnProxyReaderCallback::new(_connproxy)))), self.close_handle.clone()));
     }
@@ -624,13 +623,13 @@ impl RedisMQListenCallback for ConnProxyManager {
 impl TcpListenCallback for ConnProxyManager {
     async fn cb(&mut self, rd: TcpReader, wr: TcpWriter) {
         let _wr_arc: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>> = Arc::new(Mutex::new(Box::new(wr)));
-        let _connproxy = Arc::new(StdMutex::new(ConnProxy::new(_wr_arc, self.conn_msg_handle.clone())));
+        let _connproxy = Arc::new(Mutex::new(ConnProxy::new(_wr_arc, self.conn_msg_handle.clone())));
         self.join_list.push(rd.start(Arc::new(Mutex::new(Box::new(ConnProxyReaderCallback::new(_connproxy)))), self.close_handle.clone()));
     }
 }
 
 impl ConnProxyManager {
-    pub fn new_tcp_callback(_conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>, _close: Arc<Mutex<CloseHandle>>) 
+    pub fn new_tcp_callback(_conn_msg_handle: Arc<Mutex<ConnCallbackMsgHandle>>, _close: Arc<Mutex<CloseHandle>>) 
         -> Arc<Mutex<Box<dyn TcpListenCallback + Send + 'static>>> 
     {
         Arc::new(Mutex::new(Box::new(ConnProxyManager {
@@ -640,7 +639,7 @@ impl ConnProxyManager {
         })))
     }
 
-    pub fn new_redis_mq_callback(_conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>, _close: Arc<Mutex<CloseHandle>>) 
+    pub fn new_redis_mq_callback(_conn_msg_handle: Arc<Mutex<ConnCallbackMsgHandle>>, _close: Arc<Mutex<CloseHandle>>) 
         -> Arc<Mutex<Box<dyn RedisMQListenCallback + Send + 'static>>> 
     {
         Arc::new(Mutex::new(Box::new(ConnProxyManager {

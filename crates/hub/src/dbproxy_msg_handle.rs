@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
+use tokio::sync::Mutex;
 use tracing::{trace, error};
 
 use thrift::protocol::{TCompactInputProtocol, TSerializable};
@@ -20,7 +21,6 @@ use proto::hub::{
 };
 use queue::Queue;
 
-use crate::hub_server::StdMutex;
 use crate::dbproxy_manager::DBProxyProxy;
 
 pub struct DBCallbackMsgHandle {
@@ -37,8 +37,8 @@ fn deserialize(data: Vec<u8>) -> Result<DbCallback, Box<dyn std::error::Error>> 
 }
 
 impl DBCallbackMsgHandle {
-    pub fn new() -> Arc<StdMutex<DBCallbackMsgHandle>> {
-        Arc::new(StdMutex::new(DBCallbackMsgHandle {
+    pub fn new() -> Arc<Mutex<DBCallbackMsgHandle>> {
+        Arc::new(Mutex::new(DBCallbackMsgHandle {
             queue: Queue::new()
         }))
     }
@@ -47,13 +47,13 @@ impl DBCallbackMsgHandle {
         self.queue.enque(Box::new(ev))
     }
 
-    pub fn on_event(_proxy: Arc<StdMutex<DBProxyProxy>>, data: Vec<u8>) {
+    pub async fn on_event(_proxy: Arc<Mutex<DBProxyProxy>>, data: Vec<u8>) {
         trace!("DBCallbackMsgHandle on_event begin!");
 
         let _ev: DbCallback;
-        let _handle_arc: Arc<StdMutex<DBCallbackMsgHandle>>;
+        let _handle_arc: Arc<Mutex<DBCallbackMsgHandle>>;
         {
-            let mut _p = _proxy.as_ref().lock().unwrap();
+            let mut _p = _proxy.as_ref().lock().await;
             _ev = match deserialize(data) {
                 Err(e) => {
                     error!("GateClientMsgHandle do_event err:{}", e);
@@ -63,14 +63,14 @@ impl DBCallbackMsgHandle {
             };
             _handle_arc = _p.get_msg_handle();
         }
-        let mut _handle = _handle_arc.as_ref().lock().unwrap();
+        let mut _handle = _handle_arc.as_ref().lock().await;
         _handle.enque_event(_ev);
 
         trace!("DBCallbackMsgHandle on_event end!")
     }
 
-    pub fn poll(_handle: Arc<StdMutex<DBCallbackMsgHandle>>, py: Python<'_>, py_handle: Py<PyAny>) -> bool {
-        let mut _self = _handle.as_ref().lock().unwrap();
+    pub async fn poll(_handle: Arc<Mutex<DBCallbackMsgHandle>>, py: Python<'_>, py_handle: Py<PyAny>) -> bool {
+        let mut _self = _handle.as_ref().lock().await;
         let opt_ev_data = _self.queue.deque();
         let ev = match opt_ev_data {
             None => return false,

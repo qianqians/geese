@@ -1,6 +1,22 @@
 import sys
 from engine.engine import *
 from engine.login_svr import *
+from engine.update_rank_svr import *
+
+class RankSubEntity(subentity):
+    def __init__(self, source_hub_name: str, entity_type: str, entity_id: str) -> None:
+        super().__init__(source_hub_name, entity_type, entity_id)
+        self.update_rank_caller = update_rank_caller(self)
+
+    def call_update_rank(self, playerEntityId):
+        self.update_rank_caller.call_update_rank(playerEntityId)
+
+    def Creator(source_hub_name:str, entity_id:str, description: dict):
+        print(f"RankSubEntity Creator source_hub_name:{source_hub_name} entity_id:{entity_id}")
+        rankImpl = RankSubEntity(source_hub_name, entity_id, description)
+        return rankImpl
+
+rankImpl:RankSubEntity = None
 
 class SamplePlayer(player):
     def __init__(self, entity_id: str, gate_name: str, conn_id: str):
@@ -9,7 +25,10 @@ class SamplePlayer(player):
         
         self.login_module.on_login.append(lambda rsp, _sdk_uuid: self.login_callback(rsp, _sdk_uuid))
         
-    def info(self) -> dict:
+    def hub_info(self) -> dict:
+        return {}
+    
+    def client_info(self) -> dict:
         return {}
     
     def login_callback(self, rsp:login_login_rsp, _sdk_uuid:str):
@@ -59,6 +78,7 @@ class LoginEventHandle(login_event_handle):
             app().player_mgr.add_player(_p)
             print("LoginEventHandle on_login! create_main_remote_entity:{} begin!".format(_p))
             _p.create_main_remote_entity()
+            rankImpl.call_update_rank(_p.entity_id)
             print("LoginEventHandle on_login! create_main_remote_entity:{}".format(_p))
     
 class PlayerEventHandle(player_event_handle):
@@ -71,6 +91,8 @@ def main(cfg_file:str):
     _app.build_login_service(LoginEventHandle("sample", "account"))
     _app.build_player_service(PlayerEventHandle())
     _app.register_service("login")
+    _app.register("RankImpl", RankSubEntity.Creator)
+    _app.run_coroutine_async(query_service("Rank"))
     _app.run()
     
 if __name__ == '__main__':

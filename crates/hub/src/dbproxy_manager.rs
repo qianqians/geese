@@ -18,14 +18,13 @@ use proto::dbproxy::{
     RegHubEvent
 };
 
-use crate::hub_server::StdMutex;
 use crate::dbproxy_msg_handle::DBCallbackMsgHandle;
 use crate::conn_manager::ConnManager;
 
 pub async fn entry_dbproxy_service(
-    _dbproxy_msg_handle: Arc<StdMutex<DBCallbackMsgHandle>>, 
-    _conn_mgr: Arc<StdMutex<ConnManager>>,
-    _redis_mq_service: Arc<StdMutex<RedisService>>,
+    _dbproxy_msg_handle: Arc<Mutex<DBCallbackMsgHandle>>, 
+    _conn_mgr: Arc<Mutex<ConnManager>>,
+    _redis_mq_service: Arc<Mutex<RedisService>>,
     _consul_impl: Arc<Mutex<ConsulImpl>>,
     _close: Arc<Mutex<CloseHandle>>) -> String
 {
@@ -46,17 +45,17 @@ pub async fn entry_dbproxy_service(
             Some(s) => s
         };
         
-        let mut _conn_mgr_handle = _conn_mgr.as_ref().lock().unwrap();    
+        let mut _conn_mgr_handle = _conn_mgr.as_ref().lock().await;    
         if let Some(_dbproxy) = _conn_mgr_handle.get_dbproxy_proxy(&service.id) {
             trace!("entry_dbproxy_service dbproxy already exists name:{}", service.id.clone());
             return service.id.clone();
         }
         else {
-            let mut _service = _redis_mq_service.as_ref().lock().unwrap();
+            let mut _service = _redis_mq_service.as_ref().lock().await;
             if let Ok((rd, wr)) = 
                 _service.connect(create_channel_key(service.id.clone())).await 
             {
-                let _dbproxy = Arc::new(StdMutex::new(
+                let _dbproxy = Arc::new(Mutex::new(
                     DBProxyProxy::new(
                         service.id.clone(), 
                         wr.clone(), 
@@ -66,7 +65,7 @@ pub async fn entry_dbproxy_service(
                 let _ = _rd_ref.start(Arc::new(Mutex::new(Box::new(DBProxyReaderCallback::new(_dbproxy.clone())))), _close);
 
                 _conn_mgr_handle.add_dbproxy_proxy(_dbproxy.clone()).await;
-                let mut _db_send = _dbproxy.as_ref().lock().unwrap();
+                let mut _db_send = _dbproxy.as_ref().lock().await;
                 trace!("entry_dbproxy_service _db_send lock!");
                 _db_send.send_db_msg(DbEvent::RegHub(RegHubEvent::new(_conn_mgr_handle.get_hub_name()))).await;
                 trace!("entry_dbproxy_service send_db_msg done!");
@@ -86,11 +85,11 @@ pub async fn entry_dbproxy_service(
 pub struct DBProxyProxy {
     pub dbproxy_name: String,
     pub wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>,
-    msg_handle: Arc<StdMutex<DBCallbackMsgHandle>>
+    msg_handle: Arc<Mutex<DBCallbackMsgHandle>>
 }
 
 impl DBProxyProxy {
-    pub fn new(_name: String, _wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>, _handle: Arc<StdMutex<DBCallbackMsgHandle>>) -> DBProxyProxy {
+    pub fn new(_name: String, _wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>, _handle: Arc<Mutex<DBCallbackMsgHandle>>) -> DBProxyProxy {
         DBProxyProxy {
             dbproxy_name: _name,
             wr: _wr,
@@ -98,7 +97,7 @@ impl DBProxyProxy {
         }
     }
 
-    pub fn get_msg_handle(&mut self) -> Arc<StdMutex<DBCallbackMsgHandle>> {
+    pub fn get_msg_handle(&mut self) -> Arc<Mutex<DBCallbackMsgHandle>> {
         self.msg_handle.clone()
     }
 
@@ -121,18 +120,18 @@ impl DBProxyProxy {
 }
 
 pub struct DBProxyReaderCallback {
-    dbproxy: Arc<StdMutex<DBProxyProxy>>
+    dbproxy: Arc<Mutex<DBProxyProxy>>
 }
 
 #[async_trait]
 impl NetReaderCallback for DBProxyReaderCallback {
     async fn cb(&mut self, data:Vec<u8>) {
-        DBCallbackMsgHandle::on_event(self.dbproxy.clone(), data)
+        DBCallbackMsgHandle::on_event(self.dbproxy.clone(), data).await
     }
 }
 
 impl DBProxyReaderCallback {
-    pub fn new(_dbproxy: Arc<StdMutex<DBProxyProxy>>) -> DBProxyReaderCallback {
+    pub fn new(_dbproxy: Arc<Mutex<DBProxyProxy>>) -> DBProxyReaderCallback {
         DBProxyReaderCallback {
             dbproxy: _dbproxy
         }

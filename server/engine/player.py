@@ -29,17 +29,29 @@ class player(ABC, base_entity):
         app().player_mgr.add_player(self)
         
     @abstractmethod
-    def info(self) -> dict:
+    def hub_info(self) -> dict:
+        pass
+
+    @abstractmethod
+    def client_info(self) -> dict:
         pass
     
     def create_main_remote_entity(self):
         from app import app
-        app().ctx.hub_call_client_create_remote_entity(self.client_gate_name, [], self.client_conn_id, self.entity_id, self.entity_type, msgpack.dumps(self.info()))
+        app().ctx.hub_call_client_create_remote_entity(self.client_gate_name, [], self.client_conn_id, self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))
     
     def create_remote_entity(self, gate_name:str, conn_id:str):
+        if gate_name not in self.conn_client_gate:
+            self.conn_client_gate.append(gate_name)
         from app import app
-        app().ctx.hub_call_client_create_remote_entity(gate_name, [conn_id], None, self.entity_id, self.entity_type, msgpack.dumps(self.info()))
+        app().ctx.hub_call_client_create_remote_entity(gate_name, [conn_id], None, self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))
     
+    def create_remote_hub_entity(self, hub_name:str, service_name:str):
+        if hub_name not in self.conn_hub_server:
+            self.conn_hub_server.append(hub_name)
+        from app import app
+        app().ctx.create_service_entity(hub_name, service_name, self.entity_id, self.entity_type, self.hub_info())
+
     def handle_hub_request(self, source_hub:str, method:str, msg_cb_id:int, argvs:bytes):
         _call_handle = self.hub_request_callback[method]
         if _call_handle != None:

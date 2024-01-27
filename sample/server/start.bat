@@ -13,6 +13,10 @@ start gate.exe ../config/gate.cfg
 timeout /t 3
 
 cd ../src
+start python rank_app.py ../config/rank.cfg
+
+timeout /t 3
+
 start python app.py ../config/player.cfg
 
 cd ../

@@ -71,7 +71,7 @@ mod hub_service_manager;
 mod conn_manager;
 mod hub_server;
 
-use crate::hub_server::{HubServer, StdMutex};
+use crate::hub_server::HubServer;
 use crate::dbproxy_msg_handle::DBCallbackMsgHandle;
 use crate::hub_service_manager::ConnCallbackMsgHandle;
 
@@ -98,7 +98,7 @@ pub struct HubContext {
     _health_rt: tokio::runtime::Runtime,
     health_handle: Arc<Mutex<HealthHandle>>,
     consul_impl: Arc<Mutex<ConsulImpl>>,
-    server: Arc<StdMutex<HubServer>>
+    server: Arc<Mutex<HubServer>>
 }
 
 #[pymethods]
@@ -140,13 +140,13 @@ impl HubContext {
                 error!("Hub HubServer new faild {}!", e);
                 return Err(PyValueError::new_err("Hub HubServer new faild!"));
             },
-            Ok(_s) => Arc::new(StdMutex::new(_s))
+            Ok(_s) => Arc::new(Mutex::new(_s))
         };
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         let _s = server.clone();
         rt.block_on(async move {
-            let mut _s_handle = _s.as_ref().lock().unwrap();
+            let mut _s_handle = _s.as_ref().lock().await;
             _s_handle.listen_hub_service().await;
         });
         
@@ -175,8 +175,11 @@ impl HubContext {
         trace!("gate_host gate_name:{} begin!", gate_name);
 
         let _server = slf.server.clone();
-        let mut _server_handle = _server.as_ref().lock().unwrap();
-        _server_handle.gate_host(gate_name)
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+        _server_handle.gate_host(gate_name).await
+        })
     }
 
     pub fn log(_: PyRefMut<'_, Self>, level: String, content: String) {
@@ -233,32 +236,33 @@ impl HubContext {
         let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
         let _server = slf.server.clone();
         rt.block_on(async move {
-            let mut _server_handle = _server.as_ref().lock().unwrap();
+            let mut _server_handle = _server.as_ref().lock().await;
             let _dbproxy_id =  _server_handle.entry_dbproxy_service().await;
             _dbproxy_id.clone()
         })
     }
 
-    pub fn entry_hub_service(slf: PyRefMut<'_, Self>, service_name: String) -> String {
+    pub fn entry_hub_service(slf: PyRefMut<'_, Self>, service_name: String) -> PyResult<&PyAny> {
         trace!("entry_hub_service begin!");
 
-        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
         let _server = slf.server.clone();
-        rt.block_on(async move {
-            let mut _server_handle = _server.as_ref().lock().unwrap();
+        let py = slf.py();
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut _server_handle = _server.as_ref().lock().await;
             let _hub_id = _server_handle.entry_hub_service(service_name).await;
-            _hub_id.clone()
+            Ok(_hub_id.clone())
         })
     }
 
-    pub fn entry_direct_hub_server(slf: PyRefMut<'_, Self>, hub_name: String) {
+    pub fn entry_direct_hub_server(slf: PyRefMut<'_, Self>, hub_name: String) -> PyResult<&PyAny> {
         trace!("entry_direct_hub_server begin!");
 
-        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
         let _server = slf.server.clone();
-        rt.block_on(async move {
-            let mut _server_handle = _server.as_ref().lock().unwrap();
-            _server_handle.entry_direct_hub_server(hub_name).await
+        let py = slf.py();
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.entry_direct_hub_server(hub_name).await;
+            Ok(())
         })
     }
 
@@ -266,18 +270,21 @@ impl HubContext {
         trace!("check_connect_hub_server begin!");
 
         let _server = slf.server.clone();
-        let mut _server_handle = _server.as_ref().lock().unwrap();
-        _server_handle.check_connect_hub_server(hub_name)
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.check_connect_hub_server(hub_name).await
+        })
     }
 
-    pub fn entry_gate_service(slf: PyRefMut<'_, Self>, gate_name: String) {
+    pub fn entry_gate_service(slf: PyRefMut<'_, Self>, gate_name: String) -> PyResult<&PyAny> {
         trace!("entry_gate_service begin!");
 
-        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-        let _server = slf.server.clone();
-        rt.block_on(async move {
-            let mut _server_handle = _server.as_ref().lock().unwrap();
-            _server_handle.entry_gate_service(gate_name).await
+        let _server = slf.server.clone();let py = slf.py();
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.entry_gate_service(gate_name).await;
+            Ok(())
         })
     }
 
@@ -287,7 +294,7 @@ impl HubContext {
         let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
         let _server = slf.server.clone();
         rt.block_on(async move {
-            let mut _server_handle = _server.as_ref().lock().unwrap();
+            let mut _server_handle = _server.as_ref().lock().await;
             _server_handle.flush_hub_host_cache().await
         })
     }
@@ -298,16 +305,22 @@ impl HubContext {
         let _server = slf.server.clone();
         let _self_name = slf.hub_name.clone();
 
-        let mut _server_handle = _server.as_ref().lock().unwrap();
-        _server_handle.send_hub_msg(hub_name, HubService::RegServer(RegServer::new(_self_name)))
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.send_hub_msg(hub_name, HubService::RegServer(RegServer::new(_self_name))).await
+        })
     }
 
     pub fn query_service(slf: PyRefMut<'_, Self>, hub_name: String, service_name: String) -> bool {
         trace!("query_service begin!");
 
         let _server = slf.server.clone();
-        let mut _server_handle = _server.as_ref().lock().unwrap();
-        _server_handle.send_hub_msg(hub_name, HubService::QueryEntity(QueryServiceEntity::new(service_name)))
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.send_hub_msg(hub_name, HubService::QueryEntity(QueryServiceEntity::new(service_name))).await
+        })
     }
 
     pub fn create_service_entity(
@@ -321,8 +334,11 @@ impl HubContext {
         trace!("create_service_entity begin!");
 
         let _server = slf.server.clone();
-        let mut _server_handle = _server.as_ref().lock().unwrap();
-        _server_handle.send_hub_msg(hub_name, HubService::CreateServiceEntity(CreateServiceEntity::new(service_name, entity_id, entity_type, argvs)))
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.send_hub_msg(hub_name, HubService::CreateServiceEntity(CreateServiceEntity::new(service_name, entity_id, entity_type, argvs))).await
+        })
     }
 
     pub fn forward_client_request_service(
@@ -336,8 +352,12 @@ impl HubContext {
         trace!("forward_client_request_service begin!");
 
         let _server = slf.server.clone();
-        let mut _server_handle = _server.as_ref().lock().unwrap();
-        _server_handle.send_hub_msg(hub_name, HubService::HubForwardClientRequestService(HubForwardClientRequestService::new(service_name, gate_name, gate_host, conn_id)))
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+        _server_handle.send_hub_msg(hub_name, 
+            HubService::HubForwardClientRequestService(HubForwardClientRequestService::new(service_name, gate_name, gate_host, conn_id))).await
+        })
     }
 
     pub fn hub_call_hub_rpc(
@@ -351,13 +371,14 @@ impl HubContext {
         trace!("hub_call_hub_rpc begin!");
 
         let _server = slf.server.clone();
-        let mut _server_handle = _server.as_ref().lock().unwrap();
-        _server_handle.send_hub_msg(
-            hub_name, 
-            HubService::HubCallRpc(
-                HubCallHubRpc::new(entity_id, msg_cb_id, Msg::new(method, argvs))
-            )
-        )
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.send_hub_msg(
+                hub_name, 
+                HubService::HubCallRpc(
+                    HubCallHubRpc::new(entity_id, msg_cb_id, Msg::new(method, argvs)))).await
+        })
     }
 
     pub fn hub_call_hub_rsp(
@@ -370,13 +391,14 @@ impl HubContext {
         trace!("hub_call_hub_rsp begin!");
 
         let _server = slf.server.clone();
-        let mut _server_handle = _server.as_ref().lock().unwrap();
-        _server_handle.send_hub_msg(
-            hub_name, 
-            HubService::HubCallRsp(
-                HubCallHubRsp::new(RpcRsp::new(entity_id, msg_cb_id, argvs))
-            )
-        )
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.send_hub_msg(
+                hub_name, 
+                HubService::HubCallRsp(
+                    HubCallHubRsp::new(RpcRsp::new(entity_id, msg_cb_id, argvs)))).await
+        })
     }
 
     pub fn hub_call_hub_err(
@@ -389,13 +411,14 @@ impl HubContext {
         trace!("hub_call_hub_err begin!");
 
         let _server = slf.server.clone();
-        let mut _server_handle = _server.as_ref().lock().unwrap();
-        _server_handle.send_hub_msg(
-            hub_name, 
-            HubService::HubCallErr(
-                HubCallHubErr::new(RpcErr::new(entity_id, msg_cb_id, argvs))
-            )
-        )
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.send_hub_msg(
+                hub_name, 
+                HubService::HubCallErr(
+                    HubCallHubErr::new(RpcErr::new(entity_id, msg_cb_id, argvs)))).await
+        })
     }
 
     pub fn hub_call_hub_ntf(
@@ -408,13 +431,14 @@ impl HubContext {
         trace!("hub_call_hub_ntf begin!");
 
         let _server = slf.server.clone();
-        let mut _server_handle = _server.as_ref().lock().unwrap();
-        _server_handle.send_hub_msg(
-            hub_name, 
-            HubService::HubCallNtf(
-                HubCallHubNtf::new(entity_id, Msg::new(method, argvs))
-            )
-        )
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.send_hub_msg(
+                hub_name, 
+                HubService::HubCallNtf(
+                    HubCallHubNtf::new(entity_id, Msg::new(method, argvs)))).await
+        })
     }
 
     pub fn hub_call_client_create_remote_entity(
@@ -433,13 +457,11 @@ impl HubContext {
 
         let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
-            let mut _server_handle = _server.as_ref().lock().unwrap();
+            let mut _server_handle = _server.as_ref().lock().await;
             _server_handle.send_gate_msg(
                 gate_name, 
                 GateHubService::CreateRemoteEntity(
-                    HubCallClientCreateRemoteEntity::new(conn_id, main_conn_id, entity_id, entity_type, argvs)
-                )
-            ).await
+                    HubCallClientCreateRemoteEntity::new(conn_id, main_conn_id, entity_id, entity_type, argvs))).await
         })
     }
 
@@ -451,13 +473,11 @@ impl HubContext {
 
         let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
-            let mut _server_handle = _server.as_ref().lock().unwrap();
+            let mut _server_handle = _server.as_ref().lock().await;
             _server_handle.send_gate_msg(
                 gate_name, 
                 GateHubService::DeleteRemoteEntity(
-                    HubCallClientDeleteRemoteEntity::new(entity_id)
-                )
-            ).await
+                    HubCallClientDeleteRemoteEntity::new(entity_id))).await
         })
     }
 
@@ -476,13 +496,11 @@ impl HubContext {
 
         let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
-            let mut _server_handle = _server.as_ref().lock().unwrap();
+            let mut _server_handle = _server.as_ref().lock().await;
             _server_handle.send_gate_msg(
                 gate_name, 
                 GateHubService::RefreshEntity(
-                    HubCallClientRefreshEntity::new(conn_id, is_main, entity_id, entity_type, argvs)
-                )
-            ).await
+                    HubCallClientRefreshEntity::new(conn_id, is_main, entity_id, entity_type, argvs))).await
         })
     }
 
@@ -501,13 +519,11 @@ impl HubContext {
 
         let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
-            let mut _server_handle = _server.as_ref().lock().unwrap();
+            let mut _server_handle = _server.as_ref().lock().await;
             _server_handle.send_gate_msg(
                 gate_name, 
                 GateHubService::CallRpc(
-                    HubCallClientRpc::new(entity_id, msg_cb_id, Msg::new(method, argvs))
-                )
-            ).await
+                    HubCallClientRpc::new(entity_id, msg_cb_id, Msg::new(method, argvs)))).await
         })
     }
 
@@ -526,13 +542,11 @@ impl HubContext {
 
         let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
-            let mut _server_handle = _server.as_ref().lock().unwrap();
+            let mut _server_handle = _server.as_ref().lock().await;
             _server_handle.send_gate_msg(
                 gate_name, 
                 GateHubService::CallRsp(
-                    HubCallClientRsp::new(conn_id, RpcRsp::new(entity_id, msg_cb_id, argvs))
-                )
-            ).await
+                    HubCallClientRsp::new(conn_id, RpcRsp::new(entity_id, msg_cb_id, argvs)))).await
         })
     }
 
@@ -551,13 +565,11 @@ impl HubContext {
 
         let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
-            let mut _server_handle = _server.as_ref().lock().unwrap();
+            let mut _server_handle = _server.as_ref().lock().await;
             _server_handle.send_gate_msg(
                 gate_name, 
                 GateHubService::CallErr(
-                    HubCallClientErr::new(conn_id, RpcErr::new(entity_id, msg_cb_id, argvs))
-                )
-            ).await
+                    HubCallClientErr::new(conn_id, RpcErr::new(entity_id, msg_cb_id, argvs)))).await
         })
     }
 
@@ -576,13 +588,11 @@ impl HubContext {
 
         let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
-            let mut _server_handle = _server.as_ref().lock().unwrap();
+            let mut _server_handle = _server.as_ref().lock().await;
             _server_handle.send_gate_msg(
                 gate_name, 
                 GateHubService::CallNtf(
-                    HubCallClientNtf::new(conn_id, entity_id, Msg::new(method, argvs))
-                )
-            ).await
+                    HubCallClientNtf::new(conn_id, entity_id, Msg::new(method, argvs)))).await
         })
     }
 
@@ -594,13 +604,11 @@ impl HubContext {
 
         let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
-            let mut _server_handle = _server.as_ref().lock().unwrap();
+            let mut _server_handle = _server.as_ref().lock().await;
             _server_handle.send_gate_msg(
                 gate_name, 
                 GateHubService::CallGlobal(
-                    HubCallClientGlobal::new(Msg::new(method, argvs))
-                )
-            ).await
+                    HubCallClientGlobal::new(Msg::new(method, argvs)))).await
         })
     }
 
@@ -612,13 +620,11 @@ impl HubContext {
 
         let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
-            let mut _server_handle = _server.as_ref().lock().unwrap();
+            let mut _server_handle = _server.as_ref().lock().await;
             _server_handle.send_gate_msg(
                 old_gate_name, 
                 GateHubService::KickOff(
-                    HubCallKickOffClient::new(old_conn_id, prompt_info, new_gate_name, new_conn_id, is_replace)
-                )
-            ).await
+                    HubCallKickOffClient::new(old_conn_id, prompt_info, new_gate_name, new_conn_id, is_replace))).await
         })
     }
 
@@ -630,13 +636,11 @@ impl HubContext {
 
         let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
-            let mut _server_handle = _server.as_ref().lock().unwrap();
+            let mut _server_handle = _server.as_ref().lock().await;
             _server_handle.send_gate_msg(
                 gate_name, 
                 GateHubService::TransferComplete(
-                    HubCallTransferClientComplete::new(conn_id)
-                )
-            ).await
+                    HubCallTransferClientComplete::new(conn_id))).await
         })
     }
 
@@ -648,13 +652,11 @@ impl HubContext {
 
         let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
-            let mut _server_handle = _server.as_ref().lock().unwrap();
+            let mut _server_handle = _server.as_ref().lock().await;
             _server_handle.send_gate_msg(
                 gate_name, 
                 GateHubService::KickOffComplete(
-                    HubCallKickOffClientComplete::new(conn_id)
-                )
-            ).await
+                    HubCallKickOffClientComplete::new(conn_id))).await
         })
     }
 
@@ -668,17 +670,14 @@ impl HubContext {
         trace!("get_guid begin!");
 
         let _server = slf.server.clone();
-        let mut _server_handle = _server.as_ref().lock().unwrap();
-        trace!("get_guid _server_handle lock!");
-        let success = _server_handle.send_db_msg(
-            dbproxy_name.clone(), 
-            DbEvent::GetGuid(
-                GetGuidEvent::new(db, collection, callback_id)
-            )
-        );
-
-        trace!("get_guid end!");
-        return success;
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            trace!("get_guid _server_handle lock!");
+            _server_handle.send_db_msg(
+                dbproxy_name.clone(), 
+                DbEvent::GetGuid(GetGuidEvent::new(db, collection, callback_id))).await
+        })
     }
 
     pub fn create_object(
@@ -692,16 +691,13 @@ impl HubContext {
         trace!("create_object begin!");
 
         let _server = slf.server.clone();
-        let mut _server_handle = _server.as_ref().lock().unwrap();
-        let success = _server_handle.send_db_msg(
-            dbproxy_name, 
-            DbEvent::CreateObject(
-                CreateObjectEvent::new(db, collection, callback_id, object_info)
-            )
-        );
-
-        trace!("create_object end!");
-        return success;
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.send_db_msg(
+                dbproxy_name, 
+                DbEvent::CreateObject(CreateObjectEvent::new(db, collection, callback_id, object_info))).await
+        })
     }
 
     pub fn update_object(
@@ -717,16 +713,13 @@ impl HubContext {
         trace!("update_object begin!");
 
         let _server = slf.server.clone();
-        let mut _server_handle = _server.as_ref().lock().unwrap();
-        let success = _server_handle.send_db_msg(
-            dbproxy_name, 
-            DbEvent::UpdateObject(
-                UpdateObjectEvent::new(db, collection, callback_id, query_info, updata_info, _upsert)
-            )
-        );
-
-        trace!("update_object end!");
-        return success;
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.send_db_msg(
+                dbproxy_name, 
+                DbEvent::UpdateObject(UpdateObjectEvent::new(db, collection, callback_id, query_info, updata_info, _upsert))).await
+        })
     }
 
     pub fn find_and_modify(
@@ -743,16 +736,13 @@ impl HubContext {
         trace!("find_and_modify begin!");
 
         let _server = slf.server.clone();
-        let mut _server_handle = _server.as_ref().lock().unwrap();
-        let success = _server_handle.send_db_msg(
-            dbproxy_name, 
-            DbEvent::FindAndModify(
-                FindAndModifyEvent::new(db, collection, callback_id, query_info, updata_info, _new, _upsert)
-            )
-        );
-
-        trace!("find_and_modify end!");
-        return success;
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.send_db_msg(
+                dbproxy_name, 
+                DbEvent::FindAndModify(FindAndModifyEvent::new(db, collection, callback_id, query_info, updata_info, _new, _upsert))).await
+        })
     }
 
     pub fn remove_object(
@@ -766,16 +756,13 @@ impl HubContext {
         trace!("remove_object begin!");
 
         let _server = slf.server.clone();
-        let mut _server_handle = _server.as_ref().lock().unwrap();
-        let success = _server_handle.send_db_msg(
-            dbproxy_name, 
-            DbEvent::RemoveObject(
-                RemoveObjectEvent::new(db, collection, callback_id, query_info)
-            )
-        );
-
-        trace!("remove_object end!");
-        return success;
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.send_db_msg(
+                dbproxy_name, 
+                DbEvent::RemoveObject(RemoveObjectEvent::new(db, collection, callback_id, query_info))).await
+        })
     }
 
     pub fn get_object_info(
@@ -793,16 +780,13 @@ impl HubContext {
         trace!("get_object_info begin!");
 
         let _server = slf.server.clone();
-        let mut _server_handle = _server.as_ref().lock().unwrap();
-        let success = _server_handle.send_db_msg(
-            dbproxy_name, 
-            DbEvent::GetObjectInfo(
-                GetObjectInfoEvent::new(db, collection, callback_id, query_info, skip, limit, sort, ascending)
-            )
-        );
-
-        trace!("get_object_info end!");
-        return success;
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.send_db_msg(
+                dbproxy_name, 
+                DbEvent::GetObjectInfo(GetObjectInfoEvent::new(db, collection, callback_id, query_info, skip, limit, sort, ascending))).await
+        })
     }
 
     pub fn get_object_one(
@@ -816,16 +800,13 @@ impl HubContext {
         trace!("get_object_one begin!");
 
         let _server = slf.server.clone();
-        let mut _server_handle = _server.as_ref().lock().unwrap();
-        let success = _server_handle.send_db_msg(
-            dbproxy_name.clone(), 
-            DbEvent::GetObjectInfo(
-                GetObjectInfoEvent::new(db, collection, callback_id, query_info, 0, 100, "".to_string(), false)
-            )
-        );
-
-        trace!("get_object_one end!");
-        return success;
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.send_db_msg(
+                dbproxy_name.clone(), 
+                DbEvent::GetObjectInfo(GetObjectInfoEvent::new(db, collection, callback_id, query_info, 0, 100, "".to_string(), false))).await
+        })
     }
 
     pub fn get_object_count(
@@ -839,29 +820,26 @@ impl HubContext {
         trace!("get_object_count begin!");
 
         let _server = slf.server.clone();
-        let mut _server_handle = _server.as_ref().lock().unwrap();
-        let success = _server_handle.send_db_msg(
-            dbproxy_name, 
-            DbEvent::GetObjectCount(
-                GetObjectCountEvent::new(db, collection, callback_id, query_info)
-            )
-        );
-
-        trace!("get_object_count end!");
-        return success;
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.send_db_msg(
+                dbproxy_name, 
+                DbEvent::GetObjectCount(GetObjectCountEvent::new(db, collection, callback_id, query_info))).await
+        })
     }
 }
 
 #[pyclass]
 pub struct HubConnMsgPump {
-    conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>,
+    conn_msg_handle: Arc<Mutex<ConnCallbackMsgHandle>>,
 }
 
 #[pymethods]
 impl HubConnMsgPump {
     #[new]
     pub fn new(ctx: PyRefMut<HubContext>) -> PyResult<Self> {
-        let _server_handle = ctx.server.as_ref().lock().unwrap();
+        let _server_handle = ctx.server.as_ref().blocking_lock();
 
         Ok(HubConnMsgPump{
             conn_msg_handle: _server_handle.get_conn_msg_handle()
@@ -871,20 +849,23 @@ impl HubConnMsgPump {
     pub fn poll_conn_msg<'a>(slf: PyRefMut<'a, Self>, py_handle: &'a PyAny) -> bool {
         let py = slf.py();
         let _py_handle = py_handle.into_py(py);
-        ConnCallbackMsgHandle::poll(slf.conn_msg_handle.clone(), py, _py_handle)
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            ConnCallbackMsgHandle::poll(slf.conn_msg_handle.clone(), py, _py_handle).await
+        })
     }
 }
 
 #[pyclass]
 pub struct HubDBMsgPump {
-    db_msg_handle: Arc<StdMutex<DBCallbackMsgHandle>>,
+    db_msg_handle: Arc<Mutex<DBCallbackMsgHandle>>,
 }
 
 #[pymethods]
 impl HubDBMsgPump {
     #[new]
     pub fn new(ctx: PyRefMut<HubContext>) -> PyResult<Self> {
-        let _server_handle = ctx.server.as_ref().lock().unwrap();
+        let _server_handle = ctx.server.as_ref().blocking_lock();
 
         Ok(HubDBMsgPump{
             db_msg_handle: _server_handle.get_db_msg_handle()
@@ -894,6 +875,9 @@ impl HubDBMsgPump {
     pub fn poll_db_msg<'a>(slf: PyRefMut<'a, Self>, py_handle: &'a PyAny) -> bool {
         let py = slf.py();
         let _py_handle = py_handle.into_py(py);
-        DBCallbackMsgHandle::poll(slf.db_msg_handle.clone(), py, _py_handle)
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            DBCallbackMsgHandle::poll(slf.db_msg_handle.clone(), py, _py_handle).await
+        })
     }
 }
