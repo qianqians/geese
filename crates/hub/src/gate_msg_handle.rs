@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
-use tokio::sync::Mutex;
 use tracing::{trace, error};
 
 // gate msg
@@ -19,12 +18,14 @@ use proto::hub::{
     ClientCallNtf,
 };
 
+use crate::hub_service_manager::StdMutex;
+
 pub struct GateCallbackMsgHandle {
 }
 
 impl GateCallbackMsgHandle {
-    pub fn new() -> Arc<Mutex<GateCallbackMsgHandle>> {
-        Arc::new(Mutex::new(GateCallbackMsgHandle{}))
+    pub fn new() -> Arc<StdMutex<GateCallbackMsgHandle>> {
+        Arc::new(StdMutex::new(GateCallbackMsgHandle{}))
     }
 
     pub fn do_client_request_login(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: ClientRequestLogin) {
