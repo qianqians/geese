@@ -15,12 +15,12 @@ use consul::ConsulImpl;
 use proto::common::RegServer;
 use proto::hub::HubService;
 
-use crate::hub_service_manager::ConnCallbackMsgHandle;
+use crate::hub_service_manager::{ConnCallbackMsgHandle, StdMutex};
 use crate::conn_manager::ConnManager;
 
 pub async fn entry_direct_hub_server(
     _hub_name: String,
-    _conn_msg_handle: Arc<Mutex<ConnCallbackMsgHandle>>, 
+    _conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>, 
     _conn_mgr: Arc<Mutex<ConnManager>>,
     _redis_mq_service: Arc<Mutex<RedisService>>,
     _close: Arc<Mutex<CloseHandle>>)
@@ -68,7 +68,7 @@ pub async fn entry_direct_hub_server(
 
 pub async fn entry_hub_service(
     _service: String,
-    _conn_msg_handle: Arc<Mutex<ConnCallbackMsgHandle>>, 
+    _conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>, 
     _conn_mgr: Arc<Mutex<ConnManager>>,
     _redis_mq_service: Arc<Mutex<RedisService>>,
     _consul_impl: Arc<Mutex<ConsulImpl>>,

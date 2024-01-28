@@ -73,7 +73,7 @@ mod hub_server;
 
 use crate::hub_server::HubServer;
 use crate::dbproxy_msg_handle::DBCallbackMsgHandle;
-use crate::hub_service_manager::ConnCallbackMsgHandle;
+use crate::hub_service_manager::{ConnCallbackMsgHandle, StdMutex};
 
 #[derive(Deserialize, Serialize, Debug)]
 struct HubCfg {
@@ -832,7 +832,7 @@ impl HubContext {
 
 #[pyclass]
 pub struct HubConnMsgPump {
-    conn_msg_handle: Arc<Mutex<ConnCallbackMsgHandle>>,
+    conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>,
 }
 
 #[pymethods]
@@ -849,16 +849,13 @@ impl HubConnMsgPump {
     pub fn poll_conn_msg<'a>(slf: PyRefMut<'a, Self>, py_handle: &'a PyAny) -> bool {
         let py = slf.py();
         let _py_handle = py_handle.into_py(py);
-        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async move {
-            ConnCallbackMsgHandle::poll(slf.conn_msg_handle.clone(), py, _py_handle).await
-        })
+        ConnCallbackMsgHandle::poll(slf.conn_msg_handle.clone(), py, _py_handle)
     }
 }
 
 #[pyclass]
 pub struct HubDBMsgPump {
-    db_msg_handle: Arc<Mutex<DBCallbackMsgHandle>>,
+    db_msg_handle: Arc<StdMutex<DBCallbackMsgHandle>>,
 }
 
 #[pymethods]
@@ -875,9 +872,6 @@ impl HubDBMsgPump {
     pub fn poll_db_msg<'a>(slf: PyRefMut<'a, Self>, py_handle: &'a PyAny) -> bool {
         let py = slf.py();
         let _py_handle = py_handle.into_py(py);
-        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async move {
-            DBCallbackMsgHandle::poll(slf.db_msg_handle.clone(), py, _py_handle).await
-        })
+        DBCallbackMsgHandle::poll(slf.db_msg_handle.clone(), py, _py_handle)
     }
 }
