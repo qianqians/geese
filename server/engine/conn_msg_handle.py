@@ -68,6 +68,9 @@ class conn_msg_handle(object):
             return
         app().ctx.log("error", "unhandle client notify method:{} entity:{}, ".format(method, entity_id))
 
+    def on_rge_hub(self, hub_name):
+        print(f"on_rge_hub hub_name:{hub_name}")
+
     def on_query_service_entity(self, hub_name:str, service_name:str):
         from app import app
         _service = app().service_mgr.get_service(service_name)
