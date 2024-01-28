@@ -38,7 +38,7 @@ class entity(ABC, base_entity):
         if hub_name not in self.conn_hub_server:
             self.conn_hub_server.append(hub_name)
         from app import app
-        app().ctx.create_service_entity(hub_name, service_name, self.entity_id, self.entity_type, self.hub_info())
+        app().ctx.create_service_entity(hub_name, service_name, self.entity_id, msgpack.dumps(self.entity_type, self.hub_info()))
 
     def handle_hub_request(self, source_hub:str, method:str, msg_cb_id:int, argvs:bytes):
         _call_handle = self.hub_request_callback[method]
