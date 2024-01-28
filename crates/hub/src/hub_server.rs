@@ -17,7 +17,7 @@ use crate::gate_proxy_manager::GateProxy;
 use crate::hub_msg_handle::HubCallbackMsgHandle;
 use crate::gate_msg_handle::GateCallbackMsgHandle;
 use crate::conn_manager::ConnManager;
-use crate::hub_service_manager::{ConnProxyManager, ConnCallbackMsgHandle};
+use crate::hub_service_manager::{ConnProxyManager, ConnCallbackMsgHandle, StdMutex};
 use crate::dbproxy_msg_handle::DBCallbackMsgHandle;
 use crate::dbproxy_manager::{DBProxyProxy, entry_dbproxy_service};
 use crate::hub_proxy_manager::{entry_direct_hub_server, entry_hub_service};
@@ -29,8 +29,8 @@ pub struct HubServer {
     hub_redis_service: Option<Arc<Mutex<RedisService>>>,
     hub_tcp_server: Option<TcpServer>,
     conn_mgr: Arc<Mutex<ConnManager>>,
-    db_msg_handle: Arc<Mutex<DBCallbackMsgHandle>>,
-    conn_msg_handle: Arc<Mutex<ConnCallbackMsgHandle>>,
+    db_msg_handle: Arc<StdMutex<DBCallbackMsgHandle>>,
+    conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>,
     consul_impl: Arc<Mutex<ConsulImpl>>,
     close: Arc<Mutex<CloseHandle>>
 }
@@ -112,7 +112,7 @@ impl HubServer {
             Ok(s) => Some(Arc::new(Mutex::new(s)))
         };
         {
-            let mut _conn_msg_handle_ref = self.conn_msg_handle.as_ref().lock().await;
+            let mut _conn_msg_handle_ref = self.conn_msg_handle.as_ref().lock().unwrap();
             _conn_msg_handle_ref.redis_service = self.hub_redis_service.clone();
         }
 
@@ -226,11 +226,11 @@ impl HubServer {
         }
     }
 
-    pub fn get_db_msg_handle(&self) -> Arc<Mutex<DBCallbackMsgHandle>> {
+    pub fn get_db_msg_handle(&self) -> Arc<StdMutex<DBCallbackMsgHandle>> {
         self.db_msg_handle.clone()
     }
 
-    pub fn get_conn_msg_handle(&self) -> Arc<Mutex<ConnCallbackMsgHandle>> {
+    pub fn get_conn_msg_handle(&self) -> Arc<StdMutex<ConnCallbackMsgHandle>> {
         self.conn_msg_handle.clone()
     }
 

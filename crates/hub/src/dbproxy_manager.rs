@@ -18,11 +18,12 @@ use proto::dbproxy::{
     RegHubEvent
 };
 
+use crate::hub_service_manager::StdMutex;
 use crate::dbproxy_msg_handle::DBCallbackMsgHandle;
 use crate::conn_manager::ConnManager;
 
 pub async fn entry_dbproxy_service(
-    _dbproxy_msg_handle: Arc<Mutex<DBCallbackMsgHandle>>, 
+    _dbproxy_msg_handle: Arc<StdMutex<DBCallbackMsgHandle>>, 
     _conn_mgr: Arc<Mutex<ConnManager>>,
     _redis_mq_service: Arc<Mutex<RedisService>>,
     _consul_impl: Arc<Mutex<ConsulImpl>>,
@@ -85,11 +86,11 @@ pub async fn entry_dbproxy_service(
 pub struct DBProxyProxy {
     pub dbproxy_name: String,
     pub wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>,
-    msg_handle: Arc<Mutex<DBCallbackMsgHandle>>
+    msg_handle: Arc<StdMutex<DBCallbackMsgHandle>>
 }
 
 impl DBProxyProxy {
-    pub fn new(_name: String, _wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>, _handle: Arc<Mutex<DBCallbackMsgHandle>>) -> DBProxyProxy {
+    pub fn new(_name: String, _wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>, _handle: Arc<StdMutex<DBCallbackMsgHandle>>) -> DBProxyProxy {
         DBProxyProxy {
             dbproxy_name: _name,
             wr: _wr,
@@ -97,7 +98,7 @@ impl DBProxyProxy {
         }
     }
 
-    pub fn get_msg_handle(&mut self) -> Arc<Mutex<DBCallbackMsgHandle>> {
+    pub fn get_msg_handle(&mut self) -> Arc<StdMutex<DBCallbackMsgHandle>> {
         self.msg_handle.clone()
     }
 

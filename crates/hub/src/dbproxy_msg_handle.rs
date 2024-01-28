@@ -21,6 +21,7 @@ use proto::hub::{
 };
 use queue::Queue;
 
+use crate::hub_service_manager::StdMutex;
 use crate::dbproxy_manager::DBProxyProxy;
 
 pub struct DBCallbackMsgHandle {
@@ -37,8 +38,8 @@ fn deserialize(data: Vec<u8>) -> Result<DbCallback, Box<dyn std::error::Error>> 
 }
 
 impl DBCallbackMsgHandle {
-    pub fn new() -> Arc<Mutex<DBCallbackMsgHandle>> {
-        Arc::new(Mutex::new(DBCallbackMsgHandle {
+    pub fn new() -> Arc<StdMutex<DBCallbackMsgHandle>> {
+        Arc::new(StdMutex::new(DBCallbackMsgHandle {
             queue: Queue::new()
         }))
     }
@@ -51,7 +52,7 @@ impl DBCallbackMsgHandle {
         trace!("DBCallbackMsgHandle on_event begin!");
 
         let _ev: DbCallback;
-        let _handle_arc: Arc<Mutex<DBCallbackMsgHandle>>;
+        let _handle_arc: Arc<StdMutex<DBCallbackMsgHandle>>;
         {
             let mut _p = _proxy.as_ref().lock().await;
             _ev = match deserialize(data) {
@@ -63,14 +64,14 @@ impl DBCallbackMsgHandle {
             };
             _handle_arc = _p.get_msg_handle();
         }
-        let mut _handle = _handle_arc.as_ref().lock().await;
+        let mut _handle = _handle_arc.as_ref().lock().unwrap();
         _handle.enque_event(_ev);
 
         trace!("DBCallbackMsgHandle on_event end!")
     }
 
-    pub async fn poll(_handle: Arc<Mutex<DBCallbackMsgHandle>>, py: Python<'_>, py_handle: Py<PyAny>) -> bool {
-        let mut _self = _handle.as_ref().lock().await;
+    pub fn poll(_handle: Arc<StdMutex<DBCallbackMsgHandle>>, py: Python<'_>, py_handle: Py<PyAny>) -> bool {
+        let mut _self = _handle.as_ref().lock().unwrap();
         let opt_ev_data = _self.queue.deque();
         let ev = match opt_ev_data {
             None => return false,

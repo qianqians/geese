@@ -11,6 +11,7 @@ use crate::hub_service_manager::{ConnProxyReaderCallback, ConnProxy, ConnCallbac
 use crate::dbproxy_manager::DBProxyProxy;
 use crate::hub_proxy_manager::HubProxy;
 use crate::gate_proxy_manager::GateProxy;
+use crate::hub_service_manager::StdMutex;
 
 pub struct ConnManager {
     hub_name: String,
@@ -42,7 +43,7 @@ impl ConnManager {
         return self.locks.remove(&lock_key).clone().unwrap();
     }
 
-    pub async fn direct_connect_server(&mut self, name: String, host: String, _handle: Arc<Mutex<ConnCallbackMsgHandle>>, _close: Arc<Mutex<CloseHandle>>) 
+    pub async fn direct_connect_server(&mut self, name: String, host: String, _handle: Arc<StdMutex<ConnCallbackMsgHandle>>, _close: Arc<Mutex<CloseHandle>>) 
         -> Option<Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>>
     {
         if let Some(wr) = self.wrs.get(&name) {
