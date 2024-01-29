@@ -25,9 +25,9 @@ def role_rank_info_to_protcol(_struct:role_rank_info):
     _protocol["rank"] = _struct.rank
     return _protocol
 
-def protcol_to_role_rank_info(_protocol:any):
+def protcol_to_role_rank_info(_protocol:dict):
     _struct = role_rank_info()
-    for key, val in _protocol:
+    for (key, val) in _protocol.items():
         if key == "role_name":
             _struct.role_name = val
         elif key == "entity_id":
@@ -48,9 +48,9 @@ def client_time_info_to_protcol(_struct:client_time_info):
     _protocol["timetmp"] = _struct.timetmp
     return _protocol
 
-def protcol_to_client_time_info(_protocol:any):
+def protcol_to_client_time_info(_protocol:dict):
     _struct = client_time_info()
-    for key, val in _protocol:
+    for (key, val) in _protocol.items():
         if key == "entity_id":
             _struct.entity_id = val
         elif key == "timetmp":

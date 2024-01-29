@@ -14,7 +14,7 @@ class ClientEventHandle(client_event_handle):
 playerImpl = None
 
 class RankSubEntity(subentity):
-    def __init__(self, source_hub_name: str, entity_type: str, entity_id: str) -> None:
+    def __init__(self, entity_type: str, entity_id: str) -> None:
         super().__init__(entity_type, entity_id)
         self.get_rank_caller = get_rank_caller(self)
 
@@ -24,9 +24,13 @@ class RankSubEntity(subentity):
             lambda _err: print(f"RankSubEntity get_self_rank err:{_err}")).timeout(
                 1000, lambda: print(f"RankSubEntity get_self_rank timeout!"))
 
-    def Creator(source_hub_name:str, entity_id:str, description: dict):
-        print(f"RankSubEntity Creator source_hub_name:{source_hub_name} entity_id:{entity_id}")
-        rankImpl = RankSubEntity(source_hub_name, "RankImpl", entity_id)
+    def update_subentity(self, argvs: dict):
+        print(f"RankSubEntity:{self.entity_id} update_subentity!")
+
+    def Creator(entity_id:str, description: dict):
+        print(f"RankSubEntity Creator entity_id:{entity_id}")
+        rankImpl = RankSubEntity("RankImpl", entity_id)
+        rankImpl.get_self_rank(playerImpl.entity_id)
         return rankImpl
 
 class SamplePlayer(player):
@@ -57,6 +61,7 @@ def main():
     _app = app()
     _app.build(ClientEventHandle())
     _app.register("SamplePlayer", SamplePlayer.Creator)
+    _app.register("RankImpl", RankSubEntity.Creator)
     _app.connect_tcp("127.0.0.1", 8000, conn_callback)
     print(f"run begin!")
     _app.run()
