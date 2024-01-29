@@ -241,14 +241,16 @@ impl TSerializable for ClientRequestReconnect {
 pub struct ClientRequestService {
   pub service_name: Option<String>,
   pub gate_name: Option<String>,
+  pub gate_host: Option<String>,
   pub conn_id: Option<String>,
 }
 
 impl ClientRequestService {
-  pub fn new<F1, F2, F3>(service_name: F1, gate_name: F2, conn_id: F3) -> ClientRequestService where F1: Into<Option<String>>, F2: Into<Option<String>>, F3: Into<Option<String>> {
+  pub fn new<F1, F2, F3, F4>(service_name: F1, gate_name: F2, gate_host: F3, conn_id: F4) -> ClientRequestService where F1: Into<Option<String>>, F2: Into<Option<String>>, F3: Into<Option<String>>, F4: Into<Option<String>> {
     ClientRequestService {
       service_name: service_name.into(),
       gate_name: gate_name.into(),
+      gate_host: gate_host.into(),
       conn_id: conn_id.into(),
     }
   }
@@ -260,6 +262,7 @@ impl TSerializable for ClientRequestService {
     let mut f_1: Option<String> = Some("".to_owned());
     let mut f_2: Option<String> = Some("".to_owned());
     let mut f_3: Option<String> = Some("".to_owned());
+    let mut f_4: Option<String> = Some("".to_owned());
     loop {
       let field_ident = i_prot.read_field_begin()?;
       if field_ident.field_type == TType::Stop {
@@ -279,6 +282,10 @@ impl TSerializable for ClientRequestService {
           let val = i_prot.read_string()?;
           f_3 = Some(val);
         },
+        4 => {
+          let val = i_prot.read_string()?;
+          f_4 = Some(val);
+        },
         _ => {
           i_prot.skip(field_ident.field_type)?;
         },
@@ -289,7 +296,8 @@ impl TSerializable for ClientRequestService {
     let ret = ClientRequestService {
       service_name: f_1,
       gate_name: f_2,
-      conn_id: f_3,
+      gate_host: f_3,
+      conn_id: f_4,
     };
     Ok(ret)
   }
@@ -306,8 +314,13 @@ impl TSerializable for ClientRequestService {
       o_prot.write_string(fld_var)?;
       o_prot.write_field_end()?
     }
+    if let Some(ref fld_var) = self.gate_host {
+      o_prot.write_field_begin(&TFieldIdentifier::new("gate_host", TType::String, 3))?;
+      o_prot.write_string(fld_var)?;
+      o_prot.write_field_end()?
+    }
     if let Some(ref fld_var) = self.conn_id {
-      o_prot.write_field_begin(&TFieldIdentifier::new("conn_id", TType::String, 3))?;
+      o_prot.write_field_begin(&TFieldIdentifier::new("conn_id", TType::String, 4))?;
       o_prot.write_string(fld_var)?;
       o_prot.write_field_end()?
     }

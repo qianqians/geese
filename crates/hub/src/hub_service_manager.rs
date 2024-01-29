@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use pyo3::prelude::*;
 use async_trait::async_trait;
-use tracing::{trace, error};
+use tracing::{trace, warn, error};
 
 use thrift::protocol::{TCompactInputProtocol, TSerializable};
 use thrift::transport::TBufferChannel;
@@ -527,9 +527,11 @@ impl ConnCallbackMsgHandle {
             },
             HubService::ClientRequestService(ev) => {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
+                    let _gate_msg_handle_c = _self.gate_msg_handle.clone();
+                    let _ev_tmp = ev.clone();
                     let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
                     let gate_name = rt.block_on(async move {
-                        let mut gate_name: String = "".to_string();
+                        let gate_name: String;
                         {
                             let mut _conn_proxy = conn_proxy.as_ref().lock().await;
 
@@ -538,13 +540,30 @@ impl ConnCallbackMsgHandle {
                                 gate_name = _proxy_tmp.gate_name.clone().unwrap();
                             }
                             else {
-                                error!("HubService::ClientDisconnnect! wrong msg handle!");
+                                gate_name = ev.gate_name.unwrap();
+                                let _proxy = Arc::new(Mutex::new(
+                                    GateProxy::new(_conn_proxy.wr.clone())
+                                ));
+                                let mut _proxy_tmp = _proxy.as_ref().lock().await;
+    
+                                _proxy_tmp.gate_name = Some(gate_name.clone());
+                                _proxy_tmp.gate_host = ev.gate_host;
+    
+                                let mut _conn_mgr = _self.conn_mgr.as_ref().lock().await;
+                                _conn_mgr.add_gate_proxy(gate_name.clone(), _proxy.clone()).await;
+                                _conn_proxy.gateproxy = Some(_proxy.clone());
+    
+                                let cb_msg = RegServerCallback::new(_self.hub_name.clone());
+                                let msg = GateHubService::RegServerCallback(cb_msg);
+                                _proxy_tmp.send_gate_msg(msg).await;
+
+                                warn!("HubService::ClientRequestService! wrong msg handle!");
                             }
                         }
                         return gate_name;
                     });
-                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
-                    _gate_msg_handle.do_client_request_service(py, py_handle, gate_name, ev);
+                    let mut _gate_msg_handle = _gate_msg_handle_c.as_ref().lock().unwrap();
+                    _gate_msg_handle.do_client_request_service(py, py_handle, gate_name, _ev_tmp);
                 }
                 else {
                     error!("gate client request service conn_proxy is destory!");

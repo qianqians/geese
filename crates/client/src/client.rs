@@ -99,8 +99,6 @@ impl GateMsgHandle {
     }
 
     pub fn on_event(_proxy: Arc<StdMutex<GateProxy>>, data: Vec<u8>) {
-        println!("do_client_event begin!");
-
         let _ev = match deserialize(data) {
             Err(e) => {
                 println!("GateClientMsgHandle do_event err:{}", e);
@@ -114,12 +112,10 @@ impl GateMsgHandle {
         let _msg_handle:Arc<StdMutex<GateMsgHandle>>;
         {
             let mut _p = _proxy.as_ref().lock().unwrap();
-            println!("do_client_event _proxy lock!");
             _msg_handle = _p.msg_handle.clone();
         }
 
         let mut _handle = _msg_handle.as_ref().lock().unwrap();
-        println!("do_client_event msg_handle lock!");
         _handle.enque_event(ConnEvent{
             gate_proxy: Arc::downgrade(&_proxy_clone),
             ev: _ev

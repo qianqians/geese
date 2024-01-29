@@ -8,7 +8,7 @@ use thrift::protocol::{TCompactOutputProtocol, TSerializable};
 use thrift::transport::{TIoChannel, TBufferChannel};
 
 use net::NetWriter;
-use redis_service::redis_service::{create_lock_key, RedisService};
+use redis_service::redis_service::{create_lock_key, create_host_cache_key, RedisService};
 use close_handle::CloseHandle;
 use consul::ConsulImpl;
 
@@ -28,9 +28,9 @@ pub async fn entry_direct_hub_server(
     let mut _hub_host: String = "".to_string();
     {
         let mut _r = _redis_mq_service.as_ref().lock().await;
-        match _r.get(_hub_name.clone()).await {
+        match _r.get(create_host_cache_key(_hub_name.clone())).await {
             Err(e) => {
-                error!("get gate:{} host faild:{}!", _hub_name.clone(), e);
+                error!("get _hub_host:{} host faild:{}!", _hub_name.clone(), e);
                 return;
             },
             Ok(host) => {
