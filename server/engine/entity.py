@@ -130,7 +130,10 @@ class entity_manager(object):
         return True
         
     def get_entity(self, entity_id) -> entity:
-        return self.entities[entity_id]
+        if entity_id in self.entities:
+            return self.entities[entity_id]
+        return None
     
     def del_entity(self, entity_id):
-        del self.entities[entity_id]
+        if entity_id in self.entities:
+            del self.entities[entity_id]

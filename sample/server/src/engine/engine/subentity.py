@@ -73,7 +73,10 @@ class subentity_manager(object):
         self.subentities[_entity.entity_id] = _entity
 
     def get_subentity(self, entity_id) -> subentity:
-        return self.subentities[entity_id]
+        if entity_id in self.subentities:
+            return self.subentities[entity_id]
+        return None
     
     def del_subentity(self, entity_id):
-        del self.subentities[entity_id]
+        if entity_id in self.subentities:
+            del self.subentities[entity_id]

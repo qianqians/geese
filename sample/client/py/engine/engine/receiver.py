@@ -39,7 +39,10 @@ class receiver_manager(object):
         _receiver.update_receiver(argvs)
 
     def get_receiver(self, entity_id) -> receiver:
-        return self.receivers[entity_id]
+        if entity_id in self.receivers:
+            return self.receivers[entity_id]
+        return None
     
     def del_receiver(self, entity_id):
-        del self.receivers[entity_id]
+        if entity_id in self.receivers:
+            del self.receivers[entity_id]

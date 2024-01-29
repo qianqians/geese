@@ -99,7 +99,10 @@ class player_manager(object):
         _player.update_player(argvs)
 
     def get_player(self, entity_id:str) -> player:
-        return self.players[entity_id]
+        if entity_id in self.players:
+            return self.players[entity_id]
+        return None
     
     def del_player(self, entity_id:str):
-        del self.players[entity_id]
+        if entity_id in self.players:
+            del self.players[entity_id]
