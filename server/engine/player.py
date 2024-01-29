@@ -173,7 +173,9 @@ class player_manager(object):
         self.conn_id_players[_player.client_conn_id].append(_player)
 
     def get_player(self, entity_id:str) -> player:
-        return self.players[entity_id]
+        if entity_id in self.players:
+            return self.players[entity_id]
+        return None
     
     def update_player_conn(self, entity_id:str, is_main:bool, is_reconnect:bool, gate_name:str, conn_id:str) -> bool:
         _player = self.players[entity_id]
@@ -212,7 +214,8 @@ class player_manager(object):
         return self.conn_id_players[conn_id]
     
     def del_player(self, entity_id:str):
-        del self.players[entity_id]
+        if entity_id in self.players:
+            del self.players[entity_id]
         
     def player_offline(self, conn_id:str):
         _player_list = self.get_player_by_conn_id(conn_id)

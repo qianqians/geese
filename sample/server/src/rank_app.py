@@ -44,10 +44,15 @@ class RankService(service):
     
     def client_query_service_entity(self, queryer_gate_name:str, queryer_client_conn_id:str):
         self.rankImpl.create_remote_entity(queryer_gate_name, queryer_client_conn_id)
-
+    
+class PlayerEventHandle(player_event_handle):
+    def player_offline(self, _player:player) -> dict:
+        return _player.info()
+    
 def main(cfg_file:str):
     _app = app()
     _app.build(cfg_file)
+    _app.build_player_service(PlayerEventHandle())
     _app.service_mgr.reg_service(RankService(_app))
     _app.run()
     

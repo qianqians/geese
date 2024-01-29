@@ -83,7 +83,7 @@ def gen_entity_module(module_name, funcs, dependent_struct, dependent_enum, enum
                     dependent_struct, 
                     dependent_enum)
                 count += 1
-            code_func += "        rsp = " + module_name + "_" + func_name + "_rsp(source, msg_cb_id)\n"
+            code_func += "        rsp = " + module_name + "_" + func_name + "_rsp(source, msg_cb_id, self.entity)\n"
             code_func += "        for fn in self.on_" + func_name + ":\n"
             code_func += "            fn(rsp, "
             count = 0
