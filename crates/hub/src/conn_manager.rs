@@ -18,6 +18,7 @@ pub struct ConnManager {
     locks: BTreeMap<String, String>,
     wrs: BTreeMap<String, Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>>,
     dbproxys: BTreeMap<String, Arc<Mutex<DBProxyProxy>>>,
+    connproxys: BTreeMap<String, Arc<Mutex<ConnProxy>>>,
     hubproxys: BTreeMap<String, Arc<Mutex<HubProxy>>>,
     gateproxys: BTreeMap<String, Arc<Mutex<GateProxy>>>
 }
@@ -30,6 +31,7 @@ impl ConnManager {
             locks: BTreeMap::new(),
             wrs: BTreeMap::new(),
             dbproxys: BTreeMap::new(),
+            connproxys: BTreeMap::new(),
             hubproxys: BTreeMap::new(),
             gateproxys: BTreeMap::new()
         }
@@ -57,9 +59,10 @@ impl ConnManager {
                 ConnProxy::new(_wr_arc.clone(), _handle.clone())));
 
             let _ = rd.start(Arc::new(Mutex::new(Box::new(
-                ConnProxyReaderCallback::new(_conn_proxy)))), _close);
+                ConnProxyReaderCallback::new(_conn_proxy.clone())))), _close);
 
             self.wrs.insert(name.clone(), _wr_arc.clone());
+            self.connproxys.insert(name.clone(), _conn_proxy.clone());
 
             return Some(_wr_arc);
         }
@@ -80,16 +83,24 @@ impl ConnManager {
         self.dbproxys.get(_dbproxy_name)
     }
 
-    pub fn add_hub_proxy(&mut self, _name: String, _proxy: Arc<Mutex<HubProxy>>) {
-        self.hubproxys.insert(_name, _proxy.clone());
+    pub async fn add_hub_proxy(&mut self, _name: String, _proxy: Arc<Mutex<HubProxy>>) {
+        self.hubproxys.insert(_name.clone(), _proxy.clone());
+        if let Some(_connproxy) = self.connproxys.get(&_name) {
+            let mut _conn = _connproxy.as_ref().lock().await;
+            _conn.hubproxy = Some(_proxy);
+        }
     }
 
     pub fn get_hub_proxy(&mut self, _hub_name: &String) -> Option<&Arc<Mutex<HubProxy>>> {
         self.hubproxys.get(_hub_name)
     }
 
-    pub fn add_gate_proxy(&mut self, _name: String, _proxy: Arc<Mutex<GateProxy>>) {
-        self.gateproxys.insert(_name, _proxy.clone());
+    pub async fn add_gate_proxy(&mut self, _name: String, _proxy: Arc<Mutex<GateProxy>>) {
+        self.gateproxys.insert(_name.clone(), _proxy.clone());
+        if let Some(_connproxy) = self.connproxys.get(&_name) {
+            let mut _conn = _connproxy.as_ref().lock().await;
+            _conn.gateproxy = Some(_proxy);
+        }
     }
 
     pub fn get_gate_proxy(&mut self, _gate_name: &String) -> Option<&Arc<Mutex<GateProxy>>> {

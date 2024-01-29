@@ -13,7 +13,7 @@ class RankSubEntity(subentity):
 
     def Creator(source_hub_name:str, entity_id:str, description: dict):
         print(f"RankSubEntity Creator source_hub_name:{source_hub_name} entity_id:{entity_id}")
-        rankImpl = RankSubEntity(source_hub_name, entity_id, description)
+        rankImpl = RankSubEntity(source_hub_name, "RankImpl", entity_id)
         return rankImpl
 
 rankImpl:RankSubEntity = None
@@ -63,6 +63,7 @@ class LoginEventHandle(login_event_handle):
             app().player_mgr.add_player(_p)
             print("LoginEventHandle on_login! create_main_remote_entity:{} begin!".format(_p))
             _p.create_main_remote_entity()
+            rankImpl.call_update_rank(_p.entity_id)
             print("LoginEventHandle on_login! create_main_remote_entity:{}".format(_p))
     
     async def on_reconnect(self, new_gate_name:str, new_conn_id:str, sdk_uuid:str, token:str):

@@ -31,8 +31,8 @@ use crate::conn_manager::ConnManager;
 
 pub struct ConnProxy {
     pub wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>,
-    hubproxy: Option<Arc<Mutex<HubProxy>>>,
-    gateproxy: Option<Arc<Mutex<GateProxy>>>,
+    pub hubproxy: Option<Arc<Mutex<HubProxy>>>,
+    pub gateproxy: Option<Arc<Mutex<GateProxy>>>,
     msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>
 }
 
@@ -151,7 +151,7 @@ impl ConnCallbackMsgHandle {
                             _proxy_tmp.hub_name = Some(hub_name.clone());
                             
                             let mut _conn_mgr = _self.conn_mgr.as_ref().lock().await;
-                            _conn_mgr.add_hub_proxy(hub_name.clone(), _proxy.clone());
+                            _conn_mgr.add_hub_proxy(hub_name.clone(), _proxy.clone()).await;
                             _conn_proxy.hubproxy = Some(_proxy.clone());
 
                             let cb_msg = RegServerCallback::new(_self.hub_name.clone());
@@ -271,7 +271,8 @@ impl ConnCallbackMsgHandle {
                                             _gate_tmp.gate_host = Some(_gate_host);
 
                                             let _gateproxy = Arc::new(Mutex::new(_gate_tmp));
-                                            _conn_mgr.add_gate_proxy(_gate_name_tmp, _gateproxy);
+                                            _conn_mgr.add_gate_proxy(_gate_name_tmp, _gateproxy.clone()).await;
+                                            _conn_proxy.gateproxy = Some(_gateproxy.clone());
                                         }
                                     }
                                     else {
@@ -414,7 +415,7 @@ impl ConnCallbackMsgHandle {
                             ));
 
                             let mut _conn_mgr = _self.conn_mgr.as_ref().lock().await;
-                            _conn_mgr.add_gate_proxy(_gate_name.clone(), _proxy.clone());
+                            _conn_mgr.add_gate_proxy(_gate_name.clone(), _proxy.clone()).await;
                             _conn_proxy.gateproxy = Some(_proxy.clone());
 
                             let mut _proxy_tmp = _proxy.as_ref().lock().await;
@@ -454,7 +455,7 @@ impl ConnCallbackMsgHandle {
                             _proxy_tmp.gate_host = ev.gate_host;
 
                             let mut _conn_mgr = _self.conn_mgr.as_ref().lock().await;
-                            _conn_mgr.add_gate_proxy(_gate_name.clone(), _proxy.clone());
+                            _conn_mgr.add_gate_proxy(_gate_name.clone(), _proxy.clone()).await;
                             _conn_proxy.gateproxy = Some(_proxy.clone());
 
                             let cb_msg = RegServerCallback::new(_self.hub_name.clone());
