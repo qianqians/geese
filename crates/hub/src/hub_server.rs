@@ -217,7 +217,7 @@ impl HubServer {
                     _gate_tmp.gate_name = Some(_gate_name);
     
                     let _gateproxy = Arc::new(Mutex::new(_gate_tmp));
-                    _conn_mgr.add_gate_proxy(_gate_name_tmp, _gateproxy);
+                    _conn_mgr.add_gate_proxy(_gate_name_tmp, _gateproxy).await;
                 }  
             }
             else {
