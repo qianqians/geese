@@ -48,9 +48,9 @@ def genstructprotocol(struct_name, elems, dependent_struct, dependent_enum):
     return code
 
 def genprotocolstruct(struct_name, elems, dependent_struct, dependent_enum):
-    code = "def protcol_to_" + struct_name + "(_protocol:any):\n"
+    code = "def protcol_to_" + struct_name + "(_protocol:dict):\n"
     code += "    _struct = " + struct_name + "()\n"
-    code += "    for key, val in _protocol:\n"
+    code += "    for (key, val) in _protocol.items():\n"
     count = 0
     for key, value, parameter in elems:
         type_ = check_type(key, dependent_struct, dependent_enum)
