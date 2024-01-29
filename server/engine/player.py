@@ -44,7 +44,7 @@ class player(ABC, base_entity):
         if gate_name not in self.conn_client_gate:
             self.conn_client_gate.append(gate_name)
         from app import app
-        app().ctx.hub_call_client_create_remote_entity(gate_name, [conn_id], None, self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))
+        app().ctx.hub_call_client_create_remote_entity(gate_name, [conn_id], "", self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))
     
     def create_remote_hub_entity(self, hub_name:str, service_name:str):
         if hub_name not in self.conn_hub_server:
@@ -211,7 +211,9 @@ class player_manager(object):
         return True
     
     def get_player_by_conn_id(self, conn_id:str) -> list[player]:
-        return self.conn_id_players[conn_id]
+        if conn_id in self.conn_id_players:
+            return self.conn_id_players[conn_id]
+        return []
     
     def del_player(self, entity_id:str):
         if entity_id in self.players:

@@ -27,7 +27,8 @@ struct client_request_reconnect {
 struct client_request_service {
 	1:string service_name,
 	2:string gate_name, 
-	3:string conn_id
+	3:string gate_host,
+	4:string conn_id
 }
 
 /*

@@ -133,7 +133,7 @@ impl GateClientMsgHandle {
                 _conn_id = _p.get_conn_id().clone();
             }
 
-            let _hub_proxy = entry_hub_service(_conn_mgr.clone()).await;
+            let _hub_proxy = entry_hub_service(_conn_mgr.clone(), "login".to_string()).await;
             if let Some(_hub) = _hub_proxy {
                 let mut _conn_mgr_handle = _conn_mgr.as_ref().lock().await;
                 trace!("do_client_event client_request_hub_login _conn_mgr_handle lock!");
@@ -173,7 +173,7 @@ impl GateClientMsgHandle {
                 _conn_id = _p.get_conn_id().clone();
             }
             
-            let _hub_proxy = entry_hub_service(_conn_mgr.clone()).await;
+            let _hub_proxy = entry_hub_service(_conn_mgr.clone(), "login".to_string()).await;
             if let Some(_hub) = _hub_proxy {
                 let mut _conn_mgr_handle = _conn_mgr.as_ref().lock().await;
                 let _gate_name = _conn_mgr_handle.get_gate_name();
@@ -207,14 +207,15 @@ impl GateClientMsgHandle {
                 _conn_id = _p.get_conn_id().clone();
             }
             
-            let _hub_proxy = entry_hub_service(_conn_mgr.clone()).await;
+            let _hub_proxy = entry_hub_service(_conn_mgr.clone(), ev.service_name.clone().unwrap()).await;
             if let Some(_hub) = _hub_proxy {
                 let mut _conn_mgr_handle = _conn_mgr.as_ref().lock().await;
                 let _gate_name = _conn_mgr_handle.get_gate_name();
+                let _gate_host = _conn_mgr_handle.get_gate_host();
 
                 let mut _hub_handle = _hub.as_ref().lock().await;
                 if !_hub_handle.send_hub_msg(HubService::ClientRequestService(
-                    ClientRequestService::new(ev.service_name.unwrap(), _gate_name, _conn_id))).await
+                    ClientRequestService::new(ev.service_name.unwrap(), _gate_name, _gate_host, _conn_id))).await
                 {
                     _conn_mgr_handle.delete_hub_proxy(&_hub_handle.get_hub_name());
                 }

@@ -67,14 +67,14 @@ pub async fn request_reconnect(
         ClientRequestReconnect::new(_gate_name, _gate_host, _conn_id, _account_id, _token))).await
 }
 
-pub async fn entry_hub_service(_conn_mgr: Arc<Mutex<ConnManager>>) -> Option<Arc<Mutex<HubProxy>>>
+pub async fn entry_hub_service(_conn_mgr: Arc<Mutex<ConnManager>>, _service_name:String) -> Option<Arc<Mutex<HubProxy>>>
 {
     trace!("entry_hub_service begin!");
 
     let mut _conn_mgr_handle = _conn_mgr.as_ref().lock().await;
     let _close = _conn_mgr_handle.get_close_handle();
     let _gate_name = _conn_mgr_handle.get_gate_name();
-    let _entry_service = "login".to_string();
+    let _entry_service = _service_name.clone();
 
     let _consul_impl = _conn_mgr_handle.get_consul_impl(); 
     let mut _impl = _consul_impl.as_ref().lock().await;

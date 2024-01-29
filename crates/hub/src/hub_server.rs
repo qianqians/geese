@@ -182,7 +182,7 @@ impl HubServer {
         {
             if let Some(rs) = &self.hub_redis_service {
                 let mut _r = rs.as_ref().lock().await;
-                match _r.get(_gate_name.clone()).await {
+                match _r.get(create_host_cache_key(_gate_name.clone())).await {
                     Err(e) => {
                         error!("get gate:{} host faild:{}!", _gate_name.clone(), e);
                         return;

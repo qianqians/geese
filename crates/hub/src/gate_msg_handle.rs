@@ -78,7 +78,7 @@ impl GateCallbackMsgHandle {
 
         let argvs = (ev.service_name.unwrap(), gate_name, ev.conn_id.unwrap(), );
         if let Err(e) = py_handle.call_method1(py, "on_client_request_service", argvs) {
-            error!("do_client_disconnnect python callback error:{}", e)
+            error!("do_client_request_service python callback error:{}", e)
         }
     }
 

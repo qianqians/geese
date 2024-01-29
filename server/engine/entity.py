@@ -32,7 +32,7 @@ class entity(ABC, base_entity):
         if gate_name not in self.conn_client_gate:
             self.conn_client_gate.append(gate_name)
         from app import app
-        app().ctx.hub_call_client_create_remote_entity(gate_name, [conn_id], None, self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))
+        app().ctx.hub_call_client_create_remote_entity(gate_name, [conn_id], "", self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))
 
     def create_remote_hub_entity(self, hub_name:str, service_name:str):
         if hub_name not in self.conn_hub_server:
