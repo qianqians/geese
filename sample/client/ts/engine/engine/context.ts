@@ -9,7 +9,7 @@ export abstract class channel {
     abstract on_recv(recv:(data:Uint8Array) => void) : void;
 }
 
-import { TBufferedTransport, TCompactProtocol } from '../thrift'
+import { TBufferedTransport, TCompactProtocol } from 'thrift'
 
 import * as proto from './proto'
 import * as ConnMsgHandle from './conn_msg_handle'
