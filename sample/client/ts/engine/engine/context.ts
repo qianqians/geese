@@ -28,7 +28,7 @@ export abstract class context {
     public constructor() {
     }
 
-    private recv(data:Uint8Array) : void {
+    protected recv(data:Uint8Array) : void {
         let u8data = new Uint8Array(data);
             
         let new_data:Uint8Array|null = new Uint8Array(this.offset + u8data.byteLength);

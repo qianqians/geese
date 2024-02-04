@@ -47,6 +47,16 @@ export class app {
         return this;
     }
 
+    public connect_websocket(_ctx:context.context, wsHost:string) {
+        this.ctx = _ctx;
+        this.ctx.ConnectWebSocket(wsHost);
+    }
+
+    public connect_tcp(_ctx:context.context, host:string, port:number) {
+        this.ctx = _ctx;
+        this.ctx.ConnectTcp(host, port);
+    }
+
     public on_kick_off(prompt_info:string) {
         this.client_event_handle.on_kick_off(prompt_info);
     }

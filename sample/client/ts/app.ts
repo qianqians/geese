@@ -85,6 +85,7 @@ class WSContext extends engine.context {
     public ConnectWebSocket(wsHost:string) : engine.channel {
         this.ch = new WSChannel();
         this.ch.connect(wsHost);
+        this.ch.on_recv(this.recv);
         return this.ch;
     }
     
