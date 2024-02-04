@@ -26,7 +26,7 @@ def gen_global_module(module_name, funcs, dependent_struct, dependent_enum, enum
             func_type += "], None]"
             
             code_constructor += "        self.on_" + func_name + ":list[" + func_type + "] = []\n"
-            code_constructor += "        app.instance().register_global_method(\"" + func_name + "\", self." + func_name + ")\n"
+            code_constructor += "        app().register_global_method(\"" + func_name + "\", self." + func_name + ")\n"
 
             code_func += "    def " + func_name + "(self, hub_name:str, bin:bytes):\n"
             code_func += "        inArray = loads(bin)\n"

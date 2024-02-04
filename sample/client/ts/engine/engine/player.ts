@@ -13,8 +13,8 @@ export abstract class player extends Base.base_entity {
     public hub_notify_callback:Map<string, (source:string, data:Uint8Array) => void>;
     public hub_callback:Map<number, CallBack.callback>;
 
-    public constructor(entity_id:string) {
-        super("player", entity_id);
+    public constructor(entity_type:string, entity_id:string) {
+        super(entity_type, entity_id);
 
         this.request_msg_cb_id = Math.floor(Math.random() * 10011);
         this.hub_request_callback = new Map<string, (source:string, id:number, data:Uint8Array) => void>();

@@ -14,7 +14,7 @@ class notice_module(object):
         pass
 
         self.on_notice:list[Callable[[session, str], None]] = []
-        app.instance().register_global_method("notice", self.notice)
+        app().register_global_method("notice", self.notice)
 
     def notice(self, hub_name:str, bin:bytes):
         inArray = loads(bin)

@@ -6,7 +6,7 @@ import * as common from "./common_cli";
 // this struct code is codegen by geese codegen for ts
 // this caller code is codegen by geese codegen for typescript
 export class login_login_cb {
-    public entity:engine.subentity;
+    public entity:engine.subentity|engine.player;
     public cb:(is_displace:boolean) => void;
     public err:(err:common.error_code) => void;
     public rsp:engine.callback;
