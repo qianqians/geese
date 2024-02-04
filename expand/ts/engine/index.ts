@@ -7,4 +7,3 @@ export * from "./player";
 export * from "./receiver";
 export * from "./session";
 export * from "./subentity";
-export * as uuid from 'uuid';
