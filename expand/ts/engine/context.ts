@@ -15,7 +15,7 @@ import * as proto from './proto'
 import * as ConnMsgHandle from './conn_msg_handle'
 
 export abstract class context {
-    private ch:channel;
+    protected ch:channel;
     private conn_id:string|null = null;
 
     private offset:number = 0;
@@ -28,7 +28,7 @@ export abstract class context {
     public constructor() {
     }
 
-    private recv(data:Uint8Array) : void {
+    protected recv(data:Uint8Array) : void {
         let u8data = new Uint8Array(data);
             
         let new_data:Uint8Array|null = new Uint8Array(this.offset + u8data.byteLength);
