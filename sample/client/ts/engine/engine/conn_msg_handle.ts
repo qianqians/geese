@@ -88,7 +88,7 @@ export class conn_msg_handle {
         }
     }
     
-    public on_call_global(method:string, argvs:Uint8Array) {
-        app2.app.instance.on_call_global(method, argvs);
+    public on_call_global(method:string, hub_name:string, argvs:Uint8Array) {
+        app2.app.instance.on_call_global(method, hub_name, argvs);
     }
 }

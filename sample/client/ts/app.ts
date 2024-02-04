@@ -23,7 +23,7 @@ class RankSubEntity extends engine.subentity {
         this._get_rank_caller = new get_rank_cli.get_rank_caller(this);
     }
 
-    public get_self_rank(entity_id) {
+    public get_self_rank(entity_id: string) {
         this._get_rank_caller.get_self_rank(entity_id).callBack(
             (_info) => { console.log(`RankSubEntity get_self_rank callBack:${_info}`) },
             (_err) => { console.log(`RankSubEntity get_self_rank err:{_err}`) }).timeout(
@@ -39,7 +39,9 @@ class RankSubEntity extends engine.subentity {
     public static Creator(entity_id:string, description: object) {
         console.log(`RankSubEntity Creator entity_id:{entity_id}`);
         let rankImpl = new RankSubEntity("RankImpl", entity_id);
-        rankImpl.get_self_rank(playerImpl?.EntityID)
+        if (playerImpl) {
+            rankImpl.get_self_rank(playerImpl.EntityID);
+        }
         return rankImpl
     }
 }
@@ -69,7 +71,12 @@ class SamplePlayer extends engine.player {
 }
 
 class WSChannel extends engine.channel {
-    private client: WebSocket;
+    private client: WebSocket | null;
+
+    public constructor() {
+        super();
+        this.client = null;
+    }
 
     public connect(wsHost:string) : boolean {
         this.client = new WebSocket(wsHost);
@@ -77,21 +84,25 @@ class WSChannel extends engine.channel {
     }
 
     public send(data:Uint8Array) {
-        this.client.send(data);
+        if (this.client) {
+            this.client.send(data);
+        }
     }
     
     public on_recv(recv:(data:Uint8Array) => void) {
-        this.client.on('message', (data) =>{ 
-            if (Buffer.isBuffer(data)) {
-                recv(new Uint8Array(data));
-            }
-            else if (Array.isArray(data)) {
-                recv(new Uint8Array(Buffer.concat(data)));
-            }
-            else {
-                recv(new Uint8Array(data));
-            }
-        });
+        if (this.client) {
+            this.client.onmessage = (evt: WebSocket.MessageEvent) =>{ 
+                if (Buffer.isBuffer(evt.data)) {
+                    recv(new Uint8Array(evt.data));
+                }
+                else if (Array.isArray(evt.data)) {
+                    recv(new Uint8Array(Buffer.concat(evt.data)));
+                }
+                else if (evt.data instanceof ArrayBuffer) {
+                    recv(new Uint8Array(evt.data));
+                }
+           };
+        }
     }
 }
    
