@@ -8,8 +8,8 @@ import * as Base from './base_entity'
 export abstract class receiver extends Base.base_entity {
     private hub_notify_callback:Map<string, (source:string, data:Uint8Array) => void>;
     
-    public constructor(entity_id:string) {
-        super("receiver", entity_id);
+    public constructor(entity_type:string, entity_id:string) {
+        super(entity_type, entity_id);
 
         this.hub_notify_callback = new Map<string, (source:string, data:Uint8Array) => void>();
     }

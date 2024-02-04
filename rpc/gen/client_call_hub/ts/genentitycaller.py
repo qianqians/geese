@@ -68,7 +68,7 @@ def gen_entity_caller(module_name, funcs, dependent_struct, dependent_enum, enum
             err_fn += ") => void"
 
             cb_code += "export class " + module_name + "_" + func_name + "_cb {\n"
-            cb_code += "    public entity:engine.subentity;\n"
+            cb_code += "    public entity:engine.subentity|engine.player;\n"
             cb_code += "    public cb:" + rsp_fn + ";\n"
             cb_code += "    public err:" + err_fn + ";\n"
             cb_code += "    public rsp:engine.callback;\n"

@@ -6,7 +6,7 @@ import * as common from "./common_cli";
 // this struct code is codegen by geese codegen for ts
 // this caller code is codegen by geese codegen for typescript
 export class get_rank_get_self_rank_cb {
-    public entity:engine.subentity;
+    public entity:engine.subentity|engine.player;
     public cb:(rank:common.role_rank_info) => void;
     public err:(err:common.error_code) => void;
     public rsp:engine.callback;
@@ -41,7 +41,7 @@ export class get_rank_get_self_rank_cb {
 }
 
 export class get_rank_get_rank_cb {
-    public entity:engine.subentity;
+    public entity:engine.subentity|engine.player;
     public cb:(rank_list:Array<common.role_rank_info>) => void;
     public err:(err:common.error_code) => void;
     public rsp:engine.callback;

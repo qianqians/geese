@@ -27,13 +27,13 @@ export class app {
     private __is_run__:boolean;
     private __conn_handle__:ConnMsgHandle.conn_msg_handle;
     private __entity_create_method__:Map<string, (id:string, info:object) => any>;
-    private __hub_global_callback__:Map<string, (data:Uint8Array) => void>;
+    private __hub_global_callback__:Map<string, (hub_name:string, data:Uint8Array) => void>;
     
     public constructor() {
         this.__is_run__ = true;
         this.__conn_handle__ = new ConnMsgHandle.conn_msg_handle();
         this.__entity_create_method__ = new Map<string, (id:string, info:object) => any>();
-        this.__hub_global_callback__ = new Map<string, (data:Uint8Array) => void>();
+        this.__hub_global_callback__ = new Map<string, (hub_name:string, data:Uint8Array) => void>();
 
         this.player_mgr = new player.player_manager();
         this.subentity_mgr = new subentity.subentity_manager();
@@ -62,7 +62,7 @@ export class app {
         }
     }
 
-    public register_global_method(method:string, callback:(data:Uint8Array) => void) {
+    public register_global_method(method:string, callback:(hub_name:string, data:Uint8Array) => void) {
         this.__hub_global_callback__.set(method, callback);
     }
 
