@@ -251,8 +251,8 @@ export abstract class context {
         }
         else if (ev.call_global) {
             let event = ev.call_global;
-            if (event.message && event.message.method && event.message.argvs) {
-                handle.on_call_global(event.message.method, event.message.argvs);
+            if (event.hub_name && event.message && event.message.method && event.message.argvs) {
+                handle.on_call_global(event.message.method, event.hub_name, event.message.argvs);
             }
         }
 

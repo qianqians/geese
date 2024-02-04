@@ -17,8 +17,8 @@ export abstract class client_event_handle {
 export class app {
     public static instance:app;
 
-    public ctx:context.context;
-    public client_event_handle:client_event_handle;
+    public ctx:context.context | null;
+    public client_event_handle:client_event_handle | null;
 
     public player_mgr:player.player_manager;
     public subentity_mgr:subentity.subentity_manager;
@@ -30,6 +30,9 @@ export class app {
     private __hub_global_callback__:Map<string, (hub_name:string, data:Uint8Array) => void>;
     
     public constructor() {
+        this.ctx = null;
+        this.client_event_handle = null;
+
         this.__is_run__ = true;
         this.__conn_handle__ = new ConnMsgHandle.conn_msg_handle();
         this.__entity_create_method__ = new Map<string, (id:string, info:object) => any>();
@@ -58,17 +61,21 @@ export class app {
     }
 
     public on_kick_off(prompt_info:string) {
-        this.client_event_handle.on_kick_off(prompt_info);
+        if (this.client_event_handle) {
+            this.client_event_handle.on_kick_off(prompt_info);
+        }
     }
 
     public on_transfer_complete() {
-        this.client_event_handle.on_transfer_complete();
+        if (this.client_event_handle) {
+            this.client_event_handle.on_transfer_complete();
+        }
     }
 
-    public on_call_global(method:string, argvs:Uint8Array) {
+    public on_call_global(method:string, hub_name:string, argvs:Uint8Array) {
         let _call_handle = this.__hub_global_callback__.get(method);
         if (_call_handle) {
-            _call_handle.call(null, argvs);
+            _call_handle.call(null, hub_name, argvs);
         }
     }
 
@@ -77,15 +84,24 @@ export class app {
     }
 
     public login(sdk_uuid:string) : boolean {
-        return this.ctx.login(sdk_uuid)
+        if (this.ctx) {
+            return this.ctx.login(sdk_uuid)
+        }
+        return false;
     }
 
     public reconnect(account_id:string, token:string) : boolean {
-        return this.ctx.reconnect(account_id, token);
+        if (this.ctx) {
+            return this.ctx.reconnect(account_id, token);
+        }
+        return false;
     }
 
     public request_hub_service(service_name:string) : boolean {
-        return this.ctx.request_hub_service(service_name);
+        if (this.ctx) {
+            return this.ctx.request_hub_service(service_name);
+        }
+        return false;
     }
 
     public register(entity_type:string, creator:(id:string, info:object) => any) {
@@ -117,7 +133,9 @@ export class app {
 
     public poll() {
         while(this.__is_run__) {
-            this.ctx.poll_conn_msg(this.__conn_handle__);
+            if (this.ctx) {
+                this.ctx.poll_conn_msg(this.__conn_handle__);
+            }
         }
     }
 
