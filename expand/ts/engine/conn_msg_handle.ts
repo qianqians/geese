@@ -3,7 +3,7 @@
  * qianqians
  * 2023/10/5
  */
-import { decode } from '../@msgpack/msgpack'
+import { decode } from '@msgpack/msgpack'
 import * as app2 from './app'
 
 export class conn_msg_handle {

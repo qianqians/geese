@@ -1,5 +1,5 @@
 import * as engine from "./engine";
-import { encode, decode } from "./@msgpack/msgpack";
+import { encode, decode } from "@msgpack/msgpack";
 // this enum code is codegen by geese codegen for ts
 
 export enum error_code {
@@ -14,7 +14,7 @@ export class role_rank_info {
 }
 
 export function role_rank_info_to_protcol(_struct:role_rank_info) {
-    let _protocol = {}
+    let _protocol:any = {}
     _protocol["role_name"] = _struct.role_name
     _protocol["entity_id"] = _struct.entity_id
     _protocol["rank"] = _struct.rank
@@ -24,7 +24,8 @@ export function role_rank_info_to_protcol(_struct:role_rank_info) {
 export function protcol_to_role_rank_info(_protocol:any) {
     let _struct = new role_rank_info()
     for (let key in _protocol) {
-        let val = _protocol[key];        if (key == "role_name") {
+        let val = _protocol[key];
+        if (key == "role_name") {
             _struct.role_name = val;
         }
         else if (key == "entity_id") {
@@ -44,7 +45,7 @@ export class client_time_info {
 }
 
 export function client_time_info_to_protcol(_struct:client_time_info) {
-    let _protocol = {}
+    let _protocol:any = {}
     _protocol["entity_id"] = _struct.entity_id
     _protocol["timetmp"] = _struct.timetmp
     return _protocol;
@@ -53,7 +54,8 @@ export function client_time_info_to_protcol(_struct:client_time_info) {
 export function protcol_to_client_time_info(_protocol:any) {
     let _struct = new client_time_info()
     for (let key in _protocol) {
-        let val = _protocol[key];        if (key == "entity_id") {
+        let val = _protocol[key];
+        if (key == "entity_id") {
             _struct.entity_id = val;
         }
         else if (key == "timetmp") {

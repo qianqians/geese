@@ -15,7 +15,7 @@ import * as proto from './proto'
 import * as ConnMsgHandle from './conn_msg_handle'
 
 export abstract class context {
-    protected ch:channel;
+    protected ch:channel|null = null;
     private conn_id:string|null = null;
 
     private offset:number = 0;
@@ -52,7 +52,7 @@ export abstract class context {
             this.evs.push(ev);
             
             if ( new_data.length > (len + 4) ){
-                let _data = new Uint8Array(new_data.length - (len + 4));
+                let _data:Uint8Array = new Uint8Array(new_data.length - (len + 4));
                 _data.set(new_data.subarray(len + 4));
                 new_data = _data;
             }
@@ -82,7 +82,9 @@ export abstract class context {
                 send_data[3] = (data.length >> 24) & 0xff;
                 send_data.set(data, 4);
 
-                this.ch.send(send_data); 
+                if (this.ch) {
+                    this.ch.send(send_data); 
+                }
             }
         });
         let output = new TCompactProtocol(trans);

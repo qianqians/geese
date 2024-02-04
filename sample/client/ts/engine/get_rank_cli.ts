@@ -1,5 +1,5 @@
 import * as engine from "./engine";
-import { encode, decode } from "./@msgpack/msgpack";
+import { encode, decode } from "@msgpack/msgpack";
 import * as common from "./common_cli";
 // this enum code is codegen by geese codegen for ts
 
@@ -7,12 +7,12 @@ import * as common from "./common_cli";
 // this caller code is codegen by geese codegen for typescript
 export class get_rank_get_self_rank_cb {
     public entity:engine.subentity|engine.player;
-    public cb:(rank:common.role_rank_info) => void;
-    public err:(err:common.error_code) => void;
+    public cb:((rank:common.role_rank_info) => void)|null = null;
+    public err:((err:common.error_code) => void)|null = null;
     public rsp:engine.callback;
     public constructor(_cb_uuid:number, _entity:engine.subentity|engine.player) {
         this.entity = _entity
-        this.rsp = new engine.callback(() => { this.entity.del_callback(_cb_uuid); });
+        this.rsp = new engine.callback(() => { return this.entity.del_callback(_cb_uuid); });
         this.entity.reg_hub_callback(_cb_uuid, this.rsp)
 
     }
@@ -20,18 +20,18 @@ export class get_rank_get_self_rank_cb {
     private on_rsp(bin:Uint8Array) {
         let inArray = decode(bin) as any;
         let _rank = common.protcol_to_role_rank_info(inArray[0]);
-        this.cb(_rank);
+        if (this.cb) this.cb(_rank);
 
     }
 
     private on_err(bin:Uint8Array) {
         let inArray = decode(bin) as any;
         let _err = inArray[0];
-        this.err(_err)
+        if (this.err) this.err(_err)
 
     }
 
-    public  callBack(_cb:(rank:common.role_rank_info) => void, _err:(err:common.error_code) => void) {
+    public callBack(_cb:(rank:common.role_rank_info) => void, _err:(err:common.error_code) => void) {
         this.cb = _cb;
         this.err = _err;
         this.rsp.callback(this.on_rsp, this.on_err);
@@ -42,12 +42,12 @@ export class get_rank_get_self_rank_cb {
 
 export class get_rank_get_rank_cb {
     public entity:engine.subentity|engine.player;
-    public cb:(rank_list:Array<common.role_rank_info>) => void;
-    public err:(err:common.error_code) => void;
+    public cb:((rank_list:Array<common.role_rank_info>) => void)|null = null;
+    public err:((err:common.error_code) => void)|null = null;
     public rsp:engine.callback;
     public constructor(_cb_uuid:number, _entity:engine.subentity|engine.player) {
         this.entity = _entity
-        this.rsp = new engine.callback(() => { this.entity.del_callback(_cb_uuid); });
+        this.rsp = new engine.callback(() => { return this.entity.del_callback(_cb_uuid); });
         this.entity.reg_hub_callback(_cb_uuid, this.rsp)
 
     }
@@ -58,18 +58,18 @@ export class get_rank_get_rank_cb {
         for (let v_e249ecbd_d64c_526b_901b_6d4ddee4b75a of inArray[0]) {
             _rank_list.push(common.protcol_to_role_rank_info(v_e249ecbd_d64c_526b_901b_6d4ddee4b75a))
         }
-        this.cb(_rank_list);
+        if (this.cb) this.cb(_rank_list);
 
     }
 
     private on_err(bin:Uint8Array) {
         let inArray = decode(bin) as any;
         let _err = inArray[0];
-        this.err(_err)
+        if (this.err) this.err(_err)
 
     }
 
-    public  callBack(_cb:(rank_list:Array<common.role_rank_info>) => void, _err:(err:common.error_code) => void) {
+    public callBack(_cb:(rank_list:Array<common.role_rank_info>) => void, _err:(err:common.error_code) => void) {
         this.cb = _cb;
         this.err = _err;
         this.rsp.callback(this.on_rsp, this.on_err);
