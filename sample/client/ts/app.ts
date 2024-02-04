@@ -1,6 +1,7 @@
 import * as engine from './engine/engine' 
 import * as login_cli from './engine/login_cli'
 import * as get_rank_cli from './engine/get_rank_cli'
+import WebSocket from 'ws'
 
 class ClientEventHandle extends engine.client_event_handle {
     public on_kick_off(prompt_info:string) {
@@ -68,16 +69,29 @@ class SamplePlayer extends engine.player {
 }
 
 class WSChannel extends engine.channel {
+    private client: WebSocket;
+
     public connect(wsHost:string) : boolean {
+        this.client = new WebSocket(wsHost);
         return true;
     }
 
     public send(data:Uint8Array) {
-
+        this.client.send(data);
     }
     
     public on_recv(recv:(data:Uint8Array) => void) {
-
+        this.client.on('message', (data) =>{ 
+            if (Buffer.isBuffer(data)) {
+                recv(new Uint8Array(data));
+            }
+            else if (Array.isArray(data)) {
+                recv(new Uint8Array(Buffer.concat(data)));
+            }
+            else {
+                recv(new Uint8Array(data));
+            }
+        });
     }
 }
    
