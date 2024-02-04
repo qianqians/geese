@@ -66,12 +66,31 @@ class SamplePlayer extends engine.player {
         return playerImpl
     }
 }
-    
 
-function conn_callback(conn_id:string) {
-    console.log("conn_callback begin!");
-    engine.app.instance.login(engine.uuid.v4())
-    console.log("conn_callback end!")
+class WSChannel extends engine.channel {
+    public connect(wsHost:string) : boolean {
+        return true;
+    }
+
+    public send(data:Uint8Array) {
+
+    }
+    
+    public on_recv(recv:(data:Uint8Array) => void) {
+
+    }
+}
+   
+class WSContext extends engine.context {
+    public ConnectWebSocket(wsHost:string) : engine.channel {
+        this.ch = new WSChannel();
+        this.ch.connect(wsHost);
+        return this.ch;
+    }
+    
+    public ConnectTcp(host:string, port:number) : engine.channel {
+        return this.ch;
+    }
 }
 
 function main() {
@@ -79,7 +98,7 @@ function main() {
     _app.build(new ClientEventHandle())
     _app.register("SamplePlayer", SamplePlayer.Creator)
     _app.register("RankImpl", RankSubEntity.Creator)
-    //_app.connect_tcp("127.0.0.1", 8000, conn_callback)
+    _app.connect_websocket(new WSContext(), "ws://127.0.0.1:8001");
     console.log("run begin!")
     _app.run()
 }

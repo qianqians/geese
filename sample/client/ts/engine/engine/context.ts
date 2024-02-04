@@ -15,7 +15,7 @@ import * as proto from './proto'
 import * as ConnMsgHandle from './conn_msg_handle'
 
 export abstract class context {
-    private ch:channel;
+    protected ch:channel;
     private conn_id:string|null = null;
 
     private offset:number = 0;
