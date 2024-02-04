@@ -22,7 +22,7 @@ def genmainstruct(struct_name, elems, dependent_struct, dependent_enum, enum):
 
 def genstructprotocol(struct_name, elems, dependent_struct, dependent_enum):
     code = "export function " + struct_name + "_to_protcol(_struct:" + struct_name + ") {\n"
-    code += "    let _protocol = {}\n"
+    code += "    let _protocol:any = {}\n"
     for key, value, parameter in elems:
         type_ = check_type(key, dependent_struct, dependent_enum)
         if check_type_original(type_):
@@ -55,7 +55,7 @@ def genprotocolstruct(struct_name, elems, dependent_struct, dependent_enum):
     code = "export function protcol_to_" + struct_name + "(_protocol:any) {\n"
     code += "    let _struct = new " + struct_name + "()\n"
     code += "    for (let key in _protocol) {\n"
-    code += "        let val = _protocol[key];"
+    code += "        let val = _protocol[key];\n"
     count = 0
     for key, value, parameter in elems:
         type_ = check_type(key, dependent_struct, dependent_enum)

@@ -41,7 +41,9 @@ export class receiver_manager {
 
     public update_receiver(entity_id:string, argvs: object) {
         let _receiver = this.get_receiver(entity_id);
-        _receiver?.update_receiver(argvs);
+        if (_receiver) {
+            _receiver.update_receiver(argvs);
+        }
     }
 
     public get_receiver(entity_id:string) : receiver | undefined {

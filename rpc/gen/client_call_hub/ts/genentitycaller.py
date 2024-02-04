@@ -69,12 +69,12 @@ def gen_entity_caller(module_name, funcs, dependent_struct, dependent_enum, enum
 
             cb_code += "export class " + module_name + "_" + func_name + "_cb {\n"
             cb_code += "    public entity:engine.subentity|engine.player;\n"
-            cb_code += "    public cb:" + rsp_fn + ";\n"
-            cb_code += "    public err:" + err_fn + ";\n"
+            cb_code += "    public cb:(" + rsp_fn + ")|null = null;\n"
+            cb_code += "    public err:(" + err_fn + ")|null = null;\n"
             cb_code += "    public rsp:engine.callback;\n"
             cb_code += "    public constructor(_cb_uuid:number, _entity:engine.subentity|engine.player) {\n"
             cb_code += "        this.entity = _entity\n"
-            cb_code += "        this.rsp = new engine.callback(() => { this.entity.del_callback(_cb_uuid); });\n"
+            cb_code += "        this.rsp = new engine.callback(() => { return this.entity.del_callback(_cb_uuid); });\n"
             cb_code += "        this.entity.reg_hub_callback(_cb_uuid, this.rsp)\n\n"
             cb_code += "    }\n\n"
 
@@ -93,7 +93,7 @@ def gen_entity_caller(module_name, funcs, dependent_struct, dependent_enum, enum
                     dependent_struct, 
                     dependent_enum)
                 count += 1
-            cb_code += "        this.cb("
+            cb_code += "        if (this.cb) this.cb("
             count = 0
             for _type, _name, _parameter in i[4]:
                 cb_code += "_" + _name
@@ -118,7 +118,7 @@ def gen_entity_caller(module_name, funcs, dependent_struct, dependent_enum, enum
                     dependent_struct, 
                     dependent_enum)
                 count += 1
-            cb_code += "        this.err("
+            cb_code += "        if (this.err) this.err("
             count = 0
             for _type, _name, _parameter in i[6]:
                 cb_code += "_" + _name
@@ -128,7 +128,7 @@ def gen_entity_caller(module_name, funcs, dependent_struct, dependent_enum, enum
             cb_code += ")\n\n"
             cb_code += "    }\n\n"
 
-            cb_code += "    public  callBack(_cb:" + rsp_fn + ", _err:" + err_fn + ") {\n"
+            cb_code += "    public callBack(_cb:" + rsp_fn + ", _err:" + err_fn + ") {\n"
             cb_code += "        this.cb = _cb;\n"
             cb_code += "        this.err = _err;\n"
             cb_code += "        this.rsp.callback(this.on_rsp, this.on_err);\n"

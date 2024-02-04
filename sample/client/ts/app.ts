@@ -115,7 +115,7 @@ class WSContext extends engine.context {
     }
     
     public ConnectTcp(host:string, port:number) : engine.channel {
-        return this.ch;
+        return new WSChannel();
     }
 }
 

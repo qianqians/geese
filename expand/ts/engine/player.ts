@@ -40,7 +40,7 @@ export abstract class player extends Base.base_entity {
     
     public handle_hub_response(msg_cb_id:number, argvs:Uint8Array) {
         let _call_handle = this.hub_callback.get(msg_cb_id);
-        if (_call_handle) {
+        if (_call_handle && _call_handle._callback) {
             _call_handle._callback.call(null, argvs);
             this.hub_callback.delete(msg_cb_id);
         }
@@ -48,7 +48,7 @@ export abstract class player extends Base.base_entity {
     
     public handle_hub_response_error(msg_cb_id:number, argvs:Uint8Array) {
         let _call_handle = this.hub_callback.get(msg_cb_id);
-        if (_call_handle) {
+        if (_call_handle && _call_handle._error) {
             _call_handle._error.call(null, argvs);
             this.hub_callback.delete(msg_cb_id);
         }
@@ -72,7 +72,9 @@ export abstract class player extends Base.base_entity {
     public call_hub_request(method:string, argvs:Uint8Array) : number {
         let msg_cb_id = this.request_msg_cb_id
         this.request_msg_cb_id += 1
-        app.app.instance.ctx.call_rpc(this.EntityID, msg_cb_id, method, argvs);
+        if (app.app.instance.ctx) {
+            app.app.instance.ctx.call_rpc(this.EntityID, msg_cb_id, method, argvs);
+        }
         return msg_cb_id
     }
     
@@ -81,15 +83,21 @@ export abstract class player extends Base.base_entity {
     }
         
     public call_hub_response(msg_cb_id:number, argvs:Uint8Array) {
-        app.app.instance.ctx.call_rsp(this.EntityID, msg_cb_id, argvs);
+        if (app.app.instance.ctx) {
+            app.app.instance.ctx.call_rsp(this.EntityID, msg_cb_id, argvs);
+        }
     }
     
     public call_hub_response_error(msg_cb_id:number, argvs:Uint8Array) {
-        app.app.instance.ctx.call_err(this.EntityID, msg_cb_id, argvs);
+        if (app.app.instance.ctx) {
+            app.app.instance.ctx.call_err(this.EntityID, msg_cb_id, argvs);
+        }
     }
     
     public call_hub_notify(method:string, argvs:Uint8Array) {
-        app.app.instance.ctx.call_ntf(this.EntityID, method, argvs);
+        if (app.app.instance.ctx) {
+            app.app.instance.ctx.call_ntf(this.EntityID, method, argvs);
+        }
     }
 }
 
@@ -101,12 +109,14 @@ export class player_manager {
     }
 
     public add_player(_player:player) {
-        this.players[_player.EntityID] = _player;
+        this.players.set(_player.EntityID, _player);
     }
     
     public update_player(entity_id:string, argvs: object) {
         let _player = this.get_player(entity_id);
-        _player?.update_player(argvs);
+        if (_player) {
+            _player.update_player(argvs);
+        }
     }
 
     public get_player(entity_id:string) : player | undefined {
