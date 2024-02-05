@@ -2,6 +2,7 @@ import * as engine from './engine/engine'
 import * as login_cli from './engine/login_cli'
 import * as get_rank_cli from './engine/get_rank_cli'
 import WebSocket from 'ws'
+import * as uuid from 'uuid'
 
 class ClientEventHandle extends engine.client_event_handle {
     public on_kick_off(prompt_info:string) {
@@ -79,7 +80,12 @@ class WSChannel extends engine.channel {
     }
 
     public connect(wsHost:string) : boolean {
+        console.log("WSChannel connect begin! wsHost:", wsHost);
         this.client = new WebSocket(wsHost);
+        this.client.onopen = (evt:WebSocket.Event) => {
+            console.log("WSChannel connect complete! msg:", evt.type);
+        }
+        console.log("WSChannel connect end!");
         return true;
     }
 
@@ -124,8 +130,9 @@ function main() {
     _app.build(new ClientEventHandle())
     _app.register("SamplePlayer", SamplePlayer.Creator)
     _app.register("RankImpl", RankSubEntity.Creator)
-    _app.connect_websocket(new WSContext(), "ws://127.0.0.1:8001");
+    _app.connect_websocket(new WSContext(), "ws://127.0.0.1:8100/");
     console.log("run begin!")
+    _app.login(uuid.v4())
     _app.run()
 }
 main();

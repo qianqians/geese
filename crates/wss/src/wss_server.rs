@@ -56,8 +56,21 @@ impl WSSServer {
                 };
                 trace!("wss accept client ip:{:?}", _s.peer_addr());
 
-                let _tls_stream: MaybeTlsStream<TcpStream> = MaybeTlsStream::NativeTls(acceptor.accept(_s).unwrap());
-                let mut _websocket: WebSocket<MaybeTlsStream<TcpStream>> = accept(_tls_stream).unwrap();
+                let _acc_s = match acceptor.accept(_s) {
+                    Err(e) => {
+                        error!("wss accept acceptor.accept err:{}", e);
+                        continue;
+                    },
+                    Ok(s) => s
+                };
+                let _tls_stream: MaybeTlsStream<TcpStream> = MaybeTlsStream::NativeTls(_acc_s);
+                let mut _websocket: WebSocket<MaybeTlsStream<TcpStream>> = match accept(_tls_stream) {
+                    Err(e) => {
+                        error!("wss accept accept err:{}", e);
+                        continue;
+                    },
+                    Ok(s) => s
+                };
 
                 let _client_arc = Arc::new(Mutex::new(_websocket));
                 let mut f_handle = _f_clone.as_ref().lock().await;
@@ -86,17 +99,24 @@ impl WSSServer {
         let _f_clone = f.clone();
 
         let _join = tokio::spawn(async move {
-            for stream in _listener.incoming() {
-                let _s = match stream {
+            loop {   
+                let stream = _listener.accept();
+                let (_s, addr) = match stream {
                     Err(e) => {
                         error!("ws accept client err:{}", e);
                         continue;
                     },
                     Ok(s) => s
                 };
-                trace!("ws accept client ip:{:?}", _s.peer_addr());
+                trace!("ws accept client ip:{:?}", addr);
 
-                let mut _websocket: WebSocket<MaybeTlsStream<TcpStream>> = accept(MaybeTlsStream::Plain(_s)).unwrap();
+                let mut _websocket: WebSocket<MaybeTlsStream<TcpStream>> = match accept(MaybeTlsStream::Plain(_s)) {
+                    Err(e) => {
+                        error!("ws accept MaybeTlsStream::Plain err:{}", e);
+                        continue;
+                    },
+                    Ok(s) => s
+                };
 
                 let _client_arc = Arc::new(Mutex::new(_websocket));
                 let mut f_handle = _f_clone.as_ref().lock().await;
