@@ -13,6 +13,7 @@ import { TBufferedTransport, TCompactProtocol } from 'thrift'
 
 import * as proto from './proto'
 import * as ConnMsgHandle from './conn_msg_handle'
+import * as app from './app'
 
 export abstract class context {
     protected ch:channel|null = null;
@@ -191,7 +192,7 @@ export abstract class context {
         return true;
     }
 
-    private heartbeats() {
+    public heartbeats() {
         let data = new proto.client_call_gate_heartbeats();
         let reqData = proto.gate_client_service.fromHeartbeats(data);
         this.send(reqData);
@@ -208,6 +209,9 @@ export abstract class context {
             console.log(`poll_conn_msg ev ev.conn_id begin!`);
             if (ev.conn_id.conn_id) {
                 this.conn_id = ev.conn_id.conn_id;
+                if (app.app.instance.on_conn) {
+                    app.app.instance.on_conn.call(null);
+                }
             }
         }
         else if (ev.heartbeats) {
