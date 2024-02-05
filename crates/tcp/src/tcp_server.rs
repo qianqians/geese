@@ -46,10 +46,11 @@ impl TcpServer {
 
                 trace!("tcp accept client ip:{:?}", socket.peer_addr());
 
-                let _clone_c = _clone_close.clone();
                 let (rd, wr) = io::split(socket);
-                let mut f_handle = _f_clone.as_ref().lock().await;
-                f_handle.cb(TcpReader::new(rd), TcpWriter::new(wr)).await;
+                {
+                    let mut f_handle = _f_clone.as_ref().lock().await;
+                    f_handle.cb(TcpReader::new(rd), TcpWriter::new(wr)).await;
+                }
 
                 let _c_ref = _clone_close.as_ref().lock().await;
                 if _c_ref.is_closed() {

@@ -119,8 +119,10 @@ impl WSSServer {
                 };
 
                 let _client_arc = Arc::new(Mutex::new(_websocket));
-                let mut f_handle = _f_clone.as_ref().lock().await;
-                f_handle.cb(WSSReader::new(_client_arc.clone()), WSSWriter::new(_client_arc.clone())).await;
+                {
+                    let mut f_handle = _f_clone.as_ref().lock().await;
+                    f_handle.cb(WSSReader::new(_client_arc.clone()), WSSWriter::new(_client_arc.clone())).await;
+                }
 
                 let _c_ref = _clone_close.as_ref().lock().await;
                 if _c_ref.is_closed() {
