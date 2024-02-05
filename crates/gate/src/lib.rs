@@ -98,7 +98,7 @@ impl GateServer {
         let _wss_s = match client_wss_cfg {
             None => None,
             Some(_cfg) => {
-                let client_wss_host = format!("wss://0.0.0.0:{}", _cfg.client_wss_port);
+                let client_wss_host = format!("0.0.0.0:{}", _cfg.client_wss_port);
                 Some(WSSServer::listen_wss(
                     client_wss_host, 
                     _cfg.client_wss_pfx, 
