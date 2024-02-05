@@ -40,7 +40,13 @@ impl NetReader for WSSReader {
                 let message: Message;
                 {
                     let mut _client_ref = _p.s.as_ref().lock().await;
-                    message = _client_ref.read().unwrap();
+                    message = match _client_ref.read() {
+                        Err(e) => {
+                            error!("_client_ref error:{}", e);
+                            break;
+                        },
+                        Ok(msg) => msg,
+                    };
                 }
                 
                 match message {

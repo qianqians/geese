@@ -84,20 +84,25 @@ class WSChannel extends engine.channel {
         this.client = new WebSocket(wsHost);
         this.client.onopen = (evt) => {
             console.log("WSChannel connect complete! msg:", evt.type);
+            engine.app.instance.login(uuid.v4())
         }
         console.log("WSChannel connect end!");
         return true;
     }
 
     public send(data:Uint8Array) {
+        console.log("WSChannel send begin!");
         if (this.client) {
+            console.log("WSChannel send impl!");
             this.client.send(data);
+            console.log("WSChannel send impl end!");
         }
     }
     
     public on_recv(recv:(data:Uint8Array) => void) {
         if (this.client) {
             this.client.onmessage = (evt) =>{ 
+                console.log(`onmessage evt:${evt}`);
                 if (Buffer.isBuffer(evt.data)) {
                     recv(new Uint8Array(evt.data));
                 }
@@ -131,8 +136,7 @@ function main() {
     _app.register("SamplePlayer", SamplePlayer.Creator)
     _app.register("RankImpl", RankSubEntity.Creator)
     _app.connect_websocket(new WSContext(), "ws://127.0.0.1:8100");
-    console.log("run begin!")
-    //_app.login(uuid.v4())
+    console.log("run begin!");
     _app.run()
 }
 main();

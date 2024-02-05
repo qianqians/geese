@@ -8,7 +8,9 @@ import * as app2 from './app'
 
 export class conn_msg_handle {
     public on_create_remote_entity(entity_type:string, entity_id:string, argvs:Uint8Array) {
+        console.log("on_create_remote_entity begin!");
         let info = decode<object>(argvs);
+        console.log(`on_create_remote_entity info:${info}!`);
         if (typeof info === "object" && info) {
             app2.app.instance.create_entity(entity_type, entity_id, info);
         }
