@@ -39,6 +39,7 @@ impl NetReader for WSSReader {
             loop {
                 let message: Message;
                 {
+                    trace!("WSSReader get Message begin!");
                     let mut _client_ref = _p.s.as_ref().lock().await;
                     message = match _client_ref.read() {
                         Err(e) => {
@@ -47,6 +48,7 @@ impl NetReader for WSSReader {
                         },
                         Ok(msg) => msg,
                     };
+                    trace!("WSSReader Message::end!");
                 }
                 
                 match message {
@@ -59,6 +61,8 @@ impl NetReader for WSSReader {
                         return;
                     },
                     Message::Ping(ping) => {
+                        trace!("WSSReader Message::Ping");
+
                         let message = Message::Pong(ping);
                         let mut _client_ref = _p.s.as_ref().lock().await;
                         _client_ref.send(message).unwrap();
@@ -114,7 +118,9 @@ impl NetWriter for WSSWriter {
         tmp_buf[3] = len3;
         tmp_buf.extend_from_slice(buf);
 
+        trace!("WSSWriter lock begin!");
         let mut wr = self.s.as_ref().lock().await;
+        trace!("WSSWriter lock success!");
         let msg = Message::Binary(tmp_buf);
         match wr.send(msg) {
             Err(_) => {

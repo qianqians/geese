@@ -80,9 +80,17 @@ impl GateClientMsgHandle {
         };
 
         let _proxy_clone = _proxy.clone();
-        let mut _p = _proxy.as_ref().lock().await;
-        let _handle_arc = _p.get_msg_handle().await;
+        let _handle_arc: Arc<Mutex<GateClientMsgHandle>>;
+        {
+            trace!("_proxy lock get _handle_arc!");
+            let mut _p = _proxy.as_ref().lock().await;
+            _handle_arc = _p.get_msg_handle().await;
+            trace!("_proxy lock get _handle_arc success!");
+        }
+        
+        trace!("_handle_arc get lock!");
         let mut _handle = _handle_arc.as_ref().lock().await;
+        trace!("_handle_arc get lock success!");
         _handle.enque_event(ClientEvent {
             proxy: Arc::downgrade(&_proxy_clone),
             ev: _ev
@@ -453,12 +461,7 @@ impl GateClientMsgHandle {
             let mut _client = _proxy_handle.as_ref().lock().await;
             _client.set_timetmp(utc_unix_time());
             if !_client.send_client_msg(ClientService::Heartbeats(GateCallHeartbeats::new(utc_unix_time_with_offset()))).await {
-                let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
-                {
-                    let mut _p = _proxy_handle.as_ref().lock().await;
-                    _conn_mgr_arc = _p.get_conn_mgr();
-                }
-
+                let _conn_mgr_arc = _client.get_conn_mgr();
                 let mut _conn_mgr_tmp = _conn_mgr_arc.as_ref().lock().await;
                 _conn_mgr_tmp.delete_client_proxy(_client.get_conn_id());
             }

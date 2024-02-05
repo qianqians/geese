@@ -91,10 +91,12 @@ class app(object):
         self.__hub_global_callback__[method] = callback
     
     def connect_tcp(self, addr:str, port:int, callback:Callable[[str], None]) -> bool:
+        print("connect_tcp begin!")
         self.__conn_id_callback__ = callback
         return self.ctx.connect_tcp(addr, port)
     
     def connect_ws(self, host:str, callback:Callable[[str], None]) -> bool:
+        print("connect_ws begin!")
         self.__conn_id_callback__ = callback
         return self.ctx.connect_ws(host)
     

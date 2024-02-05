@@ -279,7 +279,9 @@ impl TcpListenCallback for TcpClientProxyManager {
 
         let join = rd.start(Arc::new(Mutex::new(Box::new(ClientReaderCallback::new(_clientproxy_clone.clone())))), self.close_handle.clone());
         {
+            trace!("TcpListenCallback cb _clientproxy lock begin!");
             let mut _client_tmp = _clientproxy.as_ref().lock().await;
+            trace!("TcpListenCallback cb _clientproxy lock success!");
             _client_tmp.set_join(join);
             _client_tmp.send_client_msg(ClientService::ConnId(NtfConnId::new(_conn_id.clone()))).await;
         }
@@ -320,7 +322,9 @@ impl WSSListenCallback for WSSClientProxyManager {
         
         let join = rd.start(Arc::new(Mutex::new(Box::new(ClientReaderCallback::new(_clientproxy_clone.clone())))), self.close_handle.clone());
         {
+            trace!("WSSListenCallback cb _clientproxy lock begin!");
             let mut _client_tmp = _clientproxy.as_ref().lock().await;
+            trace!("WSSListenCallback cb _clientproxy lock success!");
             _client_tmp.set_join(join);
             _client_tmp.send_client_msg(ClientService::ConnId(NtfConnId::new(_conn_id.clone()))).await;
         }
