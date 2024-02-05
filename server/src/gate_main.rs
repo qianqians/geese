@@ -69,7 +69,7 @@ async fn main() {
     };
     let client_ws_host = match cfg.client_ws_port {
         None => None,
-        Some(port) => Some(format!("ws://0.0.0.0:{}", port))
+        Some(port) => Some(format!("0.0.0.0:{}", port))
     };
 
     let _local_ip = get_local_ip();
