@@ -1,7 +1,7 @@
 import * as engine from './engine/engine' 
 import * as login_cli from './engine/login_cli'
 import * as get_rank_cli from './engine/get_rank_cli'
-import WebSocket from 'ws'
+import { WebSocket } from 'ws'
 import * as uuid from 'uuid'
 
 class ClientEventHandle extends engine.client_event_handle {
@@ -82,7 +82,7 @@ class WSChannel extends engine.channel {
     public connect(wsHost:string) : boolean {
         console.log("WSChannel connect begin! wsHost:", wsHost);
         this.client = new WebSocket(wsHost);
-        this.client.onopen = (evt:WebSocket.Event) => {
+        this.client.onopen = (evt) => {
             console.log("WSChannel connect complete! msg:", evt.type);
         }
         console.log("WSChannel connect end!");
@@ -97,7 +97,7 @@ class WSChannel extends engine.channel {
     
     public on_recv(recv:(data:Uint8Array) => void) {
         if (this.client) {
-            this.client.onmessage = (evt: WebSocket.MessageEvent) =>{ 
+            this.client.onmessage = (evt) =>{ 
                 if (Buffer.isBuffer(evt.data)) {
                     recv(new Uint8Array(evt.data));
                 }
@@ -116,7 +116,7 @@ class WSContext extends engine.context {
     public ConnectWebSocket(wsHost:string) : engine.channel {
         this.ch = new WSChannel();
         this.ch.connect(wsHost);
-        this.ch.on_recv(this.recv);
+        this.ch.on_recv(this.recv.bind(this));
         return this.ch;
     }
     
@@ -130,9 +130,9 @@ function main() {
     _app.build(new ClientEventHandle())
     _app.register("SamplePlayer", SamplePlayer.Creator)
     _app.register("RankImpl", RankSubEntity.Creator)
-    _app.connect_websocket(new WSContext(), "ws://127.0.0.1:8100/");
+    _app.connect_websocket(new WSContext(), "ws://127.0.0.1:8100");
     console.log("run begin!")
-    _app.login(uuid.v4())
+    //_app.login(uuid.v4())
     _app.run()
 }
 main();

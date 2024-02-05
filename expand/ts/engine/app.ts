@@ -132,10 +132,12 @@ export class app {
     }
 
     public poll() {
-        while(this.__is_run__) {
+        if (this.__is_run__) {
             if (this.ctx) {
                 this.ctx.poll_conn_msg(this.__conn_handle__);
             }
+
+            setTimeout(this.poll.bind(this), 16);
         }
     }
 
