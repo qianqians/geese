@@ -274,7 +274,10 @@ impl Context {
         let rt_clone = self.net_rt.clone();
         let rt = rt_clone.as_ref().lock().unwrap();
         rt.block_on(async move {
+            print!("connect_tcp addr:{}, port:{}", addr, port);
             if let Ok((rd, wr)) = TcpConnect::connect(format!("{}:{}", addr, port)).await {
+                print!("connect_tcp addr:{}, port:{} success!", addr, port);
+
                 let _wr_arc: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>> = Arc::new(Mutex::new(Box::new(wr)));
 
                 let _gate_proxy = GateProxy::new(_wr_arc.clone(), self.msg_handle.clone());

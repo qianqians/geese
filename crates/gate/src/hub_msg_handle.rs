@@ -226,7 +226,10 @@ impl GateHubMsgHandle {
                 let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
                 if let Some(_client_arc) = _conn_mgr.get_client_proxy(&main_conn_id.clone()) {
                     let mut _client = _client_arc.as_ref().lock().await;
-                    if _client.send_client_msg(ClientService::CreateRemoteEntity(CreateRemoteEntity::new(entity_id.clone(), entity_type.clone(), true, argvs.clone()))).await {
+                    if _client.send_client_msg(
+                        ClientService::CreateRemoteEntity(
+                            CreateRemoteEntity::new(entity_id.clone(), entity_type.clone(), true, argvs.clone()))).await 
+                    {
                         main_send_ret = true;
                         _client.entities.insert(entity_id.clone());
                     }
