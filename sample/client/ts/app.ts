@@ -66,7 +66,7 @@ class SamplePlayer extends engine.player {
             (success) => { console.log(`SamplePlayer login success:{success}`) },
             (_err) => { console.log(`SamplePlayer login _err:{_err}`) } ).timeout(
             1000, () => { console.log(`SamplePlayer login timeout!`) } );
-            engine.app.instance.request_hub_service("Rank")
+        engine.app.instance.request_hub_service("Rank");
         return playerImpl
     }
 }
@@ -84,18 +84,20 @@ class WSChannel extends engine.channel {
         this.client = new WebSocket(wsHost);
         this.client.onopen = (evt) => {
             console.log("WSChannel connect complete! msg:", evt.type);
-            engine.app.instance.login(uuid.v4())
         }
+        this.client.onclose = (evt) => {
+            console.log("WSChannel onclose! msg:", evt.type);
+        };
+        this.client.onerror = (evt) => {
+            console.log("WSChannel onerror! msg:", evt.type);
+        };
         console.log("WSChannel connect end!");
         return true;
     }
 
     public send(data:Uint8Array) {
-        console.log("WSChannel send begin!");
         if (this.client) {
-            console.log("WSChannel send impl!");
             this.client.send(data);
-            console.log("WSChannel send impl end!");
         }
     }
     
@@ -136,6 +138,9 @@ function main() {
     _app.register("SamplePlayer", SamplePlayer.Creator)
     _app.register("RankImpl", RankSubEntity.Creator)
     _app.connect_websocket(new WSContext(), "ws://127.0.0.1:8100");
+    _app.on_conn = () => {
+        engine.app.instance.login(uuid.v4())
+    };
     console.log("run begin!");
     _app.run()
 }

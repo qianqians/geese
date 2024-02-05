@@ -24,6 +24,8 @@ export class app {
     public subentity_mgr:subentity.subentity_manager;
     public receiver_mgr:receiver.receiver_manager;
 
+    public on_conn: (() => void) | null;
+
     private __is_run__:boolean;
     private __conn_handle__:ConnMsgHandle.conn_msg_handle;
     private __entity_create_method__:Map<string, (id:string, info:object) => any>;
@@ -32,6 +34,8 @@ export class app {
     public constructor() {
         this.ctx = null;
         this.client_event_handle = null;
+
+        this.on_conn = null;
 
         this.__is_run__ = true;
         this.__conn_handle__ = new ConnMsgHandle.conn_msg_handle();
@@ -47,7 +51,14 @@ export class app {
 
     public build(handle:client_event_handle) {
         this.client_event_handle = handle;
+        setInterval(this.heartbeats.bind(this), 1000);
         return this;
+    }
+
+    private heartbeats() {
+        if (this.ctx) {
+            this.ctx.heartbeats();
+        }
     }
 
     public connect_websocket(_ctx:context.context, wsHost:string) {

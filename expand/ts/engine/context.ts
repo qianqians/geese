@@ -13,6 +13,7 @@ import { TBufferedTransport, TCompactProtocol } from 'thrift'
 
 import * as proto from './proto'
 import * as ConnMsgHandle from './conn_msg_handle'
+import * as app from './app'
 
 export abstract class context {
     protected ch:channel|null = null;
@@ -29,6 +30,8 @@ export abstract class context {
     }
 
     protected recv(data:Uint8Array) : void {
+        console.log(`data:${data} recv begin!`);
+
         let u8data = new Uint8Array(data);
             
         let new_data:Uint8Array|null = new Uint8Array(this.offset + u8data.byteLength);
@@ -43,14 +46,16 @@ export abstract class context {
             if ( (len + 4) > new_data.length ){
                 break;
             }
+            console.log(`data.length:${len}, new_data.length:${new_data.length}`);
 
             var str_bytes = new_data.subarray(4, (len + 4));
-            let trans = new TBufferedTransport(Buffer.from(str_bytes));
-            let input = new TCompactProtocol(trans);
-            let ev = proto.client_service.read(input);
+            let recvFun = TBufferedTransport.receiver((trans,  seqid) => {
+                let input = new TCompactProtocol(trans);
+                let ev = proto.client_service.read(input);
+                this.evs.push(ev);
+            }, 0);
+            recvFun(Buffer.from(str_bytes));
 
-            this.evs.push(ev);
-            
             if ( new_data.length > (len + 4) ){
                 let _data:Uint8Array = new Uint8Array(new_data.length - (len + 4));
                 _data.set(new_data.subarray(len + 4));
@@ -72,6 +77,7 @@ export abstract class context {
 
     public send(service:proto.gate_client_service) {
         let trans = new TBufferedTransport(undefined, (msg) => {
+            console.log("TBufferedTransport callback!");
             if (msg) {
                 var data = Uint8Array.from(msg);
 
@@ -186,7 +192,7 @@ export abstract class context {
         return true;
     }
 
-    private heartbeats() {
+    public heartbeats() {
         let data = new proto.client_call_gate_heartbeats();
         let reqData = proto.gate_client_service.fromHeartbeats(data);
         this.send(reqData);
@@ -197,18 +203,25 @@ export abstract class context {
         if (!ev) {
             return false;
         }
+        console.log(`poll_conn_msg ev begin!`);
 
         if (ev.conn_id) {
+            console.log(`poll_conn_msg ev ev.conn_id begin!`);
             if (ev.conn_id.conn_id) {
                 this.conn_id = ev.conn_id.conn_id;
+                if (app.app.instance.on_conn) {
+                    app.app.instance.on_conn.call(null);
+                }
             }
         }
         else if (ev.heartbeats) {
             this.heartbeats();
         }
         else if (ev.create_remote_entity) {
+            console.log(`poll_conn_msg ev ev.create_remote_entity begin!`);
             let event = ev.create_remote_entity;
             if (event.entity_type && event.entity_id && event.argvs) {
+                console.log(`poll_conn_msg ev ev.create_remote_entity event begin!`);
                 handle.on_create_remote_entity(event.entity_type, event.entity_id, Uint8Array.from(event.argvs));
             }
         }
