@@ -271,8 +271,10 @@ impl TcpListenCallback for TcpClientProxyManager {
         let _clientproxy = Arc::new(Mutex::new(ClientProxy::new(_conn_id.clone(), _wr_arc.clone(), _conn_mgr_clone)));
         let _clientproxy_clone = _clientproxy.clone();
         {
+            trace!("tcp listen _conn_mgr lock begin!");
             let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
             _conn_mgr.add_client_proxy(_clientproxy_clone.clone()).await;
+            trace!("tcp listen _conn_mgr lock end!");
         }
 
         let join = rd.start(Arc::new(Mutex::new(Box::new(ClientReaderCallback::new(_clientproxy_clone.clone())))), self.close_handle.clone());
@@ -310,8 +312,10 @@ impl WSSListenCallback for WSSClientProxyManager {
         let _clientproxy = Arc::new(Mutex::new(ClientProxy::new(_conn_id.clone(), _wr_arc.clone(), _conn_mgr_clone)));
         let _clientproxy_clone = _clientproxy.clone();
         {
+            trace!("wss listen _conn_mgr lock begin!");
             let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
             _conn_mgr.add_client_proxy(_clientproxy_clone.clone()).await;
+            trace!("wss listen _conn_mgr lock end!");
         }
         
         let join = rd.start(Arc::new(Mutex::new(Box::new(ClientReaderCallback::new(_clientproxy_clone.clone())))), self.close_handle.clone());
