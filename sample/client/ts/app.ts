@@ -97,9 +97,7 @@ class WSChannel extends engine.channel {
 
     public send(data:Uint8Array) {
         if (this.client) {
-            console.log("client send begin!");
             this.client.send(data);
-            console.log("client send end!");
         }
     }
     

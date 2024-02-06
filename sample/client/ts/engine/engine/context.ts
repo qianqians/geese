@@ -86,7 +86,6 @@ export abstract class context {
 
                 if (this.ch) {
                     this.ch.send(send_data); 
-                    console.log("ch send end!");
                 }
             }
         });
@@ -190,7 +189,6 @@ export abstract class context {
     }
 
     public heartbeats() {
-        console.log("call heartbeats!")
         let data = new proto.client_call_gate_heartbeats();
         let reqData = proto.gate_client_service.fromHeartbeats(data);
         this.send(reqData);
@@ -213,7 +211,7 @@ export abstract class context {
             }
         }
         else if (ev.heartbeats) {
-            this.heartbeats();
+            console.log(`poll_conn_msg ev ev.heartbeats!`);
         }
         else if (ev.create_remote_entity) {
             console.log(`poll_conn_msg ev ev.create_remote_entity begin!`);
