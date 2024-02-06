@@ -1,7 +1,7 @@
 use std::sync::{Arc, Weak};
 
 use tokio::sync::Mutex;
-use tracing::{trace, warn, error};
+use tracing::{error, info, trace, warn};
 
 use thrift::protocol::{TCompactInputProtocol, TSerializable};
 use thrift::transport::TBufferChannel;
@@ -464,6 +464,8 @@ impl GateClientMsgHandle {
                 let _conn_mgr_arc = _client.get_conn_mgr();
                 let mut _conn_mgr_tmp = _conn_mgr_arc.as_ref().lock().await;
                 _conn_mgr_tmp.delete_client_proxy(_client.get_conn_id());
+
+                info!("do_call_gate_heartbeats delete_client_proxy!");
             }
         }
         else {

@@ -78,6 +78,7 @@ export abstract class context {
     public send(service:proto.gate_client_service) {
         let trans = new TBufferedTransport(undefined, (msg) => {
             if (msg) {
+                console.log("send begin!");
                 var data = Uint8Array.from(msg);
 
                 var send_data = new Uint8Array(4 + data.length);
@@ -88,7 +89,9 @@ export abstract class context {
                 send_data.set(data, 4);
 
                 if (this.ch) {
+                    console.log("ch send begin!");
                     this.ch.send(send_data); 
+                    console.log("ch send end!");
                 }
             }
         });
@@ -192,6 +195,7 @@ export abstract class context {
     }
 
     public heartbeats() {
+        console.log("call heartbeats!")
         let data = new proto.client_call_gate_heartbeats();
         let reqData = proto.gate_client_service.fromHeartbeats(data);
         this.send(reqData);

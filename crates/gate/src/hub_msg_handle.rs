@@ -1,7 +1,7 @@
 use std::sync::{Arc, Weak};
 
 use tokio::sync::Mutex;
-use tracing::{trace, error};
+use tracing::{trace, info, error};
 
 use thrift::protocol::{TCompactInputProtocol, TSerializable};
 use thrift::transport::TBufferChannel;
@@ -257,6 +257,8 @@ impl GateHubMsgHandle {
                 if let Some(main_conn_id) = ev.main_conn_id.clone() {
                     let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
                     _conn_mgr.delete_client_proxy(&main_conn_id);
+                    
+                    info!("do_create_remote_entity main_conn_id delete_client_proxy!");
                 }
             }
 
@@ -290,6 +292,8 @@ impl GateHubMsgHandle {
                     }
                     else {
                         _conn_mgr.delete_client_proxy(id);
+                        
+                        info!("do_create_remote_entity conn_dis delete_client_proxy!");
                     }
                 }
             }
@@ -327,6 +331,8 @@ impl GateHubMsgHandle {
                     }
                     if !main_send_ret {
                         _conn_mgr.delete_client_proxy(&main_conn_id);
+                        
+                        info!("do_delete_remote_entity main_conn_id delete_client_proxy!");
                     }
                 }
                 for id in _entity.get_conn_ids().iter() {
@@ -342,6 +348,8 @@ impl GateHubMsgHandle {
                     }
                     if !send_ret {
                         _conn_mgr.delete_client_proxy(id);
+                        
+                        info!("do_delete_remote_entity get_conn_ids delete_client_proxy!");
                     }
                 }
             }
@@ -408,6 +416,8 @@ impl GateHubMsgHandle {
             else {
                 let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
                 _conn_mgr.delete_client_proxy(&conn_id);
+                        
+                info!("do_refresh_entity conn_id delete_client_proxy!");
             }
         }
         else {
@@ -449,6 +459,8 @@ impl GateHubMsgHandle {
                         _entity_mut.set_main_conn_id(None);
                         let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
                         _conn_mgr.delete_client_proxy(&main_conn_id);
+                        
+                        info!("do_call_client_rpc main_conn_id delete_client_proxy!");
                     }
                 }
             }
@@ -489,6 +501,8 @@ impl GateHubMsgHandle {
                     _entity_mut.set_main_conn_id(None);
                     let mut _conn_mgr_tmp = _conn_mgr_arc.as_ref().lock().await;
                     _conn_mgr_tmp.delete_client_proxy(&conn_id);
+                        
+                    info!("do_call_client_rsp conn_id delete_client_proxy!");
                 }
             }
         }
@@ -528,6 +542,8 @@ impl GateHubMsgHandle {
                     _entity_mut.set_main_conn_id(None);
                     let mut _conn_mgr_tmp = _conn_mgr_arc.as_ref().lock().await;
                     _conn_mgr_tmp.delete_client_proxy(&conn_id);
+                        
+                    info!("do_call_client_err conn_id delete_client_proxy!");
                 }
             }
         }
@@ -571,6 +587,8 @@ impl GateHubMsgHandle {
                         _entity.set_main_conn_id(None);
                         let mut _conn_mgr_tmp = _conn_mgr_arc.as_ref().lock().await;
                         _conn_mgr_tmp.delete_client_proxy(&conn_id);
+                        
+                        info!("do_call_client_ntf conn_id delete_client_proxy!");
                     }
                 }
                 else {
@@ -589,6 +607,8 @@ impl GateHubMsgHandle {
                             _entity.set_main_conn_id(None);
                             let mut _conn_mgr_tmp = _conn_mgr_arc.as_ref().lock().await;
                             _conn_mgr_tmp.delete_client_proxy(&main_conn_id);
+                        
+                            info!("do_call_client_ntf main_conn_id delete_client_proxy!");
                         }
                     }
 
@@ -609,6 +629,8 @@ impl GateHubMsgHandle {
                             invalid_ids.push(id.to_string());
                             let mut _conn_mgr_tmp = _conn_mgr_arc.as_ref().lock().await;
                             _conn_mgr_tmp.delete_client_proxy(id);
+                        
+                            info!("do_call_client_ntf get_conn_ids delete_client_proxy!");
                         }
                     }
                     for invalid_id in invalid_ids.iter() {
@@ -643,7 +665,9 @@ impl GateHubMsgHandle {
                 let mut _client = _client_arc.as_ref().lock().await;
                 let _event_tmp = event.clone();
                 if !_client.send_client_msg(ClientService::CallGlobal(CallGlobal::new(hub_name.clone(), _event_tmp))).await {
-                    _conn_mgr.delete_client_proxy(&_client.get_conn_id())
+                    _conn_mgr.delete_client_proxy(&_client.get_conn_id());
+                        
+                    info!("do_call_client_global get_conn_ids delete_client_proxy!");
                 }
             }
         }
