@@ -24,8 +24,7 @@ impl TcpReader {
 }
 
 impl NetReader for TcpReader {
-    fn start(self, 
-        f: Arc<Mutex<Box<dyn NetReaderCallback + Send + 'static>>>) -> JoinHandle<()>
+    fn start(self, f: Arc<Mutex<Box<dyn NetReaderCallback + Send + 'static>>>) -> JoinHandle<()>
     {
         trace!("TcpReader NetReader start!");
 
