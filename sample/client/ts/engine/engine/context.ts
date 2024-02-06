@@ -77,7 +77,6 @@ export abstract class context {
 
     public send(service:proto.gate_client_service) {
         let trans = new TBufferedTransport(undefined, (msg) => {
-            console.log("TBufferedTransport callback!");
             if (msg) {
                 var data = Uint8Array.from(msg);
 
