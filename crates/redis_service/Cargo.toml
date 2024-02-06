@@ -14,4 +14,3 @@ redis = "0.24.0"
 tokio = { version = "1.35.1", features = ["full"] }
 proto = { path = "../proto", version = "0.1.0" }
 net = { path = "../net", version = "0.1.0" }
-close_handle = { path = "../close_handle", version = "0.1.0" }

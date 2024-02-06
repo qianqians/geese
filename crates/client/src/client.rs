@@ -284,7 +284,7 @@ impl Context {
                 self.gate_proxy = Some(_gate_proxy.clone());
 
                 let _ = rd.start(Arc::new(Mutex::new(Box::new(
-                    GateProxyReaderCallback::new(_gate_proxy)))), self.close.clone());
+                    GateProxyReaderCallback::new(_gate_proxy)))));
             }
             else {
                 println!("connect_tcp faild! host:{}", format!("{}:{}", addr, port));
@@ -303,7 +303,7 @@ impl Context {
                 self.gate_proxy = Some(_gate_proxy.clone());
 
                 let _ = rd.start(Arc::new(Mutex::new(Box::new(
-                    GateProxyReaderCallback::new(_gate_proxy)))), self.close.clone());
+                    GateProxyReaderCallback::new(_gate_proxy)))));
             }
             else {
                 println!("connect_ws faild! host:{}", host);

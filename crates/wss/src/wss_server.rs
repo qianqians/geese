@@ -12,8 +12,6 @@ use tungstenite::{accept, WebSocket};
 use tungstenite::stream::MaybeTlsStream;
 use async_trait::async_trait;
 
-use close_handle::CloseHandle;
-
 use crate::wss_socket::{WSSReader, WSSWriter};
 
 pub struct WSSServer{
@@ -29,8 +27,7 @@ impl WSSServer {
     pub async fn listen_wss(
         host:String, 
         pfx:String, 
-        f:Arc<Mutex<Box<dyn WSSListenCallback + Send + 'static>>>, 
-        _close: Arc<Mutex<CloseHandle>>) -> Result<WSSServer, Box<dyn std::error::Error>>
+        f:Arc<Mutex<Box<dyn WSSListenCallback + Send + 'static>>>) -> Result<WSSServer, Box<dyn std::error::Error>>
     {
         trace!("wss accept start:{}!", host);
 
@@ -42,7 +39,6 @@ impl WSSServer {
         let _listener = TcpListener::bind(host).unwrap();
         let acceptor = TlsAcceptor::builder(pkcs12).build()?;
 
-        let _clone_close = _close.clone();
         let _f_clone = f.clone();
 
         let _join = tokio::spawn(async move {
@@ -75,11 +71,6 @@ impl WSSServer {
                 let _client_arc = Arc::new(Mutex::new(_websocket));
                 let mut f_handle = _f_clone.as_ref().lock().await;
                 f_handle.cb(WSSReader::new(_client_arc.clone()), WSSWriter::new(_client_arc.clone())).await;
-
-                let _c_ref = _clone_close.as_ref().lock().await;
-                if _c_ref.is_closed() {
-                    break;
-                }              
             }
         });
 
@@ -90,12 +81,10 @@ impl WSSServer {
 
     pub async fn listen_ws(
         host:String, 
-        f:Arc<Mutex<Box<dyn WSSListenCallback + Send + 'static>>>, 
-        _close: Arc<Mutex<CloseHandle>>) -> Result<WSSServer, Box<dyn std::error::Error>> 
+        f:Arc<Mutex<Box<dyn WSSListenCallback + Send + 'static>>>) -> Result<WSSServer, Box<dyn std::error::Error>> 
     {
         trace!("ws accept start:{}!", host);
         let _listener = TcpListener::bind(host).unwrap();
-        let _clone_close = _close.clone();
         let _f_clone = f.clone();
 
         let _join = tokio::spawn(async move {
@@ -122,12 +111,7 @@ impl WSSServer {
                 {
                     let mut f_handle = _f_clone.as_ref().lock().await;
                     f_handle.cb(WSSReader::new(_client_arc.clone()), WSSWriter::new(_client_arc.clone())).await;
-                }
-
-                let _c_ref = _clone_close.as_ref().lock().await;
-                if _c_ref.is_closed() {
-                    break;
-                }              
+                }           
             }
         });
 

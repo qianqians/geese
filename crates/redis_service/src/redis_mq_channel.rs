@@ -10,7 +10,6 @@ use async_trait::async_trait;
 use tracing::{error, trace};
 
 use net::{NetReaderCallback, NetWriter};
-use close_handle::CloseHandle;
 
 use proto::common::RedisMsg;
 
@@ -33,8 +32,7 @@ impl RedisMQReader {
     }
 
     pub fn start(&mut self, 
-        f: Arc<Mutex<Box<dyn NetReaderCallback + Send + 'static>>>, 
-        _: Arc<Mutex<CloseHandle>>) -> JoinHandle<()>
+        f: Arc<Mutex<Box<dyn NetReaderCallback + Send + 'static>>>) -> JoinHandle<()>
     {
         self.cb_handle = Some(f);
 

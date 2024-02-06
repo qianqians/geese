@@ -696,7 +696,6 @@ impl ConnProxyReaderCallback {
 
 pub struct ConnProxyManager {
     conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>, 
-    close_handle: Arc<Mutex<CloseHandle>>,
     join_list: Vec<JoinHandle<()>>
 }
 
@@ -705,7 +704,7 @@ impl RedisMQListenCallback for ConnProxyManager {
     async fn redis_mq_cb(&mut self, rd: Arc<Mutex<RedisMQReader>>, wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>){
         let _connproxy = Arc::new(Mutex::new(ConnProxy::new(wr, self.conn_msg_handle.clone())));
         let mut _rd_ref = rd.as_ref().lock().await;
-        self.join_list.push(_rd_ref.start(Arc::new(Mutex::new(Box::new(ConnProxyReaderCallback::new(_connproxy)))), self.close_handle.clone()));
+        self.join_list.push(_rd_ref.start(Arc::new(Mutex::new(Box::new(ConnProxyReaderCallback::new(_connproxy))))));
     }
 }
 
@@ -714,27 +713,25 @@ impl TcpListenCallback for ConnProxyManager {
     async fn cb(&mut self, rd: TcpReader, wr: TcpWriter) {
         let _wr_arc: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>> = Arc::new(Mutex::new(Box::new(wr)));
         let _connproxy = Arc::new(Mutex::new(ConnProxy::new(_wr_arc, self.conn_msg_handle.clone())));
-        self.join_list.push(rd.start(Arc::new(Mutex::new(Box::new(ConnProxyReaderCallback::new(_connproxy)))), self.close_handle.clone()));
+        self.join_list.push(rd.start(Arc::new(Mutex::new(Box::new(ConnProxyReaderCallback::new(_connproxy))))));
     }
 }
 
 impl ConnProxyManager {
-    pub fn new_tcp_callback(_conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>, _close: Arc<Mutex<CloseHandle>>) 
+    pub fn new_tcp_callback(_conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>) 
         -> Arc<Mutex<Box<dyn TcpListenCallback + Send + 'static>>> 
     {
         Arc::new(Mutex::new(Box::new(ConnProxyManager {
             conn_msg_handle: _conn_msg_handle,
-            close_handle: _close,
             join_list: Vec::new()
         })))
     }
 
-    pub fn new_redis_mq_callback(_conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>, _close: Arc<Mutex<CloseHandle>>) 
+    pub fn new_redis_mq_callback(_conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>) 
         -> Arc<Mutex<Box<dyn RedisMQListenCallback + Send + 'static>>> 
     {
         Arc::new(Mutex::new(Box::new(ConnProxyManager {
             conn_msg_handle: _conn_msg_handle,
-            close_handle: _close,
             join_list: Vec::new()
         })))
     }

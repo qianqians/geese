@@ -102,8 +102,7 @@ impl HubServer {
         self.hub_redis_service = match RedisService::listen(
             self.redis_url.clone(), 
             create_channel_key(name.clone()), 
-            ConnProxyManager::new_redis_mq_callback(_conn_msg_handle.clone(), self.close.clone()), 
-            self.close.clone()).await
+            ConnProxyManager::new_redis_mq_callback(_conn_msg_handle.clone())).await
         {
             Err(e) => {
                 error!("listen_hub_service faild err:{}!", e);
@@ -118,8 +117,7 @@ impl HubServer {
 
         self.hub_tcp_server = match TcpServer::listen(
             self.hub_host.clone(), 
-            ConnProxyManager::new_tcp_callback(_conn_msg_handle, self.close.clone()),
-            self.close.clone()).await 
+            ConnProxyManager::new_tcp_callback(_conn_msg_handle)).await 
         {
             Err(e) => {
                 error!("listen_hub_service faild err:{}!", e);

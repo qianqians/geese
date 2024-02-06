@@ -77,23 +77,21 @@ impl DBProxyHubReaderCallback {
 }
 
 pub struct HubProxyManager {
-    msg_handle: Arc<Mutex<DBProxyHubMsgHandle>>,
-    close_handle: Arc<Mutex<CloseHandle>>
+    msg_handle: Arc<Mutex<DBProxyHubMsgHandle>>
 }
 
 #[async_trait]
 impl RedisMQListenCallback for HubProxyManager {
     async fn redis_mq_cb(&mut self, rd: Arc<Mutex<RedisMQReader>>, wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>){
         let mut _rd_ref = rd.as_ref().lock().await;
-        let _ = _rd_ref.start(Arc::new(Mutex::new(Box::new(DBProxyHubReaderCallback::new(self.msg_handle.clone(), wr)))), self.close_handle.clone());
+        let _ = _rd_ref.start(Arc::new(Mutex::new(Box::new(DBProxyHubReaderCallback::new(self.msg_handle.clone(), wr)))));
     }
 }
 
 impl HubProxyManager {
-    pub fn new(_handle: Arc<Mutex<DBProxyHubMsgHandle>>, _close: Arc<Mutex<CloseHandle>>) -> Arc<Mutex<Box<dyn RedisMQListenCallback + Send + 'static>>> {
+    pub fn new(_handle: Arc<Mutex<DBProxyHubMsgHandle>>) -> Arc<Mutex<Box<dyn RedisMQListenCallback + Send + 'static>>> {
         Arc::new(Mutex::new(Box::new(HubProxyManager {
-            msg_handle: _handle,
-            close_handle: _close
+            msg_handle: _handle
         })))
     }
 }
@@ -127,8 +125,7 @@ impl DBProxyServer {
         let _s = RedisService::listen(
             redis_url, 
             create_channel_key(name), 
-            HubProxyManager::new(_handle.clone(), 
-            _close.clone()), _close.clone()).await?;
+            HubProxyManager::new(_handle.clone())).await?;
         Ok(DBProxyServer {
             handle: _handle,
             health: health_handle,
