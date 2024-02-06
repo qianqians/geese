@@ -108,12 +108,11 @@ impl GateHubMsgHandle {
         trace!("do_hub_event end!");
     }
 
-    pub async fn poll(_handle: Arc<Mutex<GateHubMsgHandle>>) {
+    pub async fn poll(&mut self) {
         loop {
             let mut_ev_data: Box<HubEvent>;
             {
-                let mut _self = _handle.as_ref().lock().await;
-                let opt_ev_data = _self.queue.deque();
+                let opt_ev_data = self.queue.deque();
                 mut_ev_data = match opt_ev_data {
                     None => break,
                     Some(ev_data) => ev_data
@@ -219,15 +218,17 @@ impl GateHubMsgHandle {
 
             let mut main_send_ret = false;
             if let Some(main_conn_id) = ev.main_conn_id.clone() {
-                let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
-                if let Some(_client_arc) = _conn_mgr.get_client_proxy(&main_conn_id.clone()) {
-                    let mut _client = _client_arc.as_ref().lock().await;
-                    if _client.send_client_msg(
-                        ClientService::CreateRemoteEntity(
-                            CreateRemoteEntity::new(entity_id.clone(), entity_type.clone(), true, argvs.clone()))).await 
-                    {
-                        main_send_ret = true;
-                        _client.entities.insert(entity_id.clone());
+                if !main_conn_id.is_empty() {
+                    let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
+                    if let Some(_client_arc) = _conn_mgr.get_client_proxy(&main_conn_id.clone()) {
+                        let mut _client = _client_arc.as_ref().lock().await;
+                        if _client.send_client_msg(
+                            ClientService::CreateRemoteEntity(
+                                CreateRemoteEntity::new(entity_id.clone(), entity_type.clone(), true, argvs.clone()))).await 
+                        {
+                            main_send_ret = true;
+                            _client.entities.insert(entity_id.clone());
+                        }
                     }
                 }
             }
@@ -251,10 +252,11 @@ impl GateHubMsgHandle {
             }
             else {
                 if let Some(main_conn_id) = ev.main_conn_id.clone() {
-                    let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
-                    _conn_mgr.delete_client_proxy(&main_conn_id);
-                    
-                    info!("do_create_remote_entity main_conn_id delete_client_proxy!");
+                    if !main_conn_id.is_empty() {
+                        let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
+                        info!("do_create_remote_entity main_conn_id delete_client_proxy!");
+                        _conn_mgr.delete_client_proxy(&main_conn_id);
+                    }
                 }
             }
 
@@ -287,9 +289,8 @@ impl GateHubMsgHandle {
                         }
                     }
                     else {
-                        _conn_mgr.delete_client_proxy(id);
-                        
                         info!("do_create_remote_entity conn_dis delete_client_proxy!");
+                        _conn_mgr.delete_client_proxy(id);
                     }
                 }
             }

@@ -12,7 +12,6 @@ use async_trait::async_trait;
 use tracing::{trace, error};
 
 use net::NetWriter;
-use close_handle::CloseHandle;
 use proto::common::RedisMsg;
 
 use crate::redis_mq_channel::{RedisMQReader, RedisMQWriter};
@@ -64,8 +63,7 @@ impl RedisService {
     pub async fn listen(
         host:String, 
         lname:String,
-        f:Arc<Mutex<Box<dyn RedisMQListenCallback + Send + 'static>>>, 
-        _close: Arc<Mutex<CloseHandle>>) -> Result<RedisService, Box<dyn std::error::Error>> 
+        f:Arc<Mutex<Box<dyn RedisMQListenCallback + Send + 'static>>>) -> Result<RedisService, Box<dyn std::error::Error>> 
     {
         trace!("redis mq listen:{}", lname);
 
@@ -78,7 +76,6 @@ impl RedisService {
         let service_conn = conn.clone();
         let service_rds = rds.clone();
 
-        let _clone_close = _close.clone();
         let _f_clone = f.clone();
 
         let _join = tokio::spawn(async move {
@@ -134,12 +131,7 @@ impl RedisService {
                     let mut rd_ref = rd_cb_data.as_ref().lock().await;
                     rd_ref.cb(ev_data.msg.unwrap()).await;
                     rds_ref.insert(rds_rname, (rd, wr));
-                }
-
-                let _c_ref = _clone_close.as_ref().lock().await;
-                if _c_ref.is_closed() {
-                    break;
-                }              
+                }         
             }
         });
 

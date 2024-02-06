@@ -6,8 +6,6 @@ use tokio::task::JoinHandle;
 use async_trait::async_trait;
 use tracing::trace;
 
-use close_handle::CloseHandle;
-
 #[async_trait]
 pub trait NetWriter {
     async fn send(&mut self, buf: &[u8]) -> bool;
@@ -22,8 +20,7 @@ pub trait NetReaderCallback {
 
 pub trait NetReader {
     fn start(self, 
-        f: Arc<Mutex<Box<dyn NetReaderCallback + Send + 'static>>>, 
-        c: Arc<Mutex<CloseHandle>>) -> JoinHandle<()>;
+        f: Arc<Mutex<Box<dyn NetReaderCallback + Send + 'static>>>) -> JoinHandle<()>;
 }
 
 pub struct NetPack {

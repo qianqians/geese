@@ -63,7 +63,7 @@ pub async fn entry_dbproxy_service(
                         _dbproxy_msg_handle)));
 
                 let mut _rd_ref = rd.as_ref().lock().await;
-                let _ = _rd_ref.start(Arc::new(Mutex::new(Box::new(DBProxyReaderCallback::new(_dbproxy.clone())))), _close);
+                let _ = _rd_ref.start(Arc::new(Mutex::new(Box::new(DBProxyReaderCallback::new(_dbproxy.clone())))));
 
                 _conn_mgr_handle.add_dbproxy_proxy(_dbproxy.clone()).await;
                 let mut _db_send = _dbproxy.as_ref().lock().await;

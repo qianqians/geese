@@ -59,7 +59,7 @@ impl ConnManager {
                 ConnProxy::new(_wr_arc.clone(), _handle.clone())));
 
             let _ = rd.start(Arc::new(Mutex::new(Box::new(
-                ConnProxyReaderCallback::new(_conn_proxy.clone())))), _close);
+                ConnProxyReaderCallback::new(_conn_proxy.clone())))));
 
             self.wrs.insert(name.clone(), _wr_arc.clone());
             self.connproxys.insert(name.clone(), _conn_proxy.clone());

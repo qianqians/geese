@@ -17,7 +17,6 @@ use tcp::tcp_server::TcpListenCallback;
 use wss::wss_socket::{WSSReader, WSSWriter};
 use wss::wss_server::WSSListenCallback;
 use redis_service::redis_service::create_lock_key;
-use close_handle::CloseHandle;
 use time::utc_unix_time;
 use tracing::{trace, info, error};
 
@@ -72,6 +71,8 @@ pub async fn entry_hub_service(_conn_mgr: Arc<Mutex<ConnManager>>, _service_name
     trace!("entry_hub_service begin!");
 
     let mut _conn_mgr_handle = _conn_mgr.as_ref().lock().await;
+    trace!("entry_hub_service _conn_mgr get lock success!");
+
     let _close = _conn_mgr_handle.get_close_handle();
     let _gate_name = _conn_mgr_handle.get_gate_name();
     let _entry_service = _service_name.clone();
@@ -121,10 +122,8 @@ pub async fn entry_hub_service(_conn_mgr: Arc<Mutex<ConnManager>>, _service_name
                     let _conn_mgr_clone = _conn_mgr.clone();
                     let _hubproxy = Arc::new(Mutex::new(HubProxy::new(
                         _wr_arc, _conn_mgr_clone)));
-                    let _ = rd.start(
-                        Arc::new(Mutex::new(Box::new(
-                            HubReaderCallback::new(_hubproxy.clone(), _conn_mgr_handle.get_hub_msg_handle())))),
-                        _close.clone());
+                    let _ = rd.start(Arc::new(Mutex::new(Box::new(
+                        HubReaderCallback::new(_hubproxy.clone(), _conn_mgr_handle.get_hub_msg_handle())))));
                     _conn_mgr_handle.add_hub_proxy(service.id.to_string(), _hubproxy.clone()).await;
                     let _h_clone = _hubproxy.clone();
                     let mut _h = _hubproxy.as_ref().lock().await;
@@ -256,8 +255,7 @@ impl ClientReaderCallback {
 }
 
 pub struct TcpClientProxyManager {
-    conn_mgr: Arc<Mutex<ConnManager>>,
-    close_handle: Arc<Mutex<CloseHandle>>
+    conn_mgr: Arc<Mutex<ConnManager>>
 }
 
 #[async_trait]
@@ -280,7 +278,7 @@ impl TcpListenCallback for TcpClientProxyManager {
             trace!("tcp listen _conn_mgr lock end!");
         }
 
-        let join = rd.start(Arc::new(Mutex::new(Box::new(ClientReaderCallback::new(_clientproxy_clone.clone(), _client_msg_handle)))), self.close_handle.clone());
+        let join = rd.start(Arc::new(Mutex::new(Box::new(ClientReaderCallback::new(_clientproxy_clone.clone(), _client_msg_handle)))));
         {
             trace!("TcpListenCallback cb _clientproxy lock begin!");
             let mut _client_tmp = _clientproxy.as_ref().lock().await;
@@ -292,17 +290,15 @@ impl TcpListenCallback for TcpClientProxyManager {
 }
 
 impl TcpClientProxyManager {
-    pub fn new(_conn_mgr: Arc<Mutex<ConnManager>>, _close: Arc<Mutex<CloseHandle>>) -> Arc<Mutex<Box<dyn TcpListenCallback + Send + 'static>>> {
+    pub fn new(_conn_mgr: Arc<Mutex<ConnManager>>) -> Arc<Mutex<Box<dyn TcpListenCallback + Send + 'static>>> {
         Arc::new(Mutex::new(Box::new(TcpClientProxyManager {
             conn_mgr: _conn_mgr,
-            close_handle: _close
         })))
     }
 }
 
 pub struct WSSClientProxyManager {
     conn_mgr: Arc<Mutex<ConnManager>>,
-    close_handle: Arc<Mutex<CloseHandle>>
 }
 
 #[async_trait]
@@ -325,7 +321,7 @@ impl WSSListenCallback for WSSClientProxyManager {
             trace!("wss listen _conn_mgr lock end!");
         }
         
-        let join = rd.start(Arc::new(Mutex::new(Box::new(ClientReaderCallback::new(_clientproxy_clone.clone(), _client_msg_handle)))), self.close_handle.clone());
+        let join = rd.start(Arc::new(Mutex::new(Box::new(ClientReaderCallback::new(_clientproxy_clone.clone(), _client_msg_handle)))));
         {
             trace!("WSSListenCallback cb _clientproxy lock begin!");
             let mut _client_tmp = _clientproxy.as_ref().lock().await;
@@ -337,10 +333,9 @@ impl WSSListenCallback for WSSClientProxyManager {
 }
 
 impl WSSClientProxyManager {
-    pub fn new(_conn_mgr: Arc<Mutex<ConnManager>>, _close: Arc<Mutex<CloseHandle>>) -> Arc<Mutex<Box<dyn WSSListenCallback + Send + 'static>>> {
+    pub fn new(_conn_mgr: Arc<Mutex<ConnManager>>) -> Arc<Mutex<Box<dyn WSSListenCallback + Send + 'static>>> {
         Arc::new(Mutex::new(Box::new(WSSClientProxyManager {
             conn_mgr: _conn_mgr,
-            close_handle: _close
         })))
     }
 }

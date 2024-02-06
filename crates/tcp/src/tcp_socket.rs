@@ -10,7 +10,6 @@ use async_trait::async_trait;
 use tracing::{trace, error};
 
 use net::{NetReaderCallback, NetWriter, NetReader, NetPack};
-use close_handle::CloseHandle;
 
 pub struct TcpReader {
     rd: ReadHalf<TcpStream>
@@ -26,8 +25,7 @@ impl TcpReader {
 
 impl NetReader for TcpReader {
     fn start(self, 
-        f: Arc<Mutex<Box<dyn NetReaderCallback + Send + 'static>>>, 
-        c: Arc<Mutex<CloseHandle>>) -> JoinHandle<()>
+        f: Arc<Mutex<Box<dyn NetReaderCallback + Send + 'static>>>) -> JoinHandle<()>
     {
         trace!("TcpReader NetReader start!");
 
@@ -55,11 +53,6 @@ impl NetReader for TcpReader {
                         error!("network err:{}!", err);
                         return;
                     }
-                }
-
-                let _c_ref = c.as_ref().lock().await;
-                if _c_ref.is_closed() {
-                    break;
                 }
             }
         })

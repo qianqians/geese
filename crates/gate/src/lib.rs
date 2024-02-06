@@ -84,16 +84,16 @@ impl GateServer {
         }
 
         let _tcp_s = TcpServer::listen(gate_hub_host.clone(), 
-            HubProxyManager::new(_conn_mgr_clone.clone(), _close.clone()), _close.clone()).await?;
+            HubProxyManager::new(_conn_mgr_clone.clone())).await?;
         let _client_s = match client_tcp_host {
             None => None,
             Some(_host) => Some(TcpServer::listen(_host, 
-                TcpClientProxyManager::new(_conn_mgr_clone.clone(), _close.clone()), _close.clone()).await?)
+                TcpClientProxyManager::new(_conn_mgr_clone.clone())).await?)
         };
         let _ws_s = match client_ws_host {
             None => None,
             Some(_host) => Some(WSSServer::listen_ws(_host, 
-                WSSClientProxyManager::new(_conn_mgr_clone.clone(), _close.clone()), _close.clone()).await?)
+                WSSClientProxyManager::new(_conn_mgr_clone.clone())).await?)
         };
         let _wss_s = match client_wss_cfg {
             None => None,
@@ -102,7 +102,7 @@ impl GateServer {
                 Some(WSSServer::listen_wss(
                     client_wss_host, 
                     _cfg.client_wss_pfx, 
-                    WSSClientProxyManager::new(_conn_mgr_clone.clone(), _close.clone()), _close.clone()).await?)
+                    WSSClientProxyManager::new(_conn_mgr_clone.clone())).await?)
             }
         };
 
@@ -139,11 +139,13 @@ impl GateServer {
                 hub_msg_handle = Some(_h.get_hub_msg_handle());
                 client_msg_handle = Some(_h.get_client_msg_handle());
             }
-            if let  Some(_handle) = hub_msg_handle {
-                GateHubMsgHandle::poll(_handle).await;
+            if let Some(_handle) = hub_msg_handle {
+                let mut _handle_l = _handle.as_ref().lock().await;
+                _handle_l.poll().await;
             }
-            if let  Some(_handle) = client_msg_handle {
-                GateClientMsgHandle::poll(_handle).await;
+            if let Some(_handle) = client_msg_handle {
+                let mut _handle_l = _handle.as_ref().lock().await;
+                _handle_l.poll().await;
             }
 
             let tick = utc_unix_time() - begin;

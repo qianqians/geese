@@ -8,8 +8,6 @@ use tokio::sync::Mutex;
 use async_trait::async_trait;
 use tracing::{trace, error};
 
-use close_handle::CloseHandle;
-
 use crate::tcp_socket::{TcpReader, TcpWriter};
 
 pub struct TcpServer{
@@ -24,14 +22,12 @@ pub trait TcpListenCallback {
 impl TcpServer {
     pub async fn listen(
         host:String, 
-        f:Arc<Mutex<Box<dyn TcpListenCallback + Send + 'static>>>, 
-        _close: Arc<Mutex<CloseHandle>>) -> Result<TcpServer, Box<dyn std::error::Error>> 
+        f:Arc<Mutex<Box<dyn TcpListenCallback + Send + 'static>>>) -> Result<TcpServer, Box<dyn std::error::Error>> 
     {
         trace!("tcp accept start:{}!", host);
         let _listener = TcpListener::bind(host.clone()).await?;
         trace!("TcpListener bind:{} complete", host);
 
-        let _clone_close = _close.clone();
         let _f_clone = f.clone();
         let _join = tokio::spawn(async move {
             loop {
@@ -50,12 +46,7 @@ impl TcpServer {
                 {
                     let mut f_handle = _f_clone.as_ref().lock().await;
                     f_handle.cb(TcpReader::new(rd), TcpWriter::new(wr)).await;
-                }
-
-                let _c_ref = _clone_close.as_ref().lock().await;
-                if _c_ref.is_closed() {
-                    break;
-                }              
+                };          
             }
         });
 

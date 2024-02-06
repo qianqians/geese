@@ -87,12 +87,11 @@ impl GateClientMsgHandle {
         trace!("do_client_event end!");
     }
 
-    pub async fn poll(_handle: Arc<Mutex<GateClientMsgHandle>>) {
+    pub async fn poll(&mut self) {
         loop {
             let mut_ev_data: Box<ClientEvent>;
             {
-                let mut _self = _handle.as_ref().lock().await;
-                let opt_ev_data = _self.queue.deque();
+                let opt_ev_data = self.queue.deque();
                 mut_ev_data = match opt_ev_data {
                     None => break,
                     Some(ev_data) => ev_data
