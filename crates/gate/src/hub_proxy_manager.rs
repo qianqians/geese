@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use tokio::sync::Mutex;
-use tracing::error;
+use tracing::{error, trace};
 
 use thrift::protocol::{TCompactOutputProtocol, TSerializable};
 use thrift::transport::{TIoChannel, TBufferChannel};
@@ -51,11 +51,6 @@ impl HubProxy {
         self.name.as_ref().unwrap().clone()
     }
 
-    pub async fn get_msg_handle(&mut self) -> Arc<Mutex<GateHubMsgHandle>> {
-        let _conn_mgr = self.conn_mgr.as_ref().lock().await;
-        _conn_mgr.get_hub_msg_handle()
-    }
-
     pub fn get_conn_mgr(&mut self) -> Arc<Mutex<ConnManager>> {
         self.conn_mgr.clone()
     }
@@ -77,20 +72,26 @@ impl HubProxy {
 }
 
 pub struct HubReaderCallback {
-    hubproxy: Arc<Mutex<HubProxy>>
+    hubproxy: Arc<Mutex<HubProxy>>,
+    hub_msg_handle: Arc<Mutex<GateHubMsgHandle>>,
 }
 
 #[async_trait]
 impl NetReaderCallback for HubReaderCallback {
     async fn cb(&mut self, data:Vec<u8>) {
-        GateHubMsgHandle::on_event(self.hubproxy.clone(), data).await
+        trace!("HubReaderCallback cb!");
+        let mut _handle = self.hub_msg_handle.as_ref().lock().await;
+        trace!("HubReaderCallback cb hub_msg_handle get lock!");
+        _handle.on_event(self.hubproxy.clone(), data).await;
+        trace!("HubReaderCallback cb hub_msg_handle on_event!");
     }
 }
 
 impl HubReaderCallback {
-    pub fn new(_hubproxy: Arc<Mutex<HubProxy>>) -> HubReaderCallback {
+    pub fn new(_hubproxy: Arc<Mutex<HubProxy>>, _hub_msg_handle: Arc<Mutex<GateHubMsgHandle>>) -> HubReaderCallback {
         HubReaderCallback {
-            hubproxy: _hubproxy
+            hubproxy: _hubproxy,
+            hub_msg_handle: _hub_msg_handle
         }
     }
 
@@ -106,11 +107,13 @@ impl TcpListenCallback for HubProxyManager {
     async fn cb(&mut self, rd: TcpReader, wr: TcpWriter){
         let _wr_arc: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>> = Arc::new(Mutex::new(Box::new(wr)));
         let _wr_arc_clone = _wr_arc.clone();
-        let _conn_mgr_clone = self.conn_mgr.clone();
+        
         let _hubproxy = Arc::new(Mutex::new(HubProxy::new(_wr_arc, self.conn_mgr.clone())));
-        let _hub = _hubproxy.clone();
-        let _hub_clone = _hubproxy.clone();
-        let _ = rd.start(Arc::new(Mutex::new(Box::new(HubReaderCallback::new(_hub_clone)))), self.close_handle.clone());
+        
+        let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
+        let _hub_msg_handle = _conn_mgr.get_hub_msg_handle();
+
+        let _ = rd.start(Arc::new(Mutex::new(Box::new(HubReaderCallback::new(_hubproxy.clone(), _hub_msg_handle)))), self.close_handle.clone());
     }
 }
 
