@@ -12,7 +12,7 @@ use proto::hub::{
     HubService,
     ClientDisconnnect
 };
-use tracing::trace;
+use tracing::{trace, info};
 
 use crate::client_proxy_manager::ClientProxy;
 use crate::hub_proxy_manager::HubProxy;
@@ -178,6 +178,7 @@ impl ConnManager {
                 _client_conn_id = _client.conn_id.clone();
             }
             
+            info!("ConnManager poll delete_client_proxy!");
             self.delete_client_proxy(&_client_conn_id);
             if let Some(vec_hub) = self.entities.delete_client(&_client_conn_id) {
                 let mut invaild_hubs: Vec<String> = Vec::new();
