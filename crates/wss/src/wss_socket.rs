@@ -122,13 +122,15 @@ impl NetWriter for WSSWriter {
         let mut wr = self.s.as_ref().lock().await;
         trace!("WSSWriter lock success!");
         let msg = Message::Binary(tmp_buf);
-        match wr.send(msg) {
-            Err(_) => {
-                error!("WSS send faild!");
-                return false;
-            },
-            Ok(_) => {
-                return true;
+        {
+            match wr.send(msg) {
+                Err(_) => {
+                    error!("WSS send faild!");
+                    return false;
+                },
+                Ok(_) => {
+                    return true;
+                }
             }
         }
     }
