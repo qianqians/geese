@@ -122,7 +122,8 @@ pub async fn entry_hub_service(_conn_mgr: Arc<Mutex<ConnManager>>, _service_name
                     let _hubproxy = Arc::new(Mutex::new(HubProxy::new(
                         _wr_arc, _conn_mgr_clone)));
                     let _ = rd.start(
-                        Arc::new(Mutex::new(Box::new(HubReaderCallback::new(_hubproxy.clone())))),
+                        Arc::new(Mutex::new(Box::new(
+                            HubReaderCallback::new(_hubproxy.clone(), _conn_mgr_handle.get_hub_msg_handle())))),
                         _close.clone());
                     _conn_mgr_handle.add_hub_proxy(service.id.to_string(), _hubproxy.clone()).await;
                     let _h_clone = _hubproxy.clone();
@@ -174,11 +175,6 @@ impl ClientProxy {
 
     pub fn get_conn_id(&self) -> &String {
         &self.conn_id
-    }
-
-    pub async fn get_msg_handle(&mut self) -> Arc<Mutex<GateClientMsgHandle>> {
-        let _conn_mgr = self.conn_mgr.as_ref().lock().await;
-        _conn_mgr.get_client_msg_handle()
     }
 
     pub fn get_conn_mgr(&mut self) -> Arc<Mutex<ConnManager>> {
@@ -235,21 +231,26 @@ impl ClientProxy {
 }
 
 pub struct ClientReaderCallback {
-    clientproxy: Arc<Mutex<ClientProxy>>
+    clientproxy: Arc<Mutex<ClientProxy>>,
+    client_msg_handle: Arc<Mutex<GateClientMsgHandle>>,
 }
 
 #[async_trait]
 impl NetReaderCallback for ClientReaderCallback {
     async fn cb(&mut self, data:Vec<u8>) {
         trace!("ClientReaderCallback NetReaderCallback cb!");
-        GateClientMsgHandle::on_event(self.clientproxy.clone(), data).await
+        let mut _handle = self.client_msg_handle.as_ref().lock().await;
+        trace!("ClientReaderCallback cb client_msg_handle get lock!");
+        _handle.on_event(self.clientproxy.clone(), data).await;
+        trace!("ClientReaderCallback cb client_msg_handle on_event!");
     }
 }
 
 impl ClientReaderCallback {
-    pub fn new(_clientproxy: Arc<Mutex<ClientProxy>>) -> ClientReaderCallback {
+    pub fn new(_clientproxy: Arc<Mutex<ClientProxy>>, _client_msg_handle: Arc<Mutex<GateClientMsgHandle>>) -> ClientReaderCallback {
         ClientReaderCallback {
-            clientproxy: _clientproxy
+            clientproxy: _clientproxy,
+            client_msg_handle: _client_msg_handle,
         }
     }
 }
@@ -270,14 +271,16 @@ impl TcpListenCallback for TcpClientProxyManager {
         let _conn_mgr_clone = self.conn_mgr.clone();
         let _clientproxy = Arc::new(Mutex::new(ClientProxy::new(_conn_id.clone(), _wr_arc.clone(), _conn_mgr_clone)));
         let _clientproxy_clone = _clientproxy.clone();
+        let _client_msg_handle: Arc<Mutex<GateClientMsgHandle>>;
         {
             trace!("tcp listen _conn_mgr lock begin!");
             let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
             _conn_mgr.add_client_proxy(_clientproxy_clone.clone()).await;
+            _client_msg_handle = _conn_mgr.get_client_msg_handle();
             trace!("tcp listen _conn_mgr lock end!");
         }
 
-        let join = rd.start(Arc::new(Mutex::new(Box::new(ClientReaderCallback::new(_clientproxy_clone.clone())))), self.close_handle.clone());
+        let join = rd.start(Arc::new(Mutex::new(Box::new(ClientReaderCallback::new(_clientproxy_clone.clone(), _client_msg_handle)))), self.close_handle.clone());
         {
             trace!("TcpListenCallback cb _clientproxy lock begin!");
             let mut _client_tmp = _clientproxy.as_ref().lock().await;
@@ -313,14 +316,16 @@ impl WSSListenCallback for WSSClientProxyManager {
         let _conn_mgr_clone = self.conn_mgr.clone();
         let _clientproxy = Arc::new(Mutex::new(ClientProxy::new(_conn_id.clone(), _wr_arc.clone(), _conn_mgr_clone)));
         let _clientproxy_clone = _clientproxy.clone();
+        let _client_msg_handle: Arc<Mutex<GateClientMsgHandle>>;
         {
             trace!("wss listen _conn_mgr lock begin!");
             let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
             _conn_mgr.add_client_proxy(_clientproxy_clone.clone()).await;
+            _client_msg_handle = _conn_mgr.get_client_msg_handle();
             trace!("wss listen _conn_mgr lock end!");
         }
         
-        let join = rd.start(Arc::new(Mutex::new(Box::new(ClientReaderCallback::new(_clientproxy_clone.clone())))), self.close_handle.clone());
+        let join = rd.start(Arc::new(Mutex::new(Box::new(ClientReaderCallback::new(_clientproxy_clone.clone(), _client_msg_handle)))), self.close_handle.clone());
         {
             trace!("WSSListenCallback cb _clientproxy lock begin!");
             let mut _client_tmp = _clientproxy.as_ref().lock().await;

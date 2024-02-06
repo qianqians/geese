@@ -68,7 +68,7 @@ impl GateClientMsgHandle {
         self.queue.enque(Box::new(ev))
     }
 
-    pub async fn on_event(_proxy: Arc<Mutex<ClientProxy>>, data: Vec<u8>) {
+    pub async fn on_event(&mut self, _proxy: Arc<Mutex<ClientProxy>>, data: Vec<u8>) {
         trace!("do_client_event begin data:{:?}!", data);
 
         let _ev = match deserialize(data) {
@@ -79,20 +79,8 @@ impl GateClientMsgHandle {
             Ok(d) => d
         };
 
-        let _proxy_clone = _proxy.clone();
-        let _handle_arc: Arc<Mutex<GateClientMsgHandle>>;
-        {
-            trace!("_proxy lock get _handle_arc!");
-            let mut _p = _proxy.as_ref().lock().await;
-            _handle_arc = _p.get_msg_handle().await;
-            trace!("_proxy lock get _handle_arc success!");
-        }
-        
-        trace!("_handle_arc get lock!");
-        let mut _handle = _handle_arc.as_ref().lock().await;
-        trace!("_handle_arc get lock success!");
-        _handle.enque_event(ClientEvent {
-            proxy: Arc::downgrade(&_proxy_clone),
+        self.enque_event(ClientEvent {
+            proxy: Arc::downgrade(&_proxy.clone()),
             ev: _ev
         });
 
@@ -110,6 +98,7 @@ impl GateClientMsgHandle {
                     Some(ev_data) => ev_data
                 };
             }
+            trace!("GateClientMsgHandle poll begin!");
             let proxy = mut_ev_data.proxy.clone();
             match mut_ev_data.ev {
                 GateClientService::Login(ev) => GateClientMsgHandle::do_client_request_hub_login(proxy, ev).await,

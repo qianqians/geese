@@ -86,15 +86,11 @@ impl GateHubMsgHandle {
         self.queue.enque(Box::new(ev))
     }
 
-    pub async fn on_event(_proxy: Arc<Mutex<HubProxy>>, data: Vec<u8>) {
+    pub async fn on_event(&mut self, _proxy: Arc<Mutex<HubProxy>>, data: Vec<u8>) {
         trace!("do_hub_event begin!");
 
-        let _proxy_clone = _proxy.clone();
-
         let _ev: GateHubService;
-        let _handle_arc: Arc<Mutex<GateHubMsgHandle>>;
         {
-            let mut _p = _proxy.as_ref().lock().await;
             _ev = match deserialize(data) {
                 Err(e) => {
                     error!("GateHubMsgHandle do_event err:{}", e);
@@ -102,11 +98,10 @@ impl GateHubMsgHandle {
                 }
                 Ok(d) => d
             };
-            _handle_arc = _p.get_msg_handle().await;
         }
-        let mut _handle = _handle_arc.as_ref().lock().await;
-        _handle.enque_event(HubEvent {
-            proxy: Arc::downgrade(&_proxy_clone),
+
+        self.enque_event(HubEvent {
+            proxy: Arc::downgrade(&_proxy.clone()),
             ev: _ev
         });
 
@@ -124,6 +119,7 @@ impl GateHubMsgHandle {
                     Some(ev_data) => ev_data
                 };
             }
+            trace!("GateHubMsgHandle poll begin!");
             let proxy = mut_ev_data.proxy.clone();
             match mut_ev_data.ev {
                 GateHubService::RegServer(ev) => GateHubMsgHandle::do_reg_hub(proxy, ev).await,

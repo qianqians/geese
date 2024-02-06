@@ -51,7 +51,7 @@ export class app {
 
     public build(handle:client_event_handle) {
         this.client_event_handle = handle;
-        setInterval(this.heartbeats.bind(this), 1000);
+        setInterval(this.heartbeats.bind(this), 2000);
         return this;
     }
 

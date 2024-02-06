@@ -30,8 +30,6 @@ export abstract class context {
     }
 
     protected recv(data:Uint8Array) : void {
-        console.log(`data:${data} recv begin!`);
-
         let u8data = new Uint8Array(data);
             
         let new_data:Uint8Array|null = new Uint8Array(this.offset + u8data.byteLength);
@@ -46,7 +44,6 @@ export abstract class context {
             if ( (len + 4) > new_data.length ){
                 break;
             }
-            console.log(`data.length:${len}, new_data.length:${new_data.length}`);
 
             var str_bytes = new_data.subarray(4, (len + 4));
             let recvFun = TBufferedTransport.receiver((trans,  seqid) => {
@@ -78,7 +75,6 @@ export abstract class context {
     public send(service:proto.gate_client_service) {
         let trans = new TBufferedTransport(undefined, (msg) => {
             if (msg) {
-                console.log("send begin!");
                 var data = Uint8Array.from(msg);
 
                 var send_data = new Uint8Array(4 + data.length);
@@ -89,7 +85,6 @@ export abstract class context {
                 send_data.set(data, 4);
 
                 if (this.ch) {
-                    console.log("ch send begin!");
                     this.ch.send(send_data); 
                     console.log("ch send end!");
                 }
