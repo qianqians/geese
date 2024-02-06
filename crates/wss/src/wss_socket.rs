@@ -1,23 +1,26 @@
 use std::sync::Arc;
 use std::marker::Send;
-use std::net::TcpStream;
 
+use futures_util::SinkExt;
+use futures_util::StreamExt;
 use tokio::task::JoinHandle;
 use tokio::sync::Mutex;
-use tungstenite::{WebSocket, Message};
-use tungstenite::stream::MaybeTlsStream;
+use tokio::net::TcpStream;
+use futures_util::stream::{SplitSink, SplitStream};
+use tokio_tungstenite::{WebSocketStream, MaybeTlsStream};
+use tokio_tungstenite::tungstenite::Message;
 use async_trait::async_trait;
-use tracing::{trace, error};
+use tracing::{trace, info, error};
 
 use net::{NetReaderCallback, NetWriter, NetReader, NetPack};
 
 pub struct WSSReader {
-    s: Arc<Mutex<WebSocket<MaybeTlsStream<TcpStream>>>>
+    s: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>
 }
 
 
 impl WSSReader {
-    pub fn new(_s: Arc<Mutex<WebSocket<MaybeTlsStream<TcpStream>>>>) -> WSSReader {
+    pub fn new(_s: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>) -> WSSReader {
         WSSReader { 
             s: _s
         }
@@ -25,8 +28,7 @@ impl WSSReader {
 }
 
 impl NetReader for WSSReader {
-    fn start(self, 
-        f: Arc<Mutex<Box<dyn NetReaderCallback + Send + 'static>>>,) -> JoinHandle<()>
+    fn start(self, f: Arc<Mutex<Box<dyn NetReaderCallback + Send + 'static>>>,) -> JoinHandle<()>
     {
         trace!("WSSReader NetReader start!");
 
@@ -35,37 +37,42 @@ impl NetReader for WSSReader {
         tokio::spawn(async move {
             let mut net_pack = NetPack::new();
             loop {
-                let message: Message;
+                let message: Option<Message>;
                 {
-                    let mut _client_ref = _p.s.as_ref().lock().await;
-                    message = _client_ref.read().unwrap();
-                }
-                
-                match message {
-                    Message::Close(_) => {
-                        error!("network Close!");
-
-                        let message = Message::Close(None);
-                        let mut _client_ref = _p.s.as_ref().lock().await;
-                        _client_ref.send(message).unwrap();
-                        return;
-                    },
-                    Message::Ping(ping) => {
-                        let message = Message::Pong(ping);
-                        let mut _client_ref = _p.s.as_ref().lock().await;
-                        _client_ref.send(message).unwrap();
-                    },
-                    Message::Binary(buf) => {
-                        net_pack.input(&buf[..]);
-                        match net_pack.try_get_pack() {
-                            None => continue,
-                            Some(data) => {
-                                let mut f_handle = f_clone.as_ref().lock().await;
-                                f_handle.cb(data).await;
+                    message = match _p.s.next().await {
+                        None => None,
+                        Some(msg) => {
+                            match msg {
+                                Err(_) => {
+                                    error!("WSSReader read msg error!");
+                                    None
+                                }
+                                Ok(_m) => Some(_m)
                             }
                         }
-                    },
-                    _ => {}
+                    }
+                }
+                
+                if let Some(msg) = message {
+                    match msg {
+                        Message::Close(_) => {
+                            error!("network Close!");
+                        },
+                        Message::Ping(_) => {
+                            info!("ping");
+                        },
+                        Message::Binary(buf) => {
+                            net_pack.input(&buf[..]);
+                            match net_pack.try_get_pack() {
+                                None => continue,
+                                Some(data) => {
+                                    let mut f_handle = f_clone.as_ref().lock().await;
+                                    f_handle.cb(data).await;
+                                }
+                            }
+                        },
+                        _ => {}
+                    }
                 }
             }
         })
@@ -73,11 +80,11 @@ impl NetReader for WSSReader {
 }
 
 pub struct WSSWriter {
-    s: Arc<Mutex<WebSocket<MaybeTlsStream<TcpStream>>>>
+    s: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>
 }
 
 impl WSSWriter {
-    pub fn new(_s: Arc<Mutex<WebSocket<MaybeTlsStream<TcpStream>>>>) -> WSSWriter {
+    pub fn new(_s: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>) -> WSSWriter {
         WSSWriter{
             s: _s
         }
@@ -100,21 +107,19 @@ impl NetWriter for WSSWriter {
         tmp_buf[3] = len3;
         tmp_buf.extend_from_slice(buf);
 
-        let mut wr = self.s.as_ref().lock().await;
         let msg = Message::Binary(tmp_buf);
-        match wr.send(msg) {
-            Err(_) => {
-                error!("WSS send faild!");
-                return false;
-            },
+        match self.s.send(msg).await {
             Ok(_) => {
                 return true;
+            },
+            Err(err) => {
+                error!("WSSWriter send faild, {}", err);
+                return false;
             }
         }
     }
 
     async fn close(&mut self) {
-        let mut s = self.s.as_ref().lock().await;
-        let _ = s.close(None);
+        let _ = self.s.close().await;
     }
 }
