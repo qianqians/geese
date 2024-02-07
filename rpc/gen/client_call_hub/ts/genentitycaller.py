@@ -93,7 +93,7 @@ def gen_entity_caller(module_name, funcs, dependent_struct, dependent_enum, enum
                     dependent_struct, 
                     dependent_enum)
                 count += 1
-            cb_code += "        if (this.cb) this.cb("
+            cb_code += "        if (this.cb) this.cb.call(null, "
             count = 0
             for _type, _name, _parameter in i[4]:
                 cb_code += "_" + _name
@@ -118,7 +118,7 @@ def gen_entity_caller(module_name, funcs, dependent_struct, dependent_enum, enum
                     dependent_struct, 
                     dependent_enum)
                 count += 1
-            cb_code += "        if (this.err) this.err("
+            cb_code += "        if (this.err) this.err.call(null, "
             count = 0
             for _type, _name, _parameter in i[6]:
                 cb_code += "_" + _name
@@ -131,7 +131,7 @@ def gen_entity_caller(module_name, funcs, dependent_struct, dependent_enum, enum
             cb_code += "    public callBack(_cb:" + rsp_fn + ", _err:" + err_fn + ") {\n"
             cb_code += "        this.cb = _cb;\n"
             cb_code += "        this.err = _err;\n"
-            cb_code += "        this.rsp.callback(this.on_rsp, this.on_err);\n"
+            cb_code += "        this.rsp.callback(this.on_rsp.bind(this), this.on_err.bind(this));\n"
             cb_code += "        return this.rsp;\n"
             cb_code += "    }\n\n"
 

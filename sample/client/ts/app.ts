@@ -27,18 +27,18 @@ class RankSubEntity extends engine.subentity {
     public get_self_rank(entity_id: string) {
         this._get_rank_caller.get_self_rank(entity_id).callBack(
             (_info) => { console.log(`RankSubEntity get_self_rank callBack:${_info}`) },
-            (_err) => { console.log(`RankSubEntity get_self_rank err:{_err}`) }).timeout(
+            (_err) => { console.log(`RankSubEntity get_self_rank err:${_err}`) }).timeout(
                 1000, () => { console.log(`RankSubEntity get_self_rank timeout!`)});
     }
         
 
     public update_subentity(argvs: object) {
-        console.log(`RankSubEntity:{self.entity_id} update_subentity!`);
+        console.log(`RankSubEntity:${this.EntityID} update_subentity!`);
         return argvs;
     }
 
     public static Creator(entity_id:string, description: object) {
-        console.log(`RankSubEntity Creator entity_id:{entity_id}`);
+        console.log(`RankSubEntity Creator entity_id:${entity_id}`);
         let rankImpl = new RankSubEntity("RankImpl", entity_id);
         if (playerImpl) {
             rankImpl.get_self_rank(playerImpl.EntityID);
@@ -56,15 +56,15 @@ class SamplePlayer extends engine.player {
     }
     
     public update_player(argvs: object) {
-        console.log(`SamplePlayer:{self.entity_id} update_player!`);
+        console.log(`SamplePlayer:${this.EntityID} update_player!`);
     }
 
     public static Creator(entity_id: string, description: object) {
-        console.log(`SamplePlayer:{entity_id}`);
+        console.log(`SamplePlayer:${entity_id}`);
         playerImpl = new SamplePlayer(entity_id)
         playerImpl._login_caller.login("entity_id-123456").callBack(
-            (success) => { console.log(`SamplePlayer login success:{success}`) },
-            (_err) => { console.log(`SamplePlayer login _err:{_err}`) } ).timeout(
+            (success) => { console.log(`SamplePlayer login success:${success}`) },
+            (_err) => { console.log(`SamplePlayer login _err:${_err}`) } ).timeout(
             1000, () => { console.log(`SamplePlayer login timeout!`) } );
         engine.app.instance.request_hub_service("Rank");
         return playerImpl

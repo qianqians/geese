@@ -20,21 +20,21 @@ export class get_rank_get_self_rank_cb {
     private on_rsp(bin:Uint8Array) {
         let inArray = decode(bin) as any;
         let _rank = common.protcol_to_role_rank_info(inArray[0]);
-        if (this.cb) this.cb(_rank);
+        if (this.cb) this.cb.call(null, _rank);
 
     }
 
     private on_err(bin:Uint8Array) {
         let inArray = decode(bin) as any;
         let _err = inArray[0];
-        if (this.err) this.err(_err)
+        if (this.err) this.err.call(null, _err)
 
     }
 
     public callBack(_cb:(rank:common.role_rank_info) => void, _err:(err:common.error_code) => void) {
         this.cb = _cb;
         this.err = _err;
-        this.rsp.callback(this.on_rsp, this.on_err);
+        this.rsp.callback(this.on_rsp.bind(this), this.on_err.bind(this));
         return this.rsp;
     }
 
@@ -58,21 +58,21 @@ export class get_rank_get_rank_cb {
         for (let v_e249ecbd_d64c_526b_901b_6d4ddee4b75a of inArray[0]) {
             _rank_list.push(common.protcol_to_role_rank_info(v_e249ecbd_d64c_526b_901b_6d4ddee4b75a))
         }
-        if (this.cb) this.cb(_rank_list);
+        if (this.cb) this.cb.call(null, _rank_list);
 
     }
 
     private on_err(bin:Uint8Array) {
         let inArray = decode(bin) as any;
         let _err = inArray[0];
-        if (this.err) this.err(_err)
+        if (this.err) this.err.call(null, _err)
 
     }
 
     public callBack(_cb:(rank_list:Array<common.role_rank_info>) => void, _err:(err:common.error_code) => void) {
         this.cb = _cb;
         this.err = _err;
-        this.rsp.callback(this.on_rsp, this.on_err);
+        this.rsp.callback(this.on_rsp.bind(this), this.on_err.bind(this));
         return this.rsp;
     }
 
