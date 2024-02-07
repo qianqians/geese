@@ -45,7 +45,7 @@ impl NetReader for WSSReader {
                             match msg {
                                 Err(_) => {
                                     error!("WSSReader read msg error!");
-                                    None
+                                    return;
                                 }
                                 Ok(_m) => Some(_m)
                             }
@@ -57,6 +57,7 @@ impl NetReader for WSSReader {
                     match msg {
                         Message::Close(_) => {
                             error!("network Close!");
+                            return;
                         },
                         Message::Ping(_) => {
                             info!("ping");
