@@ -20,21 +20,21 @@ export class login_login_cb {
     private on_rsp(bin:Uint8Array) {
         let inArray = decode(bin) as any;
         let _is_displace = inArray[0];
-        if (this.cb) this.cb(_is_displace);
+        if (this.cb) this.cb.call(null, _is_displace);
 
     }
 
     private on_err(bin:Uint8Array) {
         let inArray = decode(bin) as any;
         let _err = inArray[0];
-        if (this.err) this.err(_err)
+        if (this.err) this.err.call(null, _err)
 
     }
 
     public callBack(_cb:(is_displace:boolean) => void, _err:(err:common.error_code) => void) {
         this.cb = _cb;
         this.err = _err;
-        this.rsp.callback(this.on_rsp, this.on_err);
+        this.rsp.callback(this.on_rsp.bind(this), this.on_err.bind(this));
         return this.rsp;
     }
 
