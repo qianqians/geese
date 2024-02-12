@@ -14,7 +14,6 @@ use thrift::transport::{TIoChannel, TBufferChannel};
 use net::{NetReaderCallback, NetReader, NetWriter};
 use tcp::tcp_connect::TcpConnect;
 use wss::wss_connect::WSSConnect;
-use close_handle::CloseHandle;
 use queue::Queue;
 
 use proto::gate::GateClientService;
@@ -256,8 +255,7 @@ impl GateMsgHandle {
 pub struct Context {
     gate_proxy: Option<Arc<StdMutex<GateProxy>>>,
     msg_handle: Arc<StdMutex<GateMsgHandle>>,
-    net_rt: Arc<StdMutex<tokio::runtime::Runtime>>,
-    close: Arc<Mutex<CloseHandle>>
+    net_rt: Arc<StdMutex<tokio::runtime::Runtime>>
 }
 
 impl Context {
@@ -265,8 +263,7 @@ impl Context {
         Context {
             gate_proxy: None,
             msg_handle: GateMsgHandle::new(),
-            net_rt: Arc::new(StdMutex::new(tokio::runtime::Runtime::new().unwrap())),
-            close: Arc::new(Mutex::new(CloseHandle::new()))
+            net_rt: Arc::new(StdMutex::new(tokio::runtime::Runtime::new().unwrap()))
         }
     }
 
