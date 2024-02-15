@@ -1,4 +1,4 @@
-use bevy::{prelude::*, window::PrimaryWindow};
+use bevy::{prelude::*, window::*};
 use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiSettings};
 
 struct Images {
@@ -43,11 +43,15 @@ struct UiState {
     is_window_open: bool,
 }
 
-fn configure_visuals_system(mut contexts: EguiContexts) {
+fn configure_visuals_system(mut contexts: EguiContexts, mut windows: Query<&mut Window>) {
     contexts.ctx_mut().set_visuals(egui::Visuals {
         window_rounding: 0.0.into(),
         ..Default::default()
     });
+
+    let mut window = windows.single_mut();
+    window.set_maximized(true);
+
 }
 
 fn configure_ui_state_system(mut ui_state: ResMut<UiState>) {
@@ -87,6 +91,17 @@ fn ui_example_system(
     }
 
     let ctx = contexts.ctx_mut();
+
+    egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+        // The top panel is often a good place for a menu bar:
+        egui::menu::bar(ui, |ui| {
+            egui::menu::menu_button(ui, "File", |ui| {
+                if ui.button("Quit").clicked() {
+                    std::process::exit(0);
+                }
+            });
+        });
+    });
 
     egui::SidePanel::left("side_panel")
         .default_width(200.0)
@@ -130,17 +145,6 @@ fn ui_example_system(
                 ));
             });
         });
-
-    egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-        // The top panel is often a good place for a menu bar:
-        egui::menu::bar(ui, |ui| {
-            egui::menu::menu_button(ui, "File", |ui| {
-                if ui.button("Quit").clicked() {
-                    std::process::exit(0);
-                }
-            });
-        });
-    });
 
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.heading("Egui Template");
