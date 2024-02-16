@@ -38,9 +38,9 @@ fn main() {
             ..default()
         }))
         .add_plugins(EguiPlugin)
+        .add_systems(Startup, set_window_icon)
         .add_systems(Startup, configure_visuals_system)
         .add_systems(Startup, configure_ui_state_system)
-        .add_systems(Startup, set_window_icon)
         //.add_systems(Update, update_ui_scale_factor_system)
         .add_systems(Update, ui_example_system)
         .run();
