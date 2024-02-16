@@ -1,5 +1,8 @@
-use bevy::{prelude::*, window::*};
-use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiSettings};
+use bevy::prelude::*;
+use bevy::window::*;
+use bevy_egui::{egui, EguiContexts, EguiPlugin};
+use bevy::winit::WinitWindows;
+use winit::window::Icon;
 
 struct Images {
     bevy_icon: Handle<Image>,
@@ -25,14 +28,24 @@ fn main() {
         .insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)))
         .insert_resource(Msaa::Sample4)
         .init_resource::<UiState>()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(WindowPlugin{
+            primary_window: Some(Window {
+                title: "geese edit".into(),
+                resizable: true,
+                decorations: true,
+                ..default()
+            }),
+            ..default()
+        }))
         .add_plugins(EguiPlugin)
         .add_systems(Startup, configure_visuals_system)
         .add_systems(Startup, configure_ui_state_system)
+        .add_systems(Startup, set_window_icon)
         //.add_systems(Update, update_ui_scale_factor_system)
         .add_systems(Update, ui_example_system)
         .run();
 }
+
 #[derive(Default, Resource)]
 struct UiState {
     label: String,
@@ -51,11 +64,29 @@ fn configure_visuals_system(mut contexts: EguiContexts, mut windows: Query<&mut 
 
     let mut window = windows.single_mut();
     window.set_maximized(true);
-
 }
 
 fn configure_ui_state_system(mut ui_state: ResMut<UiState>) {
     ui_state.is_window_open = true;
+}
+
+pub fn set_window_icon(
+    main_window: Query<Entity, With<PrimaryWindow>>,
+    windows: NonSend<WinitWindows>,
+) {
+    let Some(primary) = windows.get_window(main_window.single()) else {return};
+
+    let (icon_rgba, icon_width, icon_height) = {
+        let image = image::open("./assets/icon.png")
+            .expect("Failed to open icon path")
+            .into_rgba8();
+        let (width, height) = image.dimensions();
+        let rgba = image.into_raw();
+        (rgba, width, height)
+    };
+
+    let icon = Icon::from_rgba(icon_rgba, icon_width, icon_height).unwrap();
+    primary.set_window_icon(Some(icon));
 }
 
 fn ui_example_system(
