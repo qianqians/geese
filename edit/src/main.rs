@@ -131,6 +131,41 @@ fn ui_example_system(
                     std::process::exit(0);
                 }
             });
+            egui::menu::menu_button(ui, "Edit", |ui| {
+                if ui.button("Quit").clicked() {
+                    std::process::exit(0);
+                }
+            });
+            egui::menu::menu_button(ui, "Window", |ui| {
+                if ui.button("Quit").clicked() {
+                    std::process::exit(0);
+                }
+            });
+            egui::menu::menu_button(ui, "Tools", |ui| {
+                if ui.button("Quit").clicked() {
+                    std::process::exit(0);
+                }
+            });
+            egui::menu::menu_button(ui, "Build", |ui| {
+                if ui.button("Quit").clicked() {
+                    std::process::exit(0);
+                }
+            });
+            egui::menu::menu_button(ui, "Select", |ui| {
+                if ui.button("Quit").clicked() {
+                    std::process::exit(0);
+                }
+            });
+            egui::menu::menu_button(ui, "Entity", |ui| {
+                if ui.button("Quit").clicked() {
+                    std::process::exit(0);
+                }
+            });
+            egui::menu::menu_button(ui, "Help", |ui| {
+                if ui.button("Quit").clicked() {
+                    std::process::exit(0);
+                }
+            });
         });
     });
 
