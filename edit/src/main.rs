@@ -48,12 +48,12 @@ fn main() {
 
 #[derive(Default, Resource)]
 struct UiState {
-    label: String,
-    value: f32,
-    painting: Painting,
-    inverted: bool,
-    egui_texture_handle: Option<egui::TextureHandle>,
-    is_window_open: bool,
+    pub label: String,
+    pub value1: f32,
+    pub painting: Painting,
+    pub inverted: bool,
+    pub egui_texture_handle: Option<egui::TextureHandle>,
+    pub is_window_open: bool,
 }
 
 fn configure_visuals_system(mut contexts: EguiContexts, mut windows: Query<&mut Window>) {
@@ -184,9 +184,9 @@ fn ui_example_system(
                 egui_texture_handle.size_vec2(),
             )));
 
-            ui.add(egui::Slider::new(&mut ui_state.value, 0.0..=10.0).text("value"));
+            ui.add(egui::Slider::new(&mut ui_state.value1, 0.0..=10.0).text("value"));
             if ui.button("Increment").clicked() {
-                ui_state.value += 1.0;
+                ui_state.value1 += 1.0;
             }
 
             ui.allocate_space(egui::Vec2::new(1.0, 100.0));

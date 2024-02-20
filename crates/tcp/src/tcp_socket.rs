@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::marker::Send;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::io::{ReadHalf, WriteHalf};
