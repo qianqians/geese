@@ -6,9 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = "0.12.1"
-bevy_egui = "0.24.0"
-winit = "0.28.7"
+bevy = "0.13.0"
+bevy_egui = "0.25.0"
+winit = "0.29.10"
 image = "0.24.8"
 embed-resource = "1.6.3"
 thrift = "0.17.0"

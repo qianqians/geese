@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::marker::Send;
 
 use futures_util::SinkExt;
 use futures_util::StreamExt;
