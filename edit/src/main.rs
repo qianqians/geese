@@ -169,47 +169,18 @@ fn ui_example_system(
         });
     });
 
+    egui::TopBottomPanel::bottom("project")
+        .resizable(true)
+        .default_height(500.0)
+        .show(ctx, |ui| {
+            ui.heading("Bottom Panel");
+        });
+
     egui::SidePanel::left("side_panel")
+        .resizable(true)
         .default_width(200.0)
         .show(ctx, |ui| {
-            ui.heading("Side Panel");
-
-            ui.horizontal(|ui| {
-                ui.label("Write something: ");
-                ui.text_edit_singleline(&mut ui_state.label);
-            });
-
-            ui.add(egui::widgets::Image::new(egui::load::SizedTexture::new(
-                egui_texture_handle.id(),
-                egui_texture_handle.size_vec2(),
-            )));
-
-            ui.add(egui::Slider::new(&mut ui_state.value1, 0.0..=10.0).text("value"));
-            if ui.button("Increment").clicked() {
-                ui_state.value1 += 1.0;
-            }
-
-            ui.allocate_space(egui::Vec2::new(1.0, 100.0));
-            ui.horizontal(|ui| {
-                load = ui.button("Load").clicked();
-                invert = ui.button("Invert").clicked();
-                remove = ui.button("Remove").clicked();
-            });
-
-            ui.add(egui::widgets::Image::new(egui::load::SizedTexture::new(
-                *rendered_texture_id,
-                [256.0, 256.0],
-            )));
-
-            ui.allocate_space(egui::Vec2::new(1.0, 10.0));
-            ui.checkbox(&mut ui_state.is_window_open, "Window Is Open");
-
-            ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
-                ui.add(egui::Hyperlink::from_label_and_url(
-                    "powered by egui",
-                    "https://github.com/emilk/egui/",
-                ));
-            });
+            ui.heading("Side Panel Left");
         });
 
     egui::CentralPanel::default().show(ctx, |ui| {
@@ -234,16 +205,13 @@ fn ui_example_system(
         });
     });
 
-    egui::Window::new("Window")
-        .vscroll(true)
-        .open(&mut ui_state.is_window_open)
+    egui::SidePanel::right("side_panel_right")
+        .resizable(true)
+        .default_width(200.0)
         .show(ctx, |ui| {
-            ui.label("Windows can be moved by dragging them.");
-            ui.label("They are automatically sized based on contents.");
-            ui.label("You can turn on resizing and scrolling if you like.");
-            ui.label("You would normally chose either panels OR windows.");
+            ui.heading("Side Panel Right");
         });
-
+        
     if invert {
         ui_state.inverted = !ui_state.inverted;
     }
