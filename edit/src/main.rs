@@ -174,6 +174,7 @@ fn ui_example_system(
         .default_height(500.0)
         .show(ctx, |ui| {
             ui.heading("Bottom Panel");
+            ui.allocate_rect(ui.available_rect_before_wrap(), egui::Sense::hover());
         });
 
     egui::SidePanel::left("side_panel")
@@ -181,6 +182,7 @@ fn ui_example_system(
         .default_width(200.0)
         .show(ctx, |ui| {
             ui.heading("Side Panel Left");
+            ui.allocate_rect(ui.available_rect_before_wrap(), egui::Sense::hover());
         });
 
     egui::CentralPanel::default().show(ctx, |ui| {
@@ -210,6 +212,7 @@ fn ui_example_system(
         .default_width(200.0)
         .show(ctx, |ui| {
             ui.heading("Side Panel Right");
+            ui.allocate_rect(ui.available_rect_before_wrap(), egui::Sense::hover());
         });
         
     if invert {
