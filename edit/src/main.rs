@@ -19,10 +19,11 @@ impl FromWorld for Images {
     }
 }
 
-/// This example demonstrates the following functionality and use-cases of bevy_egui:
-/// - rendering loaded assets;
-/// - toggling hidpi scaling (by pressing '/' button);
-/// - configuring egui contexts during the startup.
+const CAMERA_TARGET: Vec3 = Vec3::ZERO;
+
+#[derive(Resource, Deref, DerefMut)]
+struct OriginalCameraTransform(Transform);
+
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)))
@@ -41,7 +42,7 @@ fn main() {
         .add_systems(Startup, set_window_icon)
         .add_systems(Startup, configure_visuals_system)
         .add_systems(Startup, configure_ui_state_system)
-        //.add_systems(Update, update_ui_scale_factor_system)
+        .add_systems(Startup, setup_system)
         .add_systems(Update, ui_example_system)
         .run();
 }
@@ -87,6 +88,43 @@ pub fn set_window_icon(
 
     let icon = Icon::from_rgba(icon_rgba, icon_width, icon_height).unwrap();
     primary.set_window_icon(Some(icon));
+}
+
+fn setup_system(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    commands.spawn(PbrBundle {
+        mesh: meshes.add(Plane3d::default().mesh().size(5.0, 5.0)),
+        material: materials.add(Color::rgb(0.3, 0.5, 0.3)),
+        ..Default::default()
+    });
+    commands.spawn(PbrBundle {
+        mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+        material: materials.add(Color::rgb(0.8, 0.7, 0.6)),
+        transform: Transform::from_xyz(0.0, 0.5, 0.0),
+        ..Default::default()
+    });
+    commands.spawn(PointLightBundle {
+        point_light: PointLight {
+            intensity: 1500.0,
+            shadows_enabled: true,
+            ..Default::default()
+        },
+        transform: Transform::from_xyz(4.0, 8.0, 4.0),
+        ..Default::default()
+    });
+
+    let camera_pos = Vec3::new(-2.0, 2.5, 5.0);
+    let camera_transform =
+        Transform::from_translation(camera_pos).looking_at(CAMERA_TARGET, Vec3::Y);
+    commands.insert_resource(OriginalCameraTransform(camera_transform));
+
+    commands.spawn(Camera3dBundle {
+        transform: camera_transform,
+        ..Default::default()
+    });
 }
 
 fn ui_example_system(
@@ -193,7 +231,7 @@ fn ui_example_system(
             ui.allocate_rect(ui.available_rect_before_wrap(), egui::Sense::hover());
         });
 
-    egui::CentralPanel::default().show(ctx, |ui| {
+    /*egui::CentralPanel::default().show(ctx, |ui| {
         ui.heading("Egui Template");
         ui.hyperlink("https://github.com/emilk/egui_template");
         ui.add(egui::github_link_file_line!(
@@ -213,7 +251,7 @@ fn ui_example_system(
         egui::Frame::dark_canvas(ui.style()).show(ui, |ui| {
             ui_state.painting.ui_content(ui);
         });
-    });
+    });*/
 
     if invert {
         ui_state.inverted = !ui_state.inverted;
