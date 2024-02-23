@@ -169,6 +169,14 @@ fn ui_example_system(
         });
     });
 
+    egui::SidePanel::right("side_panel_right")
+        .resizable(true)
+        .default_width(200.0)
+        .show(ctx, |ui| {
+            ui.heading("Side Panel Right");
+            ui.allocate_rect(ui.available_rect_before_wrap(), egui::Sense::hover());
+        });
+        
     egui::TopBottomPanel::bottom("project")
         .resizable(true)
         .default_height(500.0)
@@ -207,14 +215,6 @@ fn ui_example_system(
         });
     });
 
-    egui::SidePanel::right("side_panel_right")
-        .resizable(true)
-        .default_width(200.0)
-        .show(ctx, |ui| {
-            ui.heading("Side Panel Right");
-            ui.allocate_rect(ui.available_rect_before_wrap(), egui::Sense::hover());
-        });
-        
     if invert {
         ui_state.inverted = !ui_state.inverted;
     }
