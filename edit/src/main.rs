@@ -231,28 +231,6 @@ fn ui_example_system(
             ui.allocate_rect(ui.available_rect_before_wrap(), egui::Sense::hover());
         });
 
-    /*egui::CentralPanel::default().show(ctx, |ui| {
-        ui.heading("Egui Template");
-        ui.hyperlink("https://github.com/emilk/egui_template");
-        ui.add(egui::github_link_file_line!(
-            "https://github.com/mvlabat/bevy_egui/blob/main/",
-            "Direct link to source code."
-        ));
-        egui::warn_if_debug_build(ui);
-
-        ui.separator();
-
-        ui.heading("Central Panel");
-        ui.label("The central panel is the region left after adding TopPanels and SidePanels.");
-        ui.label("It is often a great place for big things, like drawings:");
-
-        ui.heading("Draw with your mouse to paint:");
-        ui_state.painting.ui_control(ui);
-        egui::Frame::dark_canvas(ui.style()).show(ui, |ui| {
-            ui_state.painting.ui_content(ui);
-        });
-    });*/
-
     if invert {
         ui_state.inverted = !ui_state.inverted;
     }
