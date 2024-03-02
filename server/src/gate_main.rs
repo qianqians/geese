@@ -10,7 +10,6 @@ use tracing::{trace, info, error};
 
 use health::HealthHandle;
 use consul::ConsulImpl;
-use log;
 use config::{load_data_from_file, load_cfg_from_data};
 use local_ip::get_local_ip;
 

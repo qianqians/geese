@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::marker::Send;
 
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
