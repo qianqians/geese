@@ -4,19 +4,6 @@ use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use bevy::winit::WinitWindows;
 use winit::window::Icon;
 
-struct Images {
-    bevy_icon: Handle<Image>,
-}
-
-impl FromWorld for Images {
-    fn from_world(world: &mut World) -> Self {
-        let asset_server = world.get_resource_mut::<AssetServer>().unwrap();
-        Self {
-            bevy_icon: asset_server.load("icon.png"),
-        }
-    }
-}
-
 const CAMERA_TARGET: Vec3 = Vec3::ZERO;
 
 #[derive(Resource, Deref, DerefMut)]
@@ -26,7 +13,6 @@ fn main() {
     App::new()
         .insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)))
         .insert_resource(Msaa::Sample4)
-        .init_resource::<UiState>()
         .add_plugins(DefaultPlugins.set(WindowPlugin{
             primary_window: Some(Window {
                 title: "geese edit".into(),
@@ -39,15 +25,9 @@ fn main() {
         .add_plugins(EguiPlugin)
         .add_systems(Startup, set_window_icon)
         .add_systems(Startup, configure_visuals_system)
-        .add_systems(Startup, configure_ui_state_system)
         .add_systems(Startup, setup_system)
         .add_systems(Update, ui_example_system)
         .run();
-}
-
-#[derive(Default, Resource)]
-struct UiState {
-    pub is_window_open: bool,
 }
 
 fn configure_visuals_system(mut contexts: EguiContexts, mut windows: Query<&mut Window>) {
@@ -58,10 +38,6 @@ fn configure_visuals_system(mut contexts: EguiContexts, mut windows: Query<&mut 
 
     let mut window = windows.single_mut();
     window.set_maximized(true);
-}
-
-fn configure_ui_state_system(mut ui_state: ResMut<UiState>) {
-    ui_state.is_window_open = true;
 }
 
 pub fn set_window_icon(
@@ -121,16 +97,8 @@ fn setup_system(
 }
 
 fn ui_example_system(
-    mut rendered_texture_id: Local<egui::TextureId>,
-    mut is_initialized: Local<bool>,
-    images: Local<Images>,
     mut contexts: EguiContexts,
 ) {
-    if !*is_initialized {
-        *is_initialized = true;
-        *rendered_texture_id = contexts.add_image(images.bevy_icon.clone_weak());
-    }
-
     let ctx = contexts.ctx_mut();
 
     egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
