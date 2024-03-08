@@ -41,7 +41,7 @@ def gen(lang, inputdir, commondir, clioutputdir, svroutputdir):
     print("inputdir", inputdir)
     print("commondir", commondir)
 
-    if not os.path.isdir(clioutputdir):
+    if clioutputdir != None and not os.path.isdir(clioutputdir):
         os.mkdir(clioutputdir)
     if svroutputdir != None and not os.path.isdir(svroutputdir):
         os.mkdir(svroutputdir)
@@ -63,13 +63,15 @@ def gen(lang, inputdir, commondir, clioutputdir, svroutputdir):
             s_code += genstruct.genstruct(pretreatment)
             s_code += gen.genmodule(pretreatment) + "\n\n"
 
-            file = open(clioutputdir + '//' + pretreatment.name + "_cli.py", 'w')
-            file.write(c_code)
-            file.close()
+            if clioutputdir != None and len(clioutputdir) > 0:
+                file = open(clioutputdir + '//' + pretreatment.name + "_cli.py", 'w')
+                file.write(c_code)
+                file.close()
 
-            file = open(svroutputdir + '//' + pretreatment.name + "_svr.py", 'w')
-            file.write(s_code)
-            file.close()
+            if svroutputdir != None and len(svroutputdir) > 0:
+                file = open(svroutputdir + '//' + pretreatment.name + "_svr.py", 'w')
+                file.write(s_code)
+                file.close()
             
         elif lang == 'ts':
             from gen.common.ts import genenum
@@ -81,9 +83,10 @@ def gen(lang, inputdir, commondir, clioutputdir, svroutputdir):
             c_code += genstruct.genstruct(pretreatment)
             c_code += gen.gencaller(pretreatment) + "\n\n"
             
-            file = open(clioutputdir + '//' + pretreatment.name + "_cli.ts", 'w')
-            file.write(c_code)
-            file.close()
+            if clioutputdir != None and len(clioutputdir) > 0:
+                file = open(clioutputdir + '//' + pretreatment.name + "_cli.ts", 'w')
+                file.write(c_code)
+                file.close()
 
 if __name__ == '__main__':
     if sys.argv[1] == "python":
