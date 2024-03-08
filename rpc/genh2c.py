@@ -90,9 +90,9 @@ if __name__ == '__main__':
         if len(sys.argv) == 6:
             gen(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5])
         else:
-            gen(sys.argv[1], None, sys.argv[2], sys.argv[3], sys.argv[4])
+            gen(sys.argv[1], sys.argv[2], None, sys.argv[3], sys.argv[4])
     elif sys.argv[1] == "ts":
         if len(sys.argv) == 5:
             gen(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], None)
         else:
-            gen(sys.argv[1], None, sys.argv[2], sys.argv[3], None)
+            gen(sys.argv[1], sys.argv[2], None, sys.argv[3], None)
