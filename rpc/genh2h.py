@@ -48,4 +48,4 @@ if __name__ == '__main__':
     if len(sys.argv) == 5:
         gen(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4])
     else:
-        gen(sys.argv[1], None, sys.argv[2], sys.argv[3])
+        gen(sys.argv[1], sys.argv[2], None, sys.argv[3])
