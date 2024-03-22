@@ -9,10 +9,16 @@ const CAMERA_TARGET: Vec3 = Vec3::ZERO;
 #[derive(Resource, Deref, DerefMut)]
 struct OriginalCameraTransform(Transform);
 
+#[derive(Default, Resource)]
+struct SceneState {
+    inverted: bool,
+}
+
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)))
         .insert_resource(Msaa::Sample4)
+        .init_resource::<SceneState>()
         .add_plugins(DefaultPlugins.set(WindowPlugin{
             primary_window: Some(Window {
                 title: "geese edit".into(),
@@ -25,7 +31,7 @@ fn main() {
         .add_plugins(EguiPlugin)
         .add_systems(Startup, set_window_icon)
         .add_systems(Startup, configure_visuals_system)
-        .add_systems(Startup, setup_system)
+        .add_systems(Update, setup_system)
         .add_systems(Update, ui_example_system)
         .run();
 }
@@ -33,7 +39,7 @@ fn main() {
 fn configure_visuals_system(mut contexts: EguiContexts, mut windows: Query<&mut Window>) {
     contexts.ctx_mut().set_visuals(egui::Visuals {
         window_rounding: 0.0.into(),
-        ..Default::default()
+        ..default()
     });
 
     let mut window = windows.single_mut();
@@ -60,10 +66,16 @@ pub fn set_window_icon(
 }
 
 fn setup_system(
+    mut state: ResMut<SceneState>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    if state.inverted {
+        return;
+    }
+    state.inverted = true;
+
     commands.spawn(PbrBundle {
         mesh: meshes.add(Plane3d::default().mesh().size(5.0, 5.0)),
         material: materials.add(Color::rgb(0.3, 0.5, 0.3)),
