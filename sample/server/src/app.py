@@ -59,15 +59,16 @@ class LoginEventHandle(login_event_handle):
             info = json.loads(info_str)
             print("LoginEventHandle on_login! info:{}".format(info))
             self.__replace_client__(info["gate"], info["conn_id"], new_gate_name, new_conn_id, "其他位置登录!")
-        else:
-            _p = SamplePlayer(str(uuid.uuid4()), new_gate_name, new_conn_id)
-            app().player_mgr.add_player(_p)
-            print("LoginEventHandle on_login! create_main_remote_entity:{} begin!".format(_p))
-            _p.create_main_remote_entity()
-            print("LoginEventHandle on_login! create_main_remote_entity:{}".format(_p))
-            print("LoginEventHandle on_login! call_update_rank rankImpl:{}".format(rankImpl))
-            rankImpl.call_update_rank(_p.entity_id)
-            print("LoginEventHandle on_login end!")
+        
+        _p = SamplePlayer(str(uuid.uuid4()), new_gate_name, new_conn_id)
+        app().player_mgr.add_player(_p)
+        print("LoginEventHandle on_login! create_main_remote_entity:{} begin!".format(_p))
+        _p.create_main_remote_entity()
+        print("LoginEventHandle on_login! create_main_remote_entity:{}".format(_p))
+        print("LoginEventHandle on_login! call_update_rank rankImpl:{}".format(rankImpl))
+        rankImpl.call_update_rank(_p.entity_id)
+        print("LoginEventHandle on_login end!")
+            
     
     async def on_reconnect(self, new_gate_name:str, new_conn_id:str, sdk_uuid:str, token:str):
         print("LoginEventHandle on_reconnect!")
@@ -77,15 +78,15 @@ class LoginEventHandle(login_event_handle):
             info = json.loads(info_str)
             print("LoginEventHandle on_reconnect! info:{}".format(info))
             self.__replace_client__(info["gate"], info["conn_id"], new_gate_name, new_conn_id, "其他位置登录!")
-        else:
-            _p = SamplePlayer(str(uuid.uuid4()), new_gate_name, new_conn_id)
-            app().player_mgr.add_player(_p)
-            print("LoginEventHandle on_reconnect! create_main_remote_entity:{} begin!".format(_p))
-            _p.create_main_remote_entity()
-            print("LoginEventHandle on_reconnect! create_main_remote_entity:{}".format(_p))
-            print("LoginEventHandle on_reconnect! call_update_rank rankImpl:{}".format(rankImpl))
-            rankImpl.call_update_rank(_p.entity_id)
-            print("LoginEventHandle on_reconnect end!")
+        
+        _p = SamplePlayer(str(uuid.uuid4()), new_gate_name, new_conn_id)
+        app().player_mgr.add_player(_p)
+        print("LoginEventHandle on_reconnect! create_main_remote_entity:{} begin!".format(_p))
+        _p.create_main_remote_entity()
+        print("LoginEventHandle on_reconnect! create_main_remote_entity:{}".format(_p))
+        print("LoginEventHandle on_reconnect! call_update_rank rankImpl:{}".format(rankImpl))
+        rankImpl.call_update_rank(_p.entity_id)
+        print("LoginEventHandle on_reconnect end!")
     
 class PlayerEventHandle(player_event_handle):
     def player_offline(self, _player:player) -> dict:
