@@ -30,7 +30,7 @@ from .get_guid import *
 from .dbproxy import *
 
 def __handle_exception__(exc_type, exc_value, tb):
-    app().ctx.log("error", "error Uncaught exception:{}, exc_value:{}, tb:{}".format(exc_type, exc_value, tb))
+    app().error("error Uncaught exception:{}, exc_value:{}, tb:{}".format(exc_type, exc_value, tb))
 sys.excepthook = __handle_exception__
 
 def __handle_sigterm__(signal, frame):
@@ -134,6 +134,21 @@ class app(object):
     
     def run_coroutine_async(self, coro):
         asyncio.run_coroutine_threadsafe(coro, self.__loop__)
+    
+    def trace(self, format:str, *argv):
+        self.ctx.log("trace", "app " + format.format(argv))
+        
+    def debug(self, format:str, *argv):
+        self.ctx.log("debug", "app " + format.format(argv))
+
+    def info(self, format:str, *argv):
+        self.ctx.log("info", "app " + format.format(argv))
+
+    def warn(self, format:str, *argv):
+        self.ctx.log("warn", "app " + format.format(argv))
+
+    def error(self, format:str, *argv):
+        self.ctx.log("error", "app " + format.format(argv))
         
     def close(self):
         self.__is_run__ = False

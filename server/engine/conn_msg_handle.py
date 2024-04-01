@@ -38,7 +38,7 @@ class conn_msg_handle(object):
         if _entity != None:
             _entity.handle_client_request(gate_name, conn_id, method, msg_cb_id, argvs)
             return
-        app().ctx.log("error", "unhandle client request method:{} entity:{}, ".format(method, entity_id))
+        app().error("unhandle client request method:{} entity:{}, ".format(method, entity_id))
         
     def on_client_call_rsp(self, gate_name:str, entity_id:str, msg_cb_id:int, argvs:bytes):
         from app import app
@@ -46,7 +46,7 @@ class conn_msg_handle(object):
         if _player != None:
             _player.handle_client_response(gate_name, msg_cb_id, argvs)
             return
-        app().ctx.log("error", "unhandle client response msg_cb_id:{} entity:{}, ".format(msg_cb_id, entity_id))
+        app().error("unhandle client response msg_cb_id:{} entity:{}, ".format(msg_cb_id, entity_id))
         
     def on_client_call_err(self, gate_name:str, entity_id:str, msg_cb_id:int, argvs:bytes):
         from app import app
@@ -54,7 +54,7 @@ class conn_msg_handle(object):
         if _player != None:
             _player.handle_client_response_error(gate_name, msg_cb_id, argvs)
             return
-        app().ctx.log("error", "unhandle client response error msg_cb_id:{} entity:{}, ".format(msg_cb_id, entity_id))
+        app().error("unhandle client response error msg_cb_id:{} entity:{}, ".format(msg_cb_id, entity_id))
         
     def on_client_call_ntf(self, gate_name:str, entity_id:str, method:str, argvs:bytes):
         from app import app
@@ -66,10 +66,11 @@ class conn_msg_handle(object):
         if _entity != None:
             _entity.handle_client_notify(gate_name, method, argvs)
             return
-        app().ctx.log("error", "unhandle client notify method:{} entity:{}, ".format(method, entity_id))
+        app().error("unhandle client notify method:{} entity:{}, ".format(method, entity_id))
 
     def on_rge_hub(self, hub_name):
-        print(f"on_rge_hub hub_name:{hub_name}")
+        from app import app
+        app().trace(f"on_rge_hub hub_name:{hub_name}")
 
     def on_query_service_entity(self, hub_name:str, service_name:str):
         from app import app
@@ -95,7 +96,7 @@ class conn_msg_handle(object):
         if _entity != None:
             _entity.handle_hub_request(source_hub_name, method, msg_cb_id, argvs)
             return
-        app().ctx.log("error", "unhandle hub request msg_cb_id:{} entity:{}, ".format(msg_cb_id, entity_id))
+        app().error("unhandle hub request msg_cb_id:{} entity:{}, ".format(msg_cb_id, entity_id))
 
     def on_call_hub_rsp(self, hub_name:str, entity_id:str, msg_cb_id:int, argvs:bytes):
         from app import app
@@ -103,7 +104,7 @@ class conn_msg_handle(object):
         if _subentity != None:
             _subentity.handle_hub_response(hub_name, msg_cb_id, argvs)
             return
-        app().ctx.log("error", "unhandle hub response msg_cb_id:{} entity:{}, ".format(msg_cb_id, entity_id))
+        app().error("unhandle hub response msg_cb_id:{} entity:{}, ".format(msg_cb_id, entity_id))
 
     def on_call_hub_err(self, hub_name:str, entity_id:str, msg_cb_id:int, argvs:bytes):
         from app import app
@@ -111,7 +112,7 @@ class conn_msg_handle(object):
         if _subentity != None:
             _subentity.handle_hub_response_error(hub_name, msg_cb_id, argvs)
             return
-        app().ctx.log("error", "unhandle hub response error msg_cb_id:{} entity:{}, ".format(msg_cb_id, entity_id))
+        app().error("unhandle hub response error msg_cb_id:{} entity:{}, ".format(msg_cb_id, entity_id))
 
     def on_call_hub_ntf(self, source_hub_name:str, entity_id:str, method:str, argvs:bytes):
         from app import app
@@ -131,4 +132,4 @@ class conn_msg_handle(object):
         if _receiver != None:
             _receiver.handle_hub_notify(source_hub_name, method, argvs)
             return
-        app().ctx.log("error", "unhandle hub request method:{} entity:{}, ".format(method, entity_id))
+        app().error("unhandle hub request method:{} entity:{}, ".format(method, entity_id))

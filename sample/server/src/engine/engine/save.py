@@ -83,7 +83,7 @@ class save(ABC, base_dbproxy_handle):
                     lambda data, err: save.__load_entity_callback__(query, data, err, _new_obj))
             except Exception as err:
                 from app import app
-                app().ctx.log("error", "save load_or_create_entity exception dbproxy:{} __db__:{} __collection__:{}".format(
+                app().error("save load_or_create_entity exception dbproxy:{} __db__:{} __collection__:{}".format(
                     _new_obj.__dbproxy__, _new_obj.__db__, _new_obj.__collection__))
                 _new_obj.__random_new_dbproxy__()
 

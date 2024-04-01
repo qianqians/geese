@@ -17,11 +17,12 @@ class get_guid(base_dbproxy_handle):
         app().run_coroutine_async(__gen_guid_set_future__(future, guid))
 
     async def gen(self) -> int:
-        print("get_guid gen begin!")
+        from app import app
+        app().trace("get_guid gen begin!")
         future = asyncio.Future()
         from app import app
         while not self.__get_dbproxy__().get_guid(self.__db__, self.__collection__, lambda guid: self.__gen_callback__(guid, future)):
-            app().ctx.log("error", "gen guid exception dbproxy:{} __db__:{} __collection__:{}".format(self.__dbproxy__, self.__db__, self.__collection__))
+            app().error("gen guid exception dbproxy:{} __db__:{} __collection__:{}".format(self.__dbproxy__, self.__db__, self.__collection__))
             self.__random_new_dbproxy__()
-        print("get_guid gen end!")
+        app().trace("get_guid gen end!")
         return await future
