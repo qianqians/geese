@@ -20,11 +20,11 @@ class RankImpl(entity):
         return {}
     
     def on_call_update_rank(self, rsp:update_rank_call_update_rank_rsp, _entity_id:str):
-        print(f"RankImpl on_call_update_rank _entity_id:{_entity_id}")
+        app().trace(f"RankImpl on_call_update_rank _entity_id:{_entity_id}")
         rsp.rsp()
 
     def on_get_self_rank(self, rsp:get_rank_get_self_rank_rsp, _entity_id:str):
-        print(f"RankImpl on_get_self_rank _entity_id:{_entity_id}")
+        app().trace(f"RankImpl on_get_self_rank _entity_id:{_entity_id}")
         rankInfo = role_rank_info()
         rankInfo.entity_id = _entity_id
         rankInfo.rank = 1
