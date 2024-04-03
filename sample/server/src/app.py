@@ -68,7 +68,6 @@ class LoginEventHandle(login_event_handle):
             app().trace("LoginEventHandle on_login! call_update_rank rankImpl:{}".format(rankImpl))
             rankImpl.call_update_rank(_p.entity_id)
             app().trace("LoginEventHandle on_login end!")
-            
     
     async def on_reconnect(self, new_gate_name:str, new_conn_id:str, sdk_uuid:str, token:str):
         app().trace("LoginEventHandle on_reconnect!")
