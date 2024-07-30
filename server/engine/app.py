@@ -176,12 +176,23 @@ class app(object):
         self.__loop__.run_forever()
 
     def poll(self):
+        busy_count = 0
+        idle_count = 0
         while self.__is_run__:
             start = time.time()
             self.poll_conn_msg()
             tick = time.time() - start
             if tick < 0.033:
+                idle_count += 1
+                if idle_count > 5:
+                    busy_count = 0
+                    self.ctx.set_health_state(True)
                 time.sleep(0.033 - tick)
+            elif tick > 0.1:
+                busy_count += 1
+                if busy_count > 5:
+                    idle_count = 0
+                    self.ctx.set_health_state(False)
             
         self.save_mgr.for_each_entity(lambda entt: entt.save_entity())
             
