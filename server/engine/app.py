@@ -166,7 +166,10 @@ class app(object):
     def poll_db_msg_thread(self):
         while self.__is_run__:
             start = time.time()
-            self.poll_db_msg()
+            try:
+                self.poll_db_msg()
+            except Exception as ex:
+                self.error("poll_db_msg_thread Exception:{0}", ex)
             tick = time.time() - start
             if tick < 0.033:
                 time.sleep(0.033 - tick)
@@ -180,7 +183,10 @@ class app(object):
         idle_count = 0
         while self.__is_run__:
             start = time.time()
-            self.poll_conn_msg()
+            try:
+                self.poll_conn_msg()
+            except Exception as ex:
+                self.error("poll Exception:{0}", ex)
             tick = time.time() - start
             if tick < 0.033:
                 idle_count += 1
