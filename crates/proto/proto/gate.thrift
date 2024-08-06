@@ -79,6 +79,21 @@ struct hub_call_client_global {
 struct hub_call_kick_off_client {
 	1:string conn_id,
 	2:string prompt_info,
+}
+
+/*
+ * hub ntf kick_off client complete
+ */
+struct hub_call_kick_off_client_complete {
+	1:string conn_id
+}
+
+/*
+ * hub request transfer client.
+ */
+struct hub_call_transfer_client {
+	1:string conn_id,
+	2:string prompt_info,
 	3:string new_gate,
 	4:string new_conn_id,
 	5:bool is_replace,
@@ -88,13 +103,6 @@ struct hub_call_kick_off_client {
  * hub ntf transfer client complete
  */
 struct hub_call_transfer_client_complete {
-	1:string conn_id
-}
-
-/*
- * hub ntf kick_off client complete
- */
-struct hub_call_kick_off_client_complete {
 	1:string conn_id
 }
 
@@ -110,8 +118,9 @@ union gate_hub_service {
 	9:hub_call_client_ntf call_ntf,
 	10:hub_call_client_global call_global,
 	11:hub_call_kick_off_client kick_off,
-	12:hub_call_transfer_client_complete transfer_complete,
-	13:hub_call_kick_off_client_complete kick_off_complete
+	12:hub_call_kick_off_client_complete kick_off_complete,
+	13:hub_call_transfer_client transfer,
+	14:hub_call_transfer_client_complete transfer_complete,
 }
 
 /*
