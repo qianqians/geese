@@ -51,6 +51,13 @@ struct transfer_entity_control {
 }
 
 /*
+ * gate notify client kick off
+ */
+struct kick_off_client {
+	1:string conn_id
+}
+
+/*
  * gate notify client disconnnect
  */
 struct client_disconnnect {
@@ -152,21 +159,22 @@ union hub_service {
 	2:client_request_reconnect client_request_reconnect,
 	3:transfer_msg_end transfer_msg_end,
 	4:transfer_entity_control transfer_entity_control,
-	5:client_disconnnect client_disconnnect,
-	6:client_request_service client_request_service,
-	7:client_call_rpc client_call_rpc,
-	8:client_call_rsp client_call_rsp,
-	9:client_call_err client_call_err,
-	10:client_call_ntf client_call_ntf,
-	11:common.reg_server reg_server,
-	12:common.reg_server_callback reg_server_callback,
-	13:query_service_entity query_entity,
-	14:create_service_entity create_service_entity,
-	15:hub_forward_client_request_service hub_forward_client_request_service,
-	16:hub_call_hub_rpc hub_call_rpc,
-	17:hub_call_hub_rsp hub_call_rsp,
-	18:hub_call_hub_err hub_call_err,
-	19:hub_call_hub_ntf hub_call_ntf
+	5:kick_off_client kick_off_client,
+	6:client_disconnnect client_disconnnect,
+	7:client_request_service client_request_service,
+	8:client_call_rpc client_call_rpc,
+	9:client_call_rsp client_call_rsp,
+	10:client_call_err client_call_err,
+	11:client_call_ntf client_call_ntf,
+	12:common.reg_server reg_server,
+	13:common.reg_server_callback reg_server_callback,
+	14:query_service_entity query_entity,
+	15:create_service_entity create_service_entity,
+	16:hub_forward_client_request_service hub_forward_client_request_service,
+	17:hub_call_hub_rpc hub_call_rpc,
+	18:hub_call_hub_rsp hub_call_rsp,
+	19:hub_call_hub_err hub_call_err,
+	20:hub_call_hub_ntf hub_call_ntf
 }
 
 struct ack_get_guid {
