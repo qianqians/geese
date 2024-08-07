@@ -28,12 +28,12 @@ use proto::hub::{
     HubService,
     ClientRequestLogin,
     ClientRequestReconnect,
-    ClientDisconnnect,
-    TransferMsgEnd
+    KickOffClient,
 };
 
 use proto::client::{
     ClientService,
+    TransferComplete,
     NtfConnId
 };
 
@@ -150,7 +150,7 @@ pub struct ClientProxy {
     pub join: Option<JoinHandle<()>>,
     pub last_heartbeats_timetmp: i64,
     pub entities: BTreeSet<String>,
-    originate_kick_off_hub: Option<Arc<Mutex<HubProxy>>>,
+    pub wait_transfer_hub: BTreeSet<String>,
     conn_mgr: Arc<Mutex<ConnManager>>
 }
 
@@ -162,7 +162,7 @@ impl ClientProxy {
             hub_proxies: BTreeMap::new(),
             join: None,
             entities: BTreeSet::new(),
-            originate_kick_off_hub: None,
+            wait_transfer_hub: BTreeSet::new(),
             conn_mgr: _conn_mgr,
             last_heartbeats_timetmp: utc_unix_time()
         }
@@ -180,33 +180,40 @@ impl ClientProxy {
         self.conn_mgr.clone()
     }
 
+    pub fn set_wait_transfer_hub(&mut self, _hub_name: String) {
+        self.wait_transfer_hub.insert(_hub_name);
+    }
+
     pub async fn ntf_client_offline(&mut self, _proxy: Arc<Mutex<HubProxy>>) {
         for (_, _hub_proxy) in &self.hub_proxies {
             let mut _hub = _hub_proxy.as_ref().lock().await;
-            _hub.send_hub_msg(HubService::ClientDisconnnect(ClientDisconnnect::new(self.conn_id.clone()))).await;
+            _hub.send_hub_msg(HubService::KickOffClient(KickOffClient::new(self.conn_id.clone()))).await;
         }
-        self.originate_kick_off_hub = Some(_proxy);
-
         self.check_all_hub_kick_off().await;
     }
 
     async fn check_all_hub_kick_off(&mut self) {
         if self.hub_proxies.len() <= 0 {
-            if let Some(_proxy) = &self.originate_kick_off_hub {
-                {
-                    let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
-                    let tmp_conn_id = self.conn_id.clone();
-                    _conn_mgr.close_client(&tmp_conn_id).await;
-                }
-                let mut _p = _proxy.as_ref().lock().await;
-                _p.send_hub_msg(HubService::TransferMsgEnd(TransferMsgEnd::new(self.conn_id.clone(), false))).await;
-            }
+            let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
+            let tmp_conn_id = self.conn_id.clone();
+            _conn_mgr.close_client(&tmp_conn_id).await;
         }
     }
 
     pub async fn check_hub_kick_off(&mut self, hub_name:String) {
         self.hub_proxies.remove(&hub_name);
         self.check_all_hub_kick_off().await;
+    }
+
+    async fn check_all_hub_transfer(&mut self) {
+        if self.wait_transfer_hub.len() <= 0 {
+            self.send_client_msg(ClientService::TransferComplete(TransferComplete::new())).await;
+        }
+    }
+
+    pub async fn check_hub_transfer(&mut self, hub_name:String) {
+        self.wait_transfer_hub.remove(&hub_name);
+        self.check_all_hub_transfer().await;
     }
 
     pub async fn send_client_msg(&mut self, msg: ClientService) -> bool {

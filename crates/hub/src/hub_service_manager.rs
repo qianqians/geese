@@ -500,6 +500,9 @@ impl ConnCallbackMsgHandle {
                 let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
                 _gate_msg_handle.do_transfer_entity_control(py, py_handle, ev);
             }
+            HubService::KickOffClient(ev) => {
+                // todo
+            },
             HubService::ClientDisconnnect(ev) => {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();

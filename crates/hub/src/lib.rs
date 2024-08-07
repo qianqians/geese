@@ -611,7 +611,7 @@ impl HubContext {
         })
     }
 
-    pub fn hub_call_kick_off_client(slf: PyRefMut<'_, Self>, old_gate_name: String, old_conn_id: String, new_gate_name: String, new_conn_id: String, is_replace: bool, prompt_info: String) -> bool {
+    pub fn hub_call_kick_off_client(slf: PyRefMut<'_, Self>, old_gate_name: String, old_conn_id: String, prompt_info: String) -> bool {
         trace!("hub_call_kick_off_client begin!");
 
         let _server = slf.server.clone();
@@ -623,7 +623,7 @@ impl HubContext {
             _server_handle.send_gate_msg(
                 old_gate_name, 
                 GateHubService::KickOff(
-                    HubCallKickOffClient::new(old_conn_id, prompt_info, new_gate_name, new_conn_id, is_replace))).await
+                    HubCallKickOffClient::new(old_conn_id, prompt_info))).await
         })
     }
 
