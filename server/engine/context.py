@@ -91,17 +91,17 @@ class context(object):
         return self.ctx.hub_call_client_global(gate_name, method, argvs)
     
     def hub_call_kick_off_client(self, gate_name:str, conn_id:str, prompt_info:str) -> bool:
-        return self.ctx.hub_call_kick_off_client(gate_name, conn_id, None, None, False, prompt_info)
-    
-    def hub_call_replace_client(self, old_gate_name:str, old_conn_id:str, new_gate_name:str, new_conn_id:str, is_replace:bool, prompt_info:str) -> bool:
-        return self.ctx.hub_call_kick_off_client(old_gate_name, old_conn_id, new_gate_name, new_conn_id, is_replace, prompt_info)
-    
-    def hub_call_transfer_client_complete(self, gate_name:str, conn_id:str) -> bool:
-        return self.ctx.hub_call_transfer_client_complete(gate_name, conn_id)
+        return self.ctx.hub_call_kick_off_client(gate_name, conn_id, prompt_info)
     
     def hub_call_kick_off_client_complete(self, gate_name:str, conn_id:str) -> bool:
         return self.ctx.hub_call_kick_off_client_complete(gate_name, conn_id)
 
+    def hub_call_replace_client(self, old_gate_name:str, old_conn_id:str, new_gate_name:str, new_conn_id:str, is_replace:bool, prompt_info:str) -> bool:
+        return self.ctx.hub_call_transfer_client(old_gate_name, old_conn_id, new_gate_name, new_conn_id, is_replace, prompt_info)
+    
+    def hub_call_transfer_client_complete(self, gate_name:str, conn_id:str) -> bool:
+        return self.ctx.hub_call_transfer_client_complete(gate_name, conn_id)
+    
     def get_guid(self, dbproxy_name:str, db:str, collection:str, callback_id:str) -> bool:
         return self.ctx.get_guid(dbproxy_name, db, collection, callback_id)
     

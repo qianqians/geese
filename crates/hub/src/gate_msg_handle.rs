@@ -11,6 +11,7 @@ use proto::hub::{
     TransferMsgEnd,
     TransferEntityControl,
     ClientRequestService,
+    KickOffClient,
     ClientDisconnnect,
     ClientCallRpc,
     ClientCallRsp,
@@ -61,6 +62,15 @@ impl GateCallbackMsgHandle {
         let argvs = (ev.entity_id.unwrap(), ev.is_main.unwrap(), ev.is_replace.unwrap(), ev.gate_name.unwrap(), ev.conn_id.unwrap(),);
         if let Err(e) = py_handle.call_method1(py, "on_transfer_entity_control", argvs) {
             error!("do_transfer_entity_control python callback error:{}", e)
+        }
+    }
+
+    pub fn do_client_kick_off(&mut self, py: Python<'_>, py_handle: Py<PyAny>, gate_name: String, ev: KickOffClient) {
+        trace!("do_client_disconnnect begin!");
+
+        let argvs = (gate_name, ev.conn_id.unwrap(),);
+        if let Err(e) = py_handle.call_method1(py, "on_client_kick_off", argvs) {
+            error!("do_client_disconnnect python callback error:{}", e)
         }
     }
 

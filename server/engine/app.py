@@ -113,6 +113,9 @@ class app(object):
     def create_entity(self, entity_type:str, source_hub_name:str, entity_id:str, argvs: dict):
         _creator = self.__entity_create_method__[entity_type]
         _creator(source_hub_name, entity_id, argvs)
+        
+    def kick_off_client(self, gate_name:str, conn_id:str, prompt_info:str):
+        self.ctx.hub_call_kick_off_client(gate_name, conn_id, prompt_info)
 
     def __unlock_distributed_lock__(self, key:str, value:str):
         try:
