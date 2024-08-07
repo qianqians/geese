@@ -21,8 +21,9 @@ use proto::gate::{
     HubCallClientNtf,
     HubCallClientGlobal,
     HubCallKickOffClient,
+    HubCallKickOffClientComplete,
+    HubCallTransferClient,
     HubCallTransferClientComplete,
-    HubCallKickOffClientComplete
 };
 
 use proto::client::{
@@ -30,7 +31,6 @@ use proto::client::{
     CreateRemoteEntity,
     DeleteRemoteEntity,
     RefreshEntity,
-    TransferComplete,
     KickOff,
     CallRpc,
     CallRsp,
@@ -132,8 +132,9 @@ impl GateHubMsgHandle {
                 GateHubService::CallNtf(ev) => GateHubMsgHandle::do_call_client_ntf(proxy, ev).await,
                 GateHubService::CallGlobal(ev) => GateHubMsgHandle::do_call_client_global(proxy, ev).await,
                 GateHubService::KickOff(ev) => GateHubMsgHandle::do_kick_off_client(proxy, ev).await,
+                GateHubService::KickOffComplete(ev) => GateHubMsgHandle::do_kick_off_client_complete(proxy, ev).await,
+                GateHubService::Transfer(ev) => GateHubMsgHandle::do_transfer_client(proxy, ev).await,
                 GateHubService::TransferComplete(ev) => GateHubMsgHandle::do_transfer_client_complete(proxy, ev).await,
-                GateHubService::KickOffComplete(ev) => GateHubMsgHandle::do_kick_off_client_complete(proxy, ev).await
             }
         }
     }
@@ -687,45 +688,12 @@ impl GateHubMsgHandle {
                 _conn_mgr_arc = _p.get_conn_mgr();
             }
 
+            let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
             let conn_id = ev.conn_id.unwrap();
-            if ev.new_gate.is_none() || ev.new_conn_id.is_none() {
-                let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
-                if let Some(_client_arc) = _conn_mgr.get_client_proxy(&conn_id) {
-                    let mut _client = _client_arc.as_ref().lock().await;
-                    let _ = _client.send_client_msg(ClientService::KickOff(KickOff::new(ev.prompt_info.unwrap()))).await;
-                    _client.ntf_client_offline(_proxy_clone).await;
-                }
-                else {
-                    let mut _p = _proxy_handle.as_ref().lock().await;
-                    _p.send_hub_msg(HubService::TransferMsgEnd(TransferMsgEnd::new(conn_id, false))).await;
-                }
-            }
-            else if ev.new_gate.is_some() && ev.new_conn_id.is_some() {
-                let new_gate_name = ev.new_gate.unwrap();
-                let new_conn_id = ev.new_conn_id.unwrap();
-
-                let mut is_kick_off = false;
-                {
-                    let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
-                    if let Some(_client_arc) = _conn_mgr.get_client_proxy(&conn_id) {
-                        let mut _client = _client_arc.as_ref().lock().await;
-                        let _ = _client.send_client_msg(ClientService::KickOff(KickOff::new(ev.prompt_info.unwrap()))).await;
-                        
-                        for (_, _hub_proxy) in &_client.hub_proxies {
-                            let mut _hub = _hub_proxy.as_ref().lock().await;
-                            for _entity_id in &_client.entities {
-                                if let Some(entity) = _conn_mgr.get_entity(_entity_id) {
-                                    let is_main = entity.get_main_conn_id().unwrap_or_default() == conn_id;
-                                    _hub.send_hub_msg(HubService::TransferEntityControl(TransferEntityControl::new(
-                                        _entity_id.clone(), is_main, ev.is_replace.unwrap(), new_gate_name.clone(), new_conn_id.clone()))).await;
-                                }
-                            }
-                        }
-                        is_kick_off = true;
-                    }
-                }
-                let mut _p = _proxy_handle.as_ref().lock().await;
-                _p.send_hub_msg(HubService::TransferMsgEnd(TransferMsgEnd::new(conn_id, is_kick_off))).await;
+            if let Some(_client_arc) = _conn_mgr.get_client_proxy(&conn_id) {
+                let mut _client = _client_arc.as_ref().lock().await;
+                let _ = _client.send_client_msg(ClientService::KickOff(KickOff::new(ev.prompt_info.unwrap()))).await;
+                _client.ntf_client_offline(_proxy_clone).await;
             }
         }
         else {
@@ -735,29 +703,6 @@ impl GateHubMsgHandle {
         trace!("do_hub_event kick_off_client end!");
     }
     
-    pub async fn do_transfer_client_complete(_proxy: Weak<Mutex<HubProxy>>, ev: HubCallTransferClientComplete) {
-        trace!("do_hub_event transfer_client_complete begin!");
-
-        if let Some(_proxy_handle) = _proxy.upgrade() {
-            let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
-            {
-                let mut _p = _proxy_handle.as_ref().lock().await;
-                _conn_mgr_arc = _p.get_conn_mgr();
-            }
-
-            let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
-            if let Some(_client_arc) = _conn_mgr.get_client_proxy(&ev.conn_id.unwrap()) {
-                let mut _client = _client_arc.as_ref().lock().await;
-                _client.send_client_msg(ClientService::TransferComplete(TransferComplete::new())).await;
-            }
-        }
-        else {
-            error!("do_transfer_client_complete HubProxy is destory!");
-        }
-
-        trace!("do_hub_event transfer_client_complete end!");
-    }
-
     pub async fn do_kick_off_client_complete(_proxy: Weak<Mutex<HubProxy>>, ev: HubCallKickOffClientComplete) {
         trace!("do_hub_event kick_off_client_complete begin!");
 
@@ -776,7 +721,79 @@ impl GateHubMsgHandle {
         }
 
         trace!("do_hub_event kick_off_client_complete end!");
+    }
 
+    pub async fn do_transfer_client(_proxy: Weak<Mutex<HubProxy>>, ev: HubCallTransferClient) {
+        trace!("do_hub_event transfer_client begin!");
+
+        if let Some(_proxy_handle) = _proxy.upgrade() {
+            let _proxy_clone = _proxy_handle.clone();
+
+            let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
+            {
+                let mut _p = _proxy_handle.as_ref().lock().await;
+                _conn_mgr_arc = _p.get_conn_mgr();
+            }
+
+            let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
+            let conn_id = ev.conn_id.unwrap();
+            let new_gate_name = ev.new_gate.unwrap();
+            let new_conn_id = ev.new_conn_id.unwrap();
+            {
+                let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
+                if let Some(_client_arc) = _conn_mgr.get_client_proxy(&conn_id) {
+                    let mut _client = _client_arc.as_ref().lock().await;
+                    let _ = _client.send_client_msg(ClientService::KickOff(KickOff::new(ev.prompt_info.unwrap()))).await;
+                        
+                    for (_, _hub_proxy) in &_client.hub_proxies {
+                        let mut is_kick_off = false;
+                        let mut _hub = _hub_proxy.as_ref().lock().await;
+                        let _hub_name = _hub.get_hub_name();
+                        for _entity_id in &_client.entities {
+                            if let Some(entity) = _conn_mgr.get_entity(_entity_id) {
+                                if entity.get_hub_name().eq(&_hub_name) {
+                                    let is_main = entity.get_main_conn_id().unwrap_or_default() == conn_id;
+                                    _hub.send_hub_msg(HubService::TransferEntityControl(TransferEntityControl::new(
+                                        _entity_id.clone(), is_main, ev.is_replace.unwrap(), new_gate_name.clone(), new_conn_id.clone()))).await;
+                                    is_kick_off = true;
+                                }
+                            }
+                        }
+                        if is_kick_off {
+                            _hub.send_hub_msg(HubService::TransferMsgEnd(TransferMsgEnd::new(conn_id.clone(), is_kick_off))).await;
+                            let mut _client_tmp = _client_arc.as_ref().lock().await;
+                            _client_tmp.set_wait_transfer_hub(_hub_name);
+                        }
+                    }
+                }
+            }
+        }
+        else {
+            error!("do_transfer_client HubProxy is destory!");
+        }
+
+        trace!("do_hub_event transfer_client end!");
+    }
+
+    pub async fn do_transfer_client_complete(_proxy: Weak<Mutex<HubProxy>>, ev: HubCallTransferClientComplete) {
+        trace!("do_hub_event transfer_client_complete begin!");
+
+        if let Some(_proxy_handle) = _proxy.upgrade() {
+            let mut _p = _proxy_handle.as_ref().lock().await;
+            let _conn_mgr_arc = _p.get_conn_mgr();
+            let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
+
+            let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
+            if let Some(_client_arc) = _conn_mgr.get_client_proxy(&ev.conn_id.unwrap()) {
+                let mut _client = _client_arc.as_ref().lock().await;
+                _client.check_hub_transfer(_p.get_hub_name()).await;
+            }
+        }
+        else {
+            error!("do_transfer_client_complete HubProxy is destory!");
+        }
+
+        trace!("do_hub_event transfer_client_complete end!");
     }
     
 }
