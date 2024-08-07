@@ -509,6 +509,63 @@ impl TSerializable for TransferEntityControl {
 }
 
 //
+// KickOffClient
+//
+
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct KickOffClient {
+  pub conn_id: Option<String>,
+}
+
+impl KickOffClient {
+  pub fn new<F1>(conn_id: F1) -> KickOffClient where F1: Into<Option<String>> {
+    KickOffClient {
+      conn_id: conn_id.into(),
+    }
+  }
+}
+
+impl TSerializable for KickOffClient {
+  fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<KickOffClient> {
+    i_prot.read_struct_begin()?;
+    let mut f_1: Option<String> = Some("".to_owned());
+    loop {
+      let field_ident = i_prot.read_field_begin()?;
+      if field_ident.field_type == TType::Stop {
+        break;
+      }
+      let field_id = field_id(&field_ident)?;
+      match field_id {
+        1 => {
+          let val = i_prot.read_string()?;
+          f_1 = Some(val);
+        },
+        _ => {
+          i_prot.skip(field_ident.field_type)?;
+        },
+      };
+      i_prot.read_field_end()?;
+    }
+    i_prot.read_struct_end()?;
+    let ret = KickOffClient {
+      conn_id: f_1,
+    };
+    Ok(ret)
+  }
+  fn write_to_out_protocol(&self, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {
+    let struct_ident = TStructIdentifier::new("kick_off_client");
+    o_prot.write_struct_begin(&struct_ident)?;
+    if let Some(ref fld_var) = self.conn_id {
+      o_prot.write_field_begin(&TFieldIdentifier::new("conn_id", TType::String, 1))?;
+      o_prot.write_string(fld_var)?;
+      o_prot.write_field_end()?
+    }
+    o_prot.write_field_stop()?;
+    o_prot.write_struct_end()
+  }
+}
+
+//
 // ClientDisconnnect
 //
 
@@ -1371,6 +1428,7 @@ pub enum HubService {
   ClientRequestReconnect(ClientRequestReconnect),
   TransferMsgEnd(TransferMsgEnd),
   TransferEntityControl(TransferEntityControl),
+  KickOffClient(KickOffClient),
   ClientDisconnnect(ClientDisconnnect),
   ClientRequestService(ClientRequestService),
   ClientCallRpc(ClientCallRpc),
@@ -1429,104 +1487,111 @@ impl TSerializable for HubService {
           received_field_count += 1;
         },
         5 => {
+          let val = KickOffClient::read_from_in_protocol(i_prot)?;
+          if ret.is_none() {
+            ret = Some(HubService::KickOffClient(val));
+          }
+          received_field_count += 1;
+        },
+        6 => {
           let val = ClientDisconnnect::read_from_in_protocol(i_prot)?;
           if ret.is_none() {
             ret = Some(HubService::ClientDisconnnect(val));
           }
           received_field_count += 1;
         },
-        6 => {
+        7 => {
           let val = ClientRequestService::read_from_in_protocol(i_prot)?;
           if ret.is_none() {
             ret = Some(HubService::ClientRequestService(val));
           }
           received_field_count += 1;
         },
-        7 => {
+        8 => {
           let val = ClientCallRpc::read_from_in_protocol(i_prot)?;
           if ret.is_none() {
             ret = Some(HubService::ClientCallRpc(val));
           }
           received_field_count += 1;
         },
-        8 => {
+        9 => {
           let val = ClientCallRsp::read_from_in_protocol(i_prot)?;
           if ret.is_none() {
             ret = Some(HubService::ClientCallRsp(val));
           }
           received_field_count += 1;
         },
-        9 => {
+        10 => {
           let val = ClientCallErr::read_from_in_protocol(i_prot)?;
           if ret.is_none() {
             ret = Some(HubService::ClientCallErr(val));
           }
           received_field_count += 1;
         },
-        10 => {
+        11 => {
           let val = ClientCallNtf::read_from_in_protocol(i_prot)?;
           if ret.is_none() {
             ret = Some(HubService::ClientCallNtf(val));
           }
           received_field_count += 1;
         },
-        11 => {
+        12 => {
           let val = common::RegServer::read_from_in_protocol(i_prot)?;
           if ret.is_none() {
             ret = Some(HubService::RegServer(val));
           }
           received_field_count += 1;
         },
-        12 => {
+        13 => {
           let val = common::RegServerCallback::read_from_in_protocol(i_prot)?;
           if ret.is_none() {
             ret = Some(HubService::RegServerCallback(val));
           }
           received_field_count += 1;
         },
-        13 => {
+        14 => {
           let val = QueryServiceEntity::read_from_in_protocol(i_prot)?;
           if ret.is_none() {
             ret = Some(HubService::QueryEntity(val));
           }
           received_field_count += 1;
         },
-        14 => {
+        15 => {
           let val = CreateServiceEntity::read_from_in_protocol(i_prot)?;
           if ret.is_none() {
             ret = Some(HubService::CreateServiceEntity(val));
           }
           received_field_count += 1;
         },
-        15 => {
+        16 => {
           let val = HubForwardClientRequestService::read_from_in_protocol(i_prot)?;
           if ret.is_none() {
             ret = Some(HubService::HubForwardClientRequestService(val));
           }
           received_field_count += 1;
         },
-        16 => {
+        17 => {
           let val = HubCallHubRpc::read_from_in_protocol(i_prot)?;
           if ret.is_none() {
             ret = Some(HubService::HubCallRpc(val));
           }
           received_field_count += 1;
         },
-        17 => {
+        18 => {
           let val = HubCallHubRsp::read_from_in_protocol(i_prot)?;
           if ret.is_none() {
             ret = Some(HubService::HubCallRsp(val));
           }
           received_field_count += 1;
         },
-        18 => {
+        19 => {
           let val = HubCallHubErr::read_from_in_protocol(i_prot)?;
           if ret.is_none() {
             ret = Some(HubService::HubCallErr(val));
           }
           received_field_count += 1;
         },
-        19 => {
+        20 => {
           let val = HubCallHubNtf::read_from_in_protocol(i_prot)?;
           if ret.is_none() {
             ret = Some(HubService::HubCallNtf(val));
@@ -1587,78 +1652,83 @@ impl TSerializable for HubService {
         f.write_to_out_protocol(o_prot)?;
         o_prot.write_field_end()?;
       },
+      HubService::KickOffClient(ref f) => {
+        o_prot.write_field_begin(&TFieldIdentifier::new("kick_off_client", TType::Struct, 5))?;
+        f.write_to_out_protocol(o_prot)?;
+        o_prot.write_field_end()?;
+      },
       HubService::ClientDisconnnect(ref f) => {
-        o_prot.write_field_begin(&TFieldIdentifier::new("client_disconnnect", TType::Struct, 5))?;
+        o_prot.write_field_begin(&TFieldIdentifier::new("client_disconnnect", TType::Struct, 6))?;
         f.write_to_out_protocol(o_prot)?;
         o_prot.write_field_end()?;
       },
       HubService::ClientRequestService(ref f) => {
-        o_prot.write_field_begin(&TFieldIdentifier::new("client_request_service", TType::Struct, 6))?;
+        o_prot.write_field_begin(&TFieldIdentifier::new("client_request_service", TType::Struct, 7))?;
         f.write_to_out_protocol(o_prot)?;
         o_prot.write_field_end()?;
       },
       HubService::ClientCallRpc(ref f) => {
-        o_prot.write_field_begin(&TFieldIdentifier::new("client_call_rpc", TType::Struct, 7))?;
+        o_prot.write_field_begin(&TFieldIdentifier::new("client_call_rpc", TType::Struct, 8))?;
         f.write_to_out_protocol(o_prot)?;
         o_prot.write_field_end()?;
       },
       HubService::ClientCallRsp(ref f) => {
-        o_prot.write_field_begin(&TFieldIdentifier::new("client_call_rsp", TType::Struct, 8))?;
+        o_prot.write_field_begin(&TFieldIdentifier::new("client_call_rsp", TType::Struct, 9))?;
         f.write_to_out_protocol(o_prot)?;
         o_prot.write_field_end()?;
       },
       HubService::ClientCallErr(ref f) => {
-        o_prot.write_field_begin(&TFieldIdentifier::new("client_call_err", TType::Struct, 9))?;
+        o_prot.write_field_begin(&TFieldIdentifier::new("client_call_err", TType::Struct, 10))?;
         f.write_to_out_protocol(o_prot)?;
         o_prot.write_field_end()?;
       },
       HubService::ClientCallNtf(ref f) => {
-        o_prot.write_field_begin(&TFieldIdentifier::new("client_call_ntf", TType::Struct, 10))?;
+        o_prot.write_field_begin(&TFieldIdentifier::new("client_call_ntf", TType::Struct, 11))?;
         f.write_to_out_protocol(o_prot)?;
         o_prot.write_field_end()?;
       },
       HubService::RegServer(ref f) => {
-        o_prot.write_field_begin(&TFieldIdentifier::new("reg_server", TType::Struct, 11))?;
+        o_prot.write_field_begin(&TFieldIdentifier::new("reg_server", TType::Struct, 12))?;
         f.write_to_out_protocol(o_prot)?;
         o_prot.write_field_end()?;
       },
       HubService::RegServerCallback(ref f) => {
-        o_prot.write_field_begin(&TFieldIdentifier::new("reg_server_callback", TType::Struct, 12))?;
+        o_prot.write_field_begin(&TFieldIdentifier::new("reg_server_callback", TType::Struct, 13))?;
         f.write_to_out_protocol(o_prot)?;
         o_prot.write_field_end()?;
       },
       HubService::QueryEntity(ref f) => {
-        o_prot.write_field_begin(&TFieldIdentifier::new("query_entity", TType::Struct, 13))?;
+        o_prot.write_field_begin(&TFieldIdentifier::new("query_entity", TType::Struct, 14))?;
         f.write_to_out_protocol(o_prot)?;
         o_prot.write_field_end()?;
       },
       HubService::CreateServiceEntity(ref f) => {
-        o_prot.write_field_begin(&TFieldIdentifier::new("create_service_entity", TType::Struct, 14))?;
+        o_prot.write_field_begin(&TFieldIdentifier::new("create_service_entity", TType::Struct, 15))?;
         f.write_to_out_protocol(o_prot)?;
         o_prot.write_field_end()?;
       },
       HubService::HubForwardClientRequestService(ref f) => {
-        o_prot.write_field_begin(&TFieldIdentifier::new("hub_forward_client_request_service", TType::Struct, 15))?;
+        o_prot.write_field_begin(&TFieldIdentifier::new("hub_forward_client_request_service", TType::Struct, 16))?;
         f.write_to_out_protocol(o_prot)?;
         o_prot.write_field_end()?;
       },
       HubService::HubCallRpc(ref f) => {
-        o_prot.write_field_begin(&TFieldIdentifier::new("hub_call_rpc", TType::Struct, 16))?;
+        o_prot.write_field_begin(&TFieldIdentifier::new("hub_call_rpc", TType::Struct, 17))?;
         f.write_to_out_protocol(o_prot)?;
         o_prot.write_field_end()?;
       },
       HubService::HubCallRsp(ref f) => {
-        o_prot.write_field_begin(&TFieldIdentifier::new("hub_call_rsp", TType::Struct, 17))?;
+        o_prot.write_field_begin(&TFieldIdentifier::new("hub_call_rsp", TType::Struct, 18))?;
         f.write_to_out_protocol(o_prot)?;
         o_prot.write_field_end()?;
       },
       HubService::HubCallErr(ref f) => {
-        o_prot.write_field_begin(&TFieldIdentifier::new("hub_call_err", TType::Struct, 18))?;
+        o_prot.write_field_begin(&TFieldIdentifier::new("hub_call_err", TType::Struct, 19))?;
         f.write_to_out_protocol(o_prot)?;
         o_prot.write_field_end()?;
       },
       HubService::HubCallNtf(ref f) => {
-        o_prot.write_field_begin(&TFieldIdentifier::new("hub_call_ntf", TType::Struct, 19))?;
+        o_prot.write_field_begin(&TFieldIdentifier::new("hub_call_ntf", TType::Struct, 20))?;
         f.write_to_out_protocol(o_prot)?;
         o_prot.write_field_end()?;
       },

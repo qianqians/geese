@@ -15,8 +15,9 @@ import * as hub_call_client_err from "./hub_call_client_err";
 import * as hub_call_client_ntf from "./hub_call_client_ntf";
 import * as hub_call_client_global from "./hub_call_client_global";
 import * as hub_call_kick_off_client from "./hub_call_kick_off_client";
-import * as hub_call_transfer_client_complete from "./hub_call_transfer_client_complete";
 import * as hub_call_kick_off_client_complete from "./hub_call_kick_off_client_complete";
+import * as hub_call_transfer_client from "./hub_call_transfer_client";
+import * as hub_call_transfer_client_complete from "./hub_call_transfer_client_complete";
 export interface Igate_hub_serviceArgs {
     reg_server?: __ROOT_NAMESPACE__.reg_server;
     reg_server_callback?: __ROOT_NAMESPACE__.reg_server_callback;
@@ -29,8 +30,9 @@ export interface Igate_hub_serviceArgs {
     call_ntf?: hub_call_client_ntf.hub_call_client_ntf;
     call_global?: hub_call_client_global.hub_call_client_global;
     kick_off?: hub_call_kick_off_client.hub_call_kick_off_client;
-    transfer_complete?: hub_call_transfer_client_complete.hub_call_transfer_client_complete;
     kick_off_complete?: hub_call_kick_off_client_complete.hub_call_kick_off_client_complete;
+    transfer?: hub_call_transfer_client.hub_call_transfer_client;
+    transfer_complete?: hub_call_transfer_client_complete.hub_call_transfer_client_complete;
 }
 export class gate_hub_service {
     public reg_server?: __ROOT_NAMESPACE__.reg_server;
@@ -44,8 +46,9 @@ export class gate_hub_service {
     public call_ntf?: hub_call_client_ntf.hub_call_client_ntf;
     public call_global?: hub_call_client_global.hub_call_client_global;
     public kick_off?: hub_call_kick_off_client.hub_call_kick_off_client;
-    public transfer_complete?: hub_call_transfer_client_complete.hub_call_transfer_client_complete;
     public kick_off_complete?: hub_call_kick_off_client_complete.hub_call_kick_off_client_complete;
+    public transfer?: hub_call_transfer_client.hub_call_transfer_client;
+    public transfer_complete?: hub_call_transfer_client_complete.hub_call_transfer_client_complete;
     constructor(args?: Igate_hub_serviceArgs) {
         let _fieldsSet: number = 0;
         if (args != null) {
@@ -93,13 +96,17 @@ export class gate_hub_service {
                 _fieldsSet++;
                 this.kick_off = args.kick_off;
             }
-            if (args.transfer_complete != null) {
-                _fieldsSet++;
-                this.transfer_complete = args.transfer_complete;
-            }
             if (args.kick_off_complete != null) {
                 _fieldsSet++;
                 this.kick_off_complete = args.kick_off_complete;
+            }
+            if (args.transfer != null) {
+                _fieldsSet++;
+                this.transfer = args.transfer;
+            }
+            if (args.transfer_complete != null) {
+                _fieldsSet++;
+                this.transfer_complete = args.transfer_complete;
             }
             if (_fieldsSet > 1) {
                 throw new thrift.Thrift.TProtocolException(thrift.Thrift.TProtocolExceptionType.INVALID_DATA, "Cannot read a TUnion with more than one set value!");
@@ -142,11 +149,14 @@ export class gate_hub_service {
     public static fromKick_off(kick_off: hub_call_kick_off_client.hub_call_kick_off_client): gate_hub_service {
         return new gate_hub_service({ kick_off });
     }
-    public static fromTransfer_complete(transfer_complete: hub_call_transfer_client_complete.hub_call_transfer_client_complete): gate_hub_service {
-        return new gate_hub_service({ transfer_complete });
-    }
     public static fromKick_off_complete(kick_off_complete: hub_call_kick_off_client_complete.hub_call_kick_off_client_complete): gate_hub_service {
         return new gate_hub_service({ kick_off_complete });
+    }
+    public static fromTransfer(transfer: hub_call_transfer_client.hub_call_transfer_client): gate_hub_service {
+        return new gate_hub_service({ transfer });
+    }
+    public static fromTransfer_complete(transfer_complete: hub_call_transfer_client_complete.hub_call_transfer_client_complete): gate_hub_service {
+        return new gate_hub_service({ transfer_complete });
     }
     public write(output: thrift.TProtocol): void {
         output.writeStructBegin("gate_hub_service");
@@ -205,14 +215,19 @@ export class gate_hub_service {
             this.kick_off.write(output);
             output.writeFieldEnd();
         }
-        if (this.transfer_complete != null) {
-            output.writeFieldBegin("transfer_complete", thrift.Thrift.Type.STRUCT, 12);
-            this.transfer_complete.write(output);
+        if (this.kick_off_complete != null) {
+            output.writeFieldBegin("kick_off_complete", thrift.Thrift.Type.STRUCT, 12);
+            this.kick_off_complete.write(output);
             output.writeFieldEnd();
         }
-        if (this.kick_off_complete != null) {
-            output.writeFieldBegin("kick_off_complete", thrift.Thrift.Type.STRUCT, 13);
-            this.kick_off_complete.write(output);
+        if (this.transfer != null) {
+            output.writeFieldBegin("transfer", thrift.Thrift.Type.STRUCT, 13);
+            this.transfer.write(output);
+            output.writeFieldEnd();
+        }
+        if (this.transfer_complete != null) {
+            output.writeFieldBegin("transfer_complete", thrift.Thrift.Type.STRUCT, 14);
+            this.transfer_complete.write(output);
             output.writeFieldEnd();
         }
         output.writeFieldStop();
@@ -344,8 +359,8 @@ export class gate_hub_service {
                 case 12:
                     if (fieldType === thrift.Thrift.Type.STRUCT) {
                         _fieldsSet++;
-                        const value_12: hub_call_transfer_client_complete.hub_call_transfer_client_complete = hub_call_transfer_client_complete.hub_call_transfer_client_complete.read(input);
-                        _returnValue = gate_hub_service.fromTransfer_complete(value_12);
+                        const value_12: hub_call_kick_off_client_complete.hub_call_kick_off_client_complete = hub_call_kick_off_client_complete.hub_call_kick_off_client_complete.read(input);
+                        _returnValue = gate_hub_service.fromKick_off_complete(value_12);
                     }
                     else {
                         input.skip(fieldType);
@@ -354,8 +369,18 @@ export class gate_hub_service {
                 case 13:
                     if (fieldType === thrift.Thrift.Type.STRUCT) {
                         _fieldsSet++;
-                        const value_13: hub_call_kick_off_client_complete.hub_call_kick_off_client_complete = hub_call_kick_off_client_complete.hub_call_kick_off_client_complete.read(input);
-                        _returnValue = gate_hub_service.fromKick_off_complete(value_13);
+                        const value_13: hub_call_transfer_client.hub_call_transfer_client = hub_call_transfer_client.hub_call_transfer_client.read(input);
+                        _returnValue = gate_hub_service.fromTransfer(value_13);
+                    }
+                    else {
+                        input.skip(fieldType);
+                    }
+                    break;
+                case 14:
+                    if (fieldType === thrift.Thrift.Type.STRUCT) {
+                        _fieldsSet++;
+                        const value_14: hub_call_transfer_client_complete.hub_call_transfer_client_complete = hub_call_transfer_client_complete.hub_call_transfer_client_complete.read(input);
+                        _returnValue = gate_hub_service.fromTransfer_complete(value_14);
                     }
                     else {
                         input.skip(fieldType);
