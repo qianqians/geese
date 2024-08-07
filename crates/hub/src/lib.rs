@@ -58,7 +58,6 @@ use proto::gate::{
     HubCallKickOffClient,
     HubCallKickOffClientComplete,
     HubCallTransferClient,
-    HubCallTransferClientComplete,
 };
 
 mod dbproxy_manager;
@@ -657,22 +656,6 @@ impl HubContext {
                 old_gate_name, 
                 GateHubService::Transfer(
                     HubCallTransferClient::new(old_conn_id, prompt_info, new_gate_name, new_conn_id, is_replace))).await
-        })
-    }
-
-    pub fn hub_call_transfer_client_complete(slf: PyRefMut<'_, Self>, gate_name: String, conn_id: String) -> bool {
-        trace!("hub_call_transfer_client_complete begin!");
-
-        let _server = slf.server.clone();
-        let _self_name = slf.hub_name.clone();
-
-        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async move {
-            let mut _server_handle = _server.as_ref().lock().await;
-            _server_handle.send_gate_msg(
-                gate_name, 
-                GateHubService::TransferComplete(
-                    HubCallTransferClientComplete::new(conn_id))).await
         })
     }
 

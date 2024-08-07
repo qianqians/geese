@@ -150,7 +150,7 @@ pub struct ClientProxy {
     pub join: Option<JoinHandle<()>>,
     pub last_heartbeats_timetmp: i64,
     pub entities: BTreeSet<String>,
-    pub wait_transfer_hub: BTreeSet<String>,
+    pub wait_transfer_entity: BTreeSet<String>,
     conn_mgr: Arc<Mutex<ConnManager>>
 }
 
@@ -162,7 +162,7 @@ impl ClientProxy {
             hub_proxies: BTreeMap::new(),
             join: None,
             entities: BTreeSet::new(),
-            wait_transfer_hub: BTreeSet::new(),
+            wait_transfer_entity: BTreeSet::new(),
             conn_mgr: _conn_mgr,
             last_heartbeats_timetmp: utc_unix_time()
         }
@@ -180,8 +180,8 @@ impl ClientProxy {
         self.conn_mgr.clone()
     }
 
-    pub fn set_wait_transfer_hub(&mut self, _hub_name: String) {
-        self.wait_transfer_hub.insert(_hub_name);
+    pub fn set_wait_transfer_entity(&mut self, _entity_id: String) {
+        self.wait_transfer_entity.insert(_entity_id);
     }
 
     pub async fn ntf_client_offline(&mut self, _proxy: Arc<Mutex<HubProxy>>) {
@@ -206,13 +206,13 @@ impl ClientProxy {
     }
 
     async fn check_all_hub_transfer(&mut self) {
-        if self.wait_transfer_hub.len() <= 0 {
+        if self.wait_transfer_entity.len() <= 0 {
             self.send_client_msg(ClientService::TransferComplete(TransferComplete::new())).await;
         }
     }
 
-    pub async fn check_hub_transfer(&mut self, hub_name:String) {
-        self.wait_transfer_hub.remove(&hub_name);
+    pub async fn check_hub_transfer(&mut self, entity_id:String) {
+        self.wait_transfer_entity.remove(&entity_id);
         self.check_all_hub_transfer().await;
     }
 

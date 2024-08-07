@@ -102,8 +102,9 @@ struct hub_call_transfer_client {
 /*
  * hub ntf transfer client complete
  */
-struct hub_call_transfer_client_complete {
-	1:string conn_id
+struct hub_call_transfer_entity_complete {
+	1:string conn_id,
+	2:string entity_id,
 }
 
 union gate_hub_service {
@@ -120,7 +121,7 @@ union gate_hub_service {
 	11:hub_call_kick_off_client kick_off,
 	12:hub_call_kick_off_client_complete kick_off_complete,
 	13:hub_call_transfer_client transfer,
-	14:hub_call_transfer_client_complete transfer_complete,
+	14:hub_call_transfer_entity_complete transfer_complete,
 }
 
 /*

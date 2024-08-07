@@ -5,28 +5,38 @@
  * DO NOT EDIT UNLESS YOU ARE SURE THAT YOU KNOW WHAT YOU ARE DOING
 */
 import * as thrift from "thrift";
-export interface Ihub_call_transfer_client_completeArgs {
+export interface Ihub_call_transfer_entity_completeArgs {
     conn_id?: string;
+    entity_id?: string;
 }
-export class hub_call_transfer_client_complete {
+export class hub_call_transfer_entity_complete {
     public conn_id?: string;
-    constructor(args?: Ihub_call_transfer_client_completeArgs) {
+    public entity_id?: string;
+    constructor(args?: Ihub_call_transfer_entity_completeArgs) {
         if (args != null && args.conn_id != null) {
             this.conn_id = args.conn_id;
         }
+        if (args != null && args.entity_id != null) {
+            this.entity_id = args.entity_id;
+        }
     }
     public write(output: thrift.TProtocol): void {
-        output.writeStructBegin("hub_call_transfer_client_complete");
+        output.writeStructBegin("hub_call_transfer_entity_complete");
         if (this.conn_id != null) {
             output.writeFieldBegin("conn_id", thrift.Thrift.Type.STRING, 1);
             output.writeString(this.conn_id);
+            output.writeFieldEnd();
+        }
+        if (this.entity_id != null) {
+            output.writeFieldBegin("entity_id", thrift.Thrift.Type.STRING, 2);
+            output.writeString(this.entity_id);
             output.writeFieldEnd();
         }
         output.writeFieldStop();
         output.writeStructEnd();
         return;
     }
-    public static read(input: thrift.TProtocol): hub_call_transfer_client_complete {
+    public static read(input: thrift.TProtocol): hub_call_transfer_entity_complete {
         input.readStructBegin();
         let _args: any = {};
         while (true) {
@@ -46,6 +56,15 @@ export class hub_call_transfer_client_complete {
                         input.skip(fieldType);
                     }
                     break;
+                case 2:
+                    if (fieldType === thrift.Thrift.Type.STRING) {
+                        const value_2: string = input.readString();
+                        _args.entity_id = value_2;
+                    }
+                    else {
+                        input.skip(fieldType);
+                    }
+                    break;
                 default: {
                     input.skip(fieldType);
                 }
@@ -53,6 +72,6 @@ export class hub_call_transfer_client_complete {
             input.readFieldEnd();
         }
         input.readStructEnd();
-        return new hub_call_transfer_client_complete(_args);
+        return new hub_call_transfer_entity_complete(_args);
     }
 }

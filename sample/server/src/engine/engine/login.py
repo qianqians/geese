@@ -27,20 +27,10 @@ class login_event_handle(ABC, base_dbproxy_handle):
         is_entry_entity = app().entity_mgr.update_entity_conn(entity_id, is_reconnect, new_gate_name, new_conn_id)
         if (not is_entry_player) and (not is_entry_entity) and is_reconnect:
             app().ctx.hub_call_client_delete_remote_entity(new_gate_name, entity_id)
-        
-    def on_transfer_end(self, old_gate_name:str, old_conn_id:str, is_kick_off:bool):
-        callback = self.kick_off_client_callback["{}_{}".format(old_gate_name, old_conn_id)]
-        callback(is_kick_off)
     
     def __replace_client__(self, old_gate_name:str, old_conn_id:str, new_gate_name:str, new_conn_id:str, prompt_info:str):
         from app import app
         app().ctx.hub_call_replace_client(old_gate_name, old_conn_id, new_gate_name, new_conn_id, prompt_info)
-        
-        self.kick_off_client_callback["{}_{}".format(old_gate_name, old_conn_id)] = lambda is_kick_off: self.__transfer_complete__(is_kick_off, new_gate_name, new_conn_id)  
-    
-    def __transfer_complete__(self, is_kick_off: bool, new_gate_name:str, new_conn_id:str):
-        from app import app
-        app().ctx.hub_call_transfer_client_complete(new_gate_name, new_conn_id)
 
 class login_service(object):
     def __init__(self, login_event_handle:login_event_handle) -> None:
@@ -51,9 +41,6 @@ class login_service(object):
         
     async def reconnect(self, gate_name:str, conn_id:str, sdk_uuid:str, token:str):
         await self.__login_event_handle__.on_reconnect(gate_name, conn_id, sdk_uuid, token)
-        
-    def on_transfer_end(self, old_gate_name:str, old_conn_id:str, is_kick_off:bool):
-        self.__login_event_handle__.on_transfer_end(old_gate_name, old_conn_id, is_kick_off)
     
     def on_transfer_entity_control(self, entity_id:str, is_main: bool, is_reconnect:bool, new_gate_name:str, new_conn_id:str):
         self.__login_event_handle__.on_entry_entity(entity_id, is_main, is_reconnect, new_gate_name, new_conn_id)
