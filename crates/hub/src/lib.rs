@@ -56,8 +56,9 @@ use proto::gate::{
     HubCallClientNtf,
     HubCallClientGlobal,
     HubCallKickOffClient,
+    HubCallKickOffClientComplete,
+    HubCallTransferClient,
     HubCallTransferClientComplete,
-    HubCallKickOffClientComplete
 };
 
 mod dbproxy_manager;
@@ -627,22 +628,6 @@ impl HubContext {
         })
     }
 
-    pub fn hub_call_transfer_client_complete(slf: PyRefMut<'_, Self>, gate_name: String, conn_id: String) -> bool {
-        trace!("hub_call_transfer_client_complete begin!");
-
-        let _server = slf.server.clone();
-        let _self_name = slf.hub_name.clone();
-
-        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async move {
-            let mut _server_handle = _server.as_ref().lock().await;
-            _server_handle.send_gate_msg(
-                gate_name, 
-                GateHubService::TransferComplete(
-                    HubCallTransferClientComplete::new(conn_id))).await
-        })
-    }
-
     pub fn hub_call_kick_off_client_complete(slf: PyRefMut<'_, Self>, gate_name: String, conn_id: String) -> bool {
         trace!("hub_call_kick_off_client_complete begin!");
 
@@ -656,6 +641,38 @@ impl HubContext {
                 gate_name, 
                 GateHubService::KickOffComplete(
                     HubCallKickOffClientComplete::new(conn_id))).await
+        })
+    }
+
+    pub fn hub_call_transfer_client(slf: PyRefMut<'_, Self>, old_gate_name: String, old_conn_id: String, new_gate_name: String, new_conn_id: String, is_replace: bool, prompt_info: String) -> bool {
+        trace!("hub_call_kick_off_client begin!");
+
+        let _server = slf.server.clone();
+        let _self_name = slf.hub_name.clone();
+
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.send_gate_msg(
+                old_gate_name, 
+                GateHubService::Transfer(
+                    HubCallTransferClient::new(old_conn_id, prompt_info, new_gate_name, new_conn_id, is_replace))).await
+        })
+    }
+
+    pub fn hub_call_transfer_client_complete(slf: PyRefMut<'_, Self>, gate_name: String, conn_id: String) -> bool {
+        trace!("hub_call_transfer_client_complete begin!");
+
+        let _server = slf.server.clone();
+        let _self_name = slf.hub_name.clone();
+
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.send_gate_msg(
+                gate_name, 
+                GateHubService::TransferComplete(
+                    HubCallTransferClientComplete::new(conn_id))).await
         })
     }
 
