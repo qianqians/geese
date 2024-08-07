@@ -501,7 +501,29 @@ impl ConnCallbackMsgHandle {
                 _gate_msg_handle.do_transfer_entity_control(py, py_handle, ev);
             }
             HubService::KickOffClient(ev) => {
-                // todo
+                if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
+                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+                    let gate_name = rt.block_on(async move {
+                        let mut gate_name: String = "".to_string();
+                        {
+                            let mut _conn_proxy = conn_proxy.as_ref().lock().await;
+
+                            if let Some(_gate_proxy) = _conn_proxy.gateproxy.clone() {
+                                let _proxy_tmp = _gate_proxy.as_ref().lock().await;
+                                gate_name = _proxy_tmp.gate_name.clone().unwrap();
+                            }
+                            else {
+                                error!("HubService::KickOffClient! wrong msg handle!");
+                            }
+                        }
+                        return gate_name;
+                    });
+                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
+                    _gate_msg_handle.do_client_kick_off(py, py_handle, gate_name, ev);
+                }
+                else {
+                    error!("gate client kick off conn_proxy is destory!");
+                }
             },
             HubService::ClientDisconnnect(ev) => {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {

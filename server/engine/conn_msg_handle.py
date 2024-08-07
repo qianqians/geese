@@ -23,6 +23,11 @@ class conn_msg_handle(object):
         from app import app
         app().player_mgr.player_offline(conn_id)
         
+    def on_kick_off_client(self, gate_name:str, conn_id:str):
+        from app import app
+        app().player_mgr.player_offline(conn_id)
+        app().ctx.hub_call_kick_off_client_complete(gate_name, conn_id)
+        
     def on_client_request_service(self, service_name:str, gate_name:str, conn_id:str):
         from app import app
         _service = app().service_mgr.get_service(service_name)
