@@ -113,6 +113,9 @@ class app(object):
     def create_entity(self, entity_type:str, source_hub_name:str, entity_id:str, argvs: dict):
         _creator = self.__entity_create_method__[entity_type]
         _creator(source_hub_name, entity_id, argvs)
+        
+    def kick_off_client(self, gate_name:str, conn_id:str, prompt_info:str):
+        self.ctx.hub_call_kick_off_client(gate_name, conn_id, prompt_info)
 
     def __unlock_distributed_lock__(self, key:str, value:str):
         try:
@@ -166,7 +169,10 @@ class app(object):
     def poll_db_msg_thread(self):
         while self.__is_run__:
             start = time.time()
-            self.poll_db_msg()
+            try:
+                self.poll_db_msg()
+            except Exception as ex:
+                self.error("poll_db_msg_thread Exception:{0}", ex)
             tick = time.time() - start
             if tick < 0.033:
                 time.sleep(0.033 - tick)
@@ -176,12 +182,26 @@ class app(object):
         self.__loop__.run_forever()
 
     def poll(self):
+        busy_count = 0
+        idle_count = 0
         while self.__is_run__:
             start = time.time()
-            self.poll_conn_msg()
+            try:
+                self.poll_conn_msg()
+            except Exception as ex:
+                self.error("poll Exception:{0}", ex)
             tick = time.time() - start
             if tick < 0.033:
+                idle_count += 1
+                if idle_count > 5:
+                    busy_count = 0
+                    self.ctx.set_health_state(True)
                 time.sleep(0.033 - tick)
+            elif tick > 0.1:
+                busy_count += 1
+                if busy_count > 5:
+                    idle_count = 0
+                    self.ctx.set_health_state(False)
             
         self.save_mgr.for_each_entity(lambda entt: entt.save_entity())
             

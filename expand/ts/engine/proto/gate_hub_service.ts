@@ -17,7 +17,7 @@ import * as hub_call_client_global from "./hub_call_client_global";
 import * as hub_call_kick_off_client from "./hub_call_kick_off_client";
 import * as hub_call_kick_off_client_complete from "./hub_call_kick_off_client_complete";
 import * as hub_call_transfer_client from "./hub_call_transfer_client";
-import * as hub_call_transfer_client_complete from "./hub_call_transfer_client_complete";
+import * as hub_call_transfer_entity_complete from "./hub_call_transfer_entity_complete";
 export interface Igate_hub_serviceArgs {
     reg_server?: __ROOT_NAMESPACE__.reg_server;
     reg_server_callback?: __ROOT_NAMESPACE__.reg_server_callback;
@@ -32,7 +32,7 @@ export interface Igate_hub_serviceArgs {
     kick_off?: hub_call_kick_off_client.hub_call_kick_off_client;
     kick_off_complete?: hub_call_kick_off_client_complete.hub_call_kick_off_client_complete;
     transfer?: hub_call_transfer_client.hub_call_transfer_client;
-    transfer_complete?: hub_call_transfer_client_complete.hub_call_transfer_client_complete;
+    transfer_complete?: hub_call_transfer_entity_complete.hub_call_transfer_entity_complete;
 }
 export class gate_hub_service {
     public reg_server?: __ROOT_NAMESPACE__.reg_server;
@@ -48,7 +48,7 @@ export class gate_hub_service {
     public kick_off?: hub_call_kick_off_client.hub_call_kick_off_client;
     public kick_off_complete?: hub_call_kick_off_client_complete.hub_call_kick_off_client_complete;
     public transfer?: hub_call_transfer_client.hub_call_transfer_client;
-    public transfer_complete?: hub_call_transfer_client_complete.hub_call_transfer_client_complete;
+    public transfer_complete?: hub_call_transfer_entity_complete.hub_call_transfer_entity_complete;
     constructor(args?: Igate_hub_serviceArgs) {
         let _fieldsSet: number = 0;
         if (args != null) {
@@ -155,7 +155,7 @@ export class gate_hub_service {
     public static fromTransfer(transfer: hub_call_transfer_client.hub_call_transfer_client): gate_hub_service {
         return new gate_hub_service({ transfer });
     }
-    public static fromTransfer_complete(transfer_complete: hub_call_transfer_client_complete.hub_call_transfer_client_complete): gate_hub_service {
+    public static fromTransfer_complete(transfer_complete: hub_call_transfer_entity_complete.hub_call_transfer_entity_complete): gate_hub_service {
         return new gate_hub_service({ transfer_complete });
     }
     public write(output: thrift.TProtocol): void {
@@ -379,7 +379,7 @@ export class gate_hub_service {
                 case 14:
                     if (fieldType === thrift.Thrift.Type.STRUCT) {
                         _fieldsSet++;
-                        const value_14: hub_call_transfer_client_complete.hub_call_transfer_client_complete = hub_call_transfer_client_complete.hub_call_transfer_client_complete.read(input);
+                        const value_14: hub_call_transfer_entity_complete.hub_call_transfer_entity_complete = hub_call_transfer_entity_complete.hub_call_transfer_entity_complete.read(input);
                         _returnValue = gate_hub_service.fromTransfer_complete(value_14);
                     }
                     else {

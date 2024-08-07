@@ -18,7 +18,7 @@ use close_handle::CloseHandle;
 use queue::Queue;
 
 use proto::common::{RegServer, RegServerCallback};
-use proto::gate::GateHubService;
+use proto::gate::{GateHubService, HubCallTransferEntityComplete};
 use proto::hub::HubService;
 
 pub type StdMutex<T> = std::sync::Mutex<T>;
@@ -471,34 +471,35 @@ impl ConnCallbackMsgHandle {
                     error!("gate client request reconnect conn_proxy is destory!");
                 }
             },
-            HubService::TransferMsgEnd(ev) => {
-                if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-                    let gate_name = rt.block_on(async move {
-                        let mut gate_name: String = "".to_string();
-                        {
-                            let mut _conn_proxy = conn_proxy.as_ref().lock().await;
-
-                            if let Some(_gate_proxy) = _conn_proxy.gateproxy.clone() {
-                                let mut _proxy_tmp = _gate_proxy.as_ref().lock().await;
-                                gate_name = _proxy_tmp.gate_name.clone().unwrap();
-                            }
-                            else {
-                                error!("HubService::TransferMsgEnd! wrong msg handle!");
-                            }
-                        }
-                        return gate_name;
-                    });
-                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
-                    _gate_msg_handle.do_transfer_msg_end(py, py_handle, gate_name, ev);
-                }
-                else {
-                    error!("gate transfer msg end conn_proxy is destory!");
-                }
+            HubService::TransferMsgEnd(_) => {
+                // discarded!
             },
             HubService::TransferEntityControl(ev) => {
+                let conn_id = ev.conn_id.clone();
+                let entity_id = ev.entity_id.clone();
+
                 let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
                 _gate_msg_handle.do_transfer_entity_control(py, py_handle, ev);
+
+                
+                if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
+                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+                    _ = rt.block_on(async move {
+                        let mut _conn_proxy = conn_proxy.as_ref().lock().await;
+
+                        if let Some(_gate_proxy) = _conn_proxy.gateproxy.clone() {
+                            let mut _proxy_tmp = _gate_proxy.as_ref().lock().await;
+                            _proxy_tmp.send_gate_msg(GateHubService::TransferComplete(HubCallTransferEntityComplete::new(conn_id, entity_id))).await;
+                        }
+                        else {
+                            error!("HubService::TransferEntityControl! wrong msg handle!");
+                        }
+                    });
+                }
+                else {
+                    error!("gate client Transfer Entity Control conn_proxy is destory!");
+                }
+                
             }
             HubService::KickOffClient(ev) => {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {

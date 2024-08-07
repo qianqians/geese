@@ -218,8 +218,16 @@ class player_manager(object):
     def del_player(self, entity_id:str):
         if entity_id in self.players:
             del self.players[entity_id]
+            
+    def del_player_list(self, conn_id:str):
+         if conn_id in self.conn_id_players:
+             del self.conn_id_players[conn_id]
         
     def player_offline(self, conn_id:str):
         _player_list = self.get_player_by_conn_id(conn_id)
         for _player in _player_list:
             self.__player_event_handle__.player_offline(_player)
+            self.del_player(_player.entity_id)
+        self.del_player_list(conn_id)
+            
+        

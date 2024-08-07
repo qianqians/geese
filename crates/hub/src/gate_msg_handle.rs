@@ -8,7 +8,6 @@ use tracing::{trace, error};
 use proto::hub::{
     ClientRequestLogin,
     ClientRequestReconnect,
-    TransferMsgEnd,
     TransferEntityControl,
     ClientRequestService,
     KickOffClient,
@@ -45,15 +44,6 @@ impl GateCallbackMsgHandle {
         if let Err(e) = py_handle.call_method1(py, "on_client_request_reconnect", argvs) {
             error!("do_client_request_reconnect python callback error:{}", e)
         }    
-    }
-
-    pub fn do_transfer_msg_end(&mut self, py: Python<'_>, py_handle: Py<PyAny>, gate_name: String, ev: TransferMsgEnd) {
-        trace!("do_transfer_msg_end begin!");
-
-        let argvs = (gate_name, ev.conn_id.unwrap(), ev.is_kick_off.unwrap());
-        if let Err(e) = py_handle.call_method1(py, "on_transfer_msg_end", argvs) {
-            error!("do_transfer_msg_end python callback error:{}", e)
-        }
     }
 
     pub fn do_transfer_entity_control(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: TransferEntityControl) {

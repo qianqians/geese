@@ -913,26 +913,29 @@ impl TSerializable for HubCallTransferClient {
 }
 
 //
-// HubCallTransferClientComplete
+// HubCallTransferEntityComplete
 //
 
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct HubCallTransferClientComplete {
+pub struct HubCallTransferEntityComplete {
   pub conn_id: Option<String>,
+  pub entity_id: Option<String>,
 }
 
-impl HubCallTransferClientComplete {
-  pub fn new<F1>(conn_id: F1) -> HubCallTransferClientComplete where F1: Into<Option<String>> {
-    HubCallTransferClientComplete {
+impl HubCallTransferEntityComplete {
+  pub fn new<F1, F2>(conn_id: F1, entity_id: F2) -> HubCallTransferEntityComplete where F1: Into<Option<String>>, F2: Into<Option<String>> {
+    HubCallTransferEntityComplete {
       conn_id: conn_id.into(),
+      entity_id: entity_id.into(),
     }
   }
 }
 
-impl TSerializable for HubCallTransferClientComplete {
-  fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<HubCallTransferClientComplete> {
+impl TSerializable for HubCallTransferEntityComplete {
+  fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<HubCallTransferEntityComplete> {
     i_prot.read_struct_begin()?;
     let mut f_1: Option<String> = Some("".to_owned());
+    let mut f_2: Option<String> = Some("".to_owned());
     loop {
       let field_ident = i_prot.read_field_begin()?;
       if field_ident.field_type == TType::Stop {
@@ -944,6 +947,10 @@ impl TSerializable for HubCallTransferClientComplete {
           let val = i_prot.read_string()?;
           f_1 = Some(val);
         },
+        2 => {
+          let val = i_prot.read_string()?;
+          f_2 = Some(val);
+        },
         _ => {
           i_prot.skip(field_ident.field_type)?;
         },
@@ -951,16 +958,22 @@ impl TSerializable for HubCallTransferClientComplete {
       i_prot.read_field_end()?;
     }
     i_prot.read_struct_end()?;
-    let ret = HubCallTransferClientComplete {
+    let ret = HubCallTransferEntityComplete {
       conn_id: f_1,
+      entity_id: f_2,
     };
     Ok(ret)
   }
   fn write_to_out_protocol(&self, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {
-    let struct_ident = TStructIdentifier::new("hub_call_transfer_client_complete");
+    let struct_ident = TStructIdentifier::new("hub_call_transfer_entity_complete");
     o_prot.write_struct_begin(&struct_ident)?;
     if let Some(ref fld_var) = self.conn_id {
       o_prot.write_field_begin(&TFieldIdentifier::new("conn_id", TType::String, 1))?;
+      o_prot.write_string(fld_var)?;
+      o_prot.write_field_end()?
+    }
+    if let Some(ref fld_var) = self.entity_id {
+      o_prot.write_field_begin(&TFieldIdentifier::new("entity_id", TType::String, 2))?;
       o_prot.write_string(fld_var)?;
       o_prot.write_field_end()?
     }
@@ -988,7 +1001,7 @@ pub enum GateHubService {
   KickOff(HubCallKickOffClient),
   KickOffComplete(HubCallKickOffClientComplete),
   Transfer(HubCallTransferClient),
-  TransferComplete(HubCallTransferClientComplete),
+  TransferComplete(HubCallTransferEntityComplete),
 }
 
 impl TSerializable for GateHubService {
@@ -1095,7 +1108,7 @@ impl TSerializable for GateHubService {
           received_field_count += 1;
         },
         14 => {
-          let val = HubCallTransferClientComplete::read_from_in_protocol(i_prot)?;
+          let val = HubCallTransferEntityComplete::read_from_in_protocol(i_prot)?;
           if ret.is_none() {
             ret = Some(GateHubService::TransferComplete(val));
           }
