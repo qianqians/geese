@@ -481,15 +481,14 @@ impl ConnCallbackMsgHandle {
                 let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
                 _gate_msg_handle.do_transfer_entity_control(py, py_handle, ev);
 
-                
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
                     _ = rt.block_on(async move {
                         let mut _conn_proxy = conn_proxy.as_ref().lock().await;
 
-                        if let Some(_gate_proxy) = _conn_proxy.gateproxy.clone() {
+                        if let Some(_gate_proxy) = &_conn_proxy.gateproxy {
                             let mut _proxy_tmp = _gate_proxy.as_ref().lock().await;
-                            _proxy_tmp.send_gate_msg(GateHubService::TransferComplete(HubCallTransferEntityComplete::new(conn_id, entity_id))).await;
+                            _proxy_tmp.send_gate_msg(GateHubService::TransferComplete(HubCallTransferEntityComplete::new(conn_id.unwrap(), entity_id.unwrap()))).await;
                         }
                         else {
                             error!("HubService::TransferEntityControl! wrong msg handle!");
@@ -499,7 +498,6 @@ impl ConnCallbackMsgHandle {
                 else {
                     error!("gate client Transfer Entity Control conn_proxy is destory!");
                 }
-                
             }
             HubService::KickOffClient(ev) => {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
