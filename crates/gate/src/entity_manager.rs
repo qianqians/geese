@@ -1,11 +1,24 @@
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use std::collections::BTreeMap;
+use proto::hub::HubService;
+
+use crate::conn_manager::ConnManager;
+
+#[derive(Clone)]
+pub struct CacheMigrateMsg {
+    pub conn_mgr: Arc<Mutex<ConnManager>>,
+    pub msg: HubService,
+}
 
 #[derive(Clone)]
 pub struct Entity {
     entity_id: String,
     hub_name: String,
     main_conn_id: Option<String>,
-    conn_ids: Vec<String>
+    conn_ids: Vec<String>,
+    is_migrate: bool,
+    cache_migrate_msg: Vec<CacheMigrateMsg>
 }
 
 impl Entity {
@@ -14,7 +27,9 @@ impl Entity {
             entity_id: _entity_id,
             hub_name: _hub_name,
             main_conn_id: None,
-            conn_ids: vec![]
+            conn_ids: vec![],
+            is_migrate: false,
+            cache_migrate_msg: vec![]
         }
     }
 
@@ -45,6 +60,35 @@ impl Entity {
 
     pub fn get_hub_name(&self) -> &String {
         &self.hub_name
+    }
+
+    pub fn is_migrate(&self) -> bool {
+        self.is_migrate
+    }
+
+    pub fn cache_migrate_msg(&mut self, msg: CacheMigrateMsg) {
+        self.cache_migrate_msg.push(msg)
+    }
+
+    pub async fn do_cache_msg(&mut self) {
+        for msg in &self.cache_migrate_msg {
+            let mut delete_hub_name: Option<String> = None; 
+            {
+                let mut _conn_mgr = msg.conn_mgr.as_ref().lock().await;
+                let hub_name = self.get_hub_name();
+                if let Some(_hub_arc) = _conn_mgr.get_hub_proxy(hub_name) {
+                    let mut _hub = _hub_arc.as_ref().lock().await;
+                    if !_hub.send_hub_msg(msg.msg.clone()).await {
+                        delete_hub_name = Some(hub_name.clone());
+                    }
+                }
+            }
+
+            if let Some(name) = delete_hub_name {
+                let mut _conn_mgr = msg.conn_mgr.as_ref().lock().await;
+                _conn_mgr.delete_hub_proxy(&name);
+            }
+        }
     }
 
 }
