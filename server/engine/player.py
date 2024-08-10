@@ -27,6 +27,10 @@ class player(ABC, base_entity):
 
         from app import app
         app().player_mgr.add_player(self)
+
+    @abstractmethod
+    def migrate_info(self) -> dict:
+        pass
         
     @abstractmethod
     def hub_info(self) -> dict:
