@@ -154,6 +154,30 @@ struct hub_call_hub_ntf {
 	2:common.msg message,
 }
 
+/*
+ * hub ntf hub wait migrate entity.
+ */
+struct hub_call_hub_wait_migrate_entity {
+	1:string entity_id,
+}
+
+/*
+ * hub ntf hub migrate entity.
+ */
+struct hub_call_hub_migrate_entity {
+	1:string service_name,
+	2:string entity_id,
+	3:string entity_type,
+	4:binary argvs
+}
+
+/*
+ * hub ntf hub migrate entity complete.
+ */
+struct hub_call_hub_migrate_entity_complete {
+	1:string entity_id,
+}
+
 union hub_service {
 	1:client_request_login client_request_login,
 	2:client_request_reconnect client_request_reconnect,
@@ -174,7 +198,10 @@ union hub_service {
 	17:hub_call_hub_rpc hub_call_rpc,
 	18:hub_call_hub_rsp hub_call_rsp,
 	19:hub_call_hub_err hub_call_err,
-	20:hub_call_hub_ntf hub_call_ntf
+	20:hub_call_hub_ntf hub_call_ntf,
+	21:hub_call_hub_wait_migrate_entity wait_migrate_entity,
+	22:hub_call_hub_migrate_entity migrate_entity,
+	23:hub_call_hub_migrate_entity_complete migrate_entity_complete,
 }
 
 struct ack_get_guid {

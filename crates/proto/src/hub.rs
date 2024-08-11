@@ -1419,6 +1419,216 @@ impl TSerializable for HubCallHubNtf {
 }
 
 //
+// HubCallHubWaitMigrateEntity
+//
+
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HubCallHubWaitMigrateEntity {
+  pub entity_id: Option<String>,
+}
+
+impl HubCallHubWaitMigrateEntity {
+  pub fn new<F1>(entity_id: F1) -> HubCallHubWaitMigrateEntity where F1: Into<Option<String>> {
+    HubCallHubWaitMigrateEntity {
+      entity_id: entity_id.into(),
+    }
+  }
+}
+
+impl TSerializable for HubCallHubWaitMigrateEntity {
+  fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<HubCallHubWaitMigrateEntity> {
+    i_prot.read_struct_begin()?;
+    let mut f_1: Option<String> = Some("".to_owned());
+    loop {
+      let field_ident = i_prot.read_field_begin()?;
+      if field_ident.field_type == TType::Stop {
+        break;
+      }
+      let field_id = field_id(&field_ident)?;
+      match field_id {
+        1 => {
+          let val = i_prot.read_string()?;
+          f_1 = Some(val);
+        },
+        _ => {
+          i_prot.skip(field_ident.field_type)?;
+        },
+      };
+      i_prot.read_field_end()?;
+    }
+    i_prot.read_struct_end()?;
+    let ret = HubCallHubWaitMigrateEntity {
+      entity_id: f_1,
+    };
+    Ok(ret)
+  }
+  fn write_to_out_protocol(&self, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {
+    let struct_ident = TStructIdentifier::new("hub_call_hub_wait_migrate_entity");
+    o_prot.write_struct_begin(&struct_ident)?;
+    if let Some(ref fld_var) = self.entity_id {
+      o_prot.write_field_begin(&TFieldIdentifier::new("entity_id", TType::String, 1))?;
+      o_prot.write_string(fld_var)?;
+      o_prot.write_field_end()?
+    }
+    o_prot.write_field_stop()?;
+    o_prot.write_struct_end()
+  }
+}
+
+//
+// HubCallHubMigrateEntity
+//
+
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HubCallHubMigrateEntity {
+  pub service_name: Option<String>,
+  pub entity_id: Option<String>,
+  pub entity_type: Option<String>,
+  pub argvs: Option<Vec<u8>>,
+}
+
+impl HubCallHubMigrateEntity {
+  pub fn new<F1, F2, F3, F4>(service_name: F1, entity_id: F2, entity_type: F3, argvs: F4) -> HubCallHubMigrateEntity where F1: Into<Option<String>>, F2: Into<Option<String>>, F3: Into<Option<String>>, F4: Into<Option<Vec<u8>>> {
+    HubCallHubMigrateEntity {
+      service_name: service_name.into(),
+      entity_id: entity_id.into(),
+      entity_type: entity_type.into(),
+      argvs: argvs.into(),
+    }
+  }
+}
+
+impl TSerializable for HubCallHubMigrateEntity {
+  fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<HubCallHubMigrateEntity> {
+    i_prot.read_struct_begin()?;
+    let mut f_1: Option<String> = Some("".to_owned());
+    let mut f_2: Option<String> = Some("".to_owned());
+    let mut f_3: Option<String> = Some("".to_owned());
+    let mut f_4: Option<Vec<u8>> = Some(Vec::new());
+    loop {
+      let field_ident = i_prot.read_field_begin()?;
+      if field_ident.field_type == TType::Stop {
+        break;
+      }
+      let field_id = field_id(&field_ident)?;
+      match field_id {
+        1 => {
+          let val = i_prot.read_string()?;
+          f_1 = Some(val);
+        },
+        2 => {
+          let val = i_prot.read_string()?;
+          f_2 = Some(val);
+        },
+        3 => {
+          let val = i_prot.read_string()?;
+          f_3 = Some(val);
+        },
+        4 => {
+          let val = i_prot.read_bytes()?;
+          f_4 = Some(val);
+        },
+        _ => {
+          i_prot.skip(field_ident.field_type)?;
+        },
+      };
+      i_prot.read_field_end()?;
+    }
+    i_prot.read_struct_end()?;
+    let ret = HubCallHubMigrateEntity {
+      service_name: f_1,
+      entity_id: f_2,
+      entity_type: f_3,
+      argvs: f_4,
+    };
+    Ok(ret)
+  }
+  fn write_to_out_protocol(&self, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {
+    let struct_ident = TStructIdentifier::new("hub_call_hub_migrate_entity");
+    o_prot.write_struct_begin(&struct_ident)?;
+    if let Some(ref fld_var) = self.service_name {
+      o_prot.write_field_begin(&TFieldIdentifier::new("service_name", TType::String, 1))?;
+      o_prot.write_string(fld_var)?;
+      o_prot.write_field_end()?
+    }
+    if let Some(ref fld_var) = self.entity_id {
+      o_prot.write_field_begin(&TFieldIdentifier::new("entity_id", TType::String, 2))?;
+      o_prot.write_string(fld_var)?;
+      o_prot.write_field_end()?
+    }
+    if let Some(ref fld_var) = self.entity_type {
+      o_prot.write_field_begin(&TFieldIdentifier::new("entity_type", TType::String, 3))?;
+      o_prot.write_string(fld_var)?;
+      o_prot.write_field_end()?
+    }
+    if let Some(ref fld_var) = self.argvs {
+      o_prot.write_field_begin(&TFieldIdentifier::new("argvs", TType::String, 4))?;
+      o_prot.write_bytes(fld_var)?;
+      o_prot.write_field_end()?
+    }
+    o_prot.write_field_stop()?;
+    o_prot.write_struct_end()
+  }
+}
+
+//
+// HubCallHubMigrateEntityComplete
+//
+
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HubCallHubMigrateEntityComplete {
+  pub entity_id: Option<String>,
+}
+
+impl HubCallHubMigrateEntityComplete {
+  pub fn new<F1>(entity_id: F1) -> HubCallHubMigrateEntityComplete where F1: Into<Option<String>> {
+    HubCallHubMigrateEntityComplete {
+      entity_id: entity_id.into(),
+    }
+  }
+}
+
+impl TSerializable for HubCallHubMigrateEntityComplete {
+  fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<HubCallHubMigrateEntityComplete> {
+    i_prot.read_struct_begin()?;
+    let mut f_1: Option<String> = Some("".to_owned());
+    loop {
+      let field_ident = i_prot.read_field_begin()?;
+      if field_ident.field_type == TType::Stop {
+        break;
+      }
+      let field_id = field_id(&field_ident)?;
+      match field_id {
+        1 => {
+          let val = i_prot.read_string()?;
+          f_1 = Some(val);
+        },
+        _ => {
+          i_prot.skip(field_ident.field_type)?;
+        },
+      };
+      i_prot.read_field_end()?;
+    }
+    i_prot.read_struct_end()?;
+    let ret = HubCallHubMigrateEntityComplete {
+      entity_id: f_1,
+    };
+    Ok(ret)
+  }
+  fn write_to_out_protocol(&self, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {
+    let struct_ident = TStructIdentifier::new("hub_call_hub_migrate_entity_complete");
+    o_prot.write_struct_begin(&struct_ident)?;
+    if let Some(ref fld_var) = self.entity_id {
+      o_prot.write_field_begin(&TFieldIdentifier::new("entity_id", TType::String, 1))?;
+      o_prot.write_string(fld_var)?;
+      o_prot.write_field_end()?
+    }
+    o_prot.write_field_stop()?;
+    o_prot.write_struct_end()
+  }
+}
+
+//
 // HubService
 //
 
@@ -1444,6 +1654,9 @@ pub enum HubService {
   HubCallRsp(HubCallHubRsp),
   HubCallErr(HubCallHubErr),
   HubCallNtf(HubCallHubNtf),
+  WaitMigrateEntity(HubCallHubWaitMigrateEntity),
+  MigrateEntity(HubCallHubMigrateEntity),
+  MigrateEntityComplete(HubCallHubMigrateEntityComplete),
 }
 
 impl TSerializable for HubService {
@@ -1598,6 +1811,27 @@ impl TSerializable for HubService {
           }
           received_field_count += 1;
         },
+        21 => {
+          let val = HubCallHubWaitMigrateEntity::read_from_in_protocol(i_prot)?;
+          if ret.is_none() {
+            ret = Some(HubService::WaitMigrateEntity(val));
+          }
+          received_field_count += 1;
+        },
+        22 => {
+          let val = HubCallHubMigrateEntity::read_from_in_protocol(i_prot)?;
+          if ret.is_none() {
+            ret = Some(HubService::MigrateEntity(val));
+          }
+          received_field_count += 1;
+        },
+        23 => {
+          let val = HubCallHubMigrateEntityComplete::read_from_in_protocol(i_prot)?;
+          if ret.is_none() {
+            ret = Some(HubService::MigrateEntityComplete(val));
+          }
+          received_field_count += 1;
+        },
         _ => {
           i_prot.skip(field_ident.field_type)?;
           received_field_count += 1;
@@ -1729,6 +1963,21 @@ impl TSerializable for HubService {
       },
       HubService::HubCallNtf(ref f) => {
         o_prot.write_field_begin(&TFieldIdentifier::new("hub_call_ntf", TType::Struct, 20))?;
+        f.write_to_out_protocol(o_prot)?;
+        o_prot.write_field_end()?;
+      },
+      HubService::WaitMigrateEntity(ref f) => {
+        o_prot.write_field_begin(&TFieldIdentifier::new("wait_migrate_entity", TType::Struct, 21))?;
+        f.write_to_out_protocol(o_prot)?;
+        o_prot.write_field_end()?;
+      },
+      HubService::MigrateEntity(ref f) => {
+        o_prot.write_field_begin(&TFieldIdentifier::new("migrate_entity", TType::Struct, 22))?;
+        f.write_to_out_protocol(o_prot)?;
+        o_prot.write_field_end()?;
+      },
+      HubService::MigrateEntityComplete(ref f) => {
+        o_prot.write_field_begin(&TFieldIdentifier::new("migrate_entity_complete", TType::Struct, 23))?;
         f.write_to_out_protocol(o_prot)?;
         o_prot.write_field_end()?;
       },

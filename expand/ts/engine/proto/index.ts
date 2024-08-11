@@ -34,6 +34,8 @@ export * from "./hub_call_kick_off_client";
 export * from "./hub_call_kick_off_client_complete";
 export * from "./hub_call_transfer_client";
 export * from "./hub_call_transfer_entity_complete";
+export * from "./hub_call_wait_migrate_entity";
+export * from "./hub_call_migrate_entity_complete";
 export * from "./client_request_hub_login";
 export * from "./client_request_hub_reconnect";
 export * from "./client_request_hub_service";

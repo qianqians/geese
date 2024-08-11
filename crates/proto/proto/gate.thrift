@@ -107,6 +107,20 @@ struct hub_call_transfer_entity_complete {
 	2:string entity_id,
 }
 
+/*
+ * hub ntf wait migrate entity
+ */
+ struct hub_call_wait_migrate_entity {
+	1:string entity_id,
+ }
+
+ /*
+ * hub ntf migrate entity complete
+ */
+ struct hub_call_migrate_entity_complete {
+	1:string entity_id,
+ }
+
 union gate_hub_service {
 	1:common.reg_server reg_server,
 	2:common.reg_server_callback reg_server_callback,
@@ -122,6 +136,8 @@ union gate_hub_service {
 	12:hub_call_kick_off_client_complete kick_off_complete,
 	13:hub_call_transfer_client transfer,
 	14:hub_call_transfer_entity_complete transfer_complete,
+	15:hub_call_wait_migrate_entity wait_migrate_entity,
+	16:hub_call_migrate_entity_complete migrate_entity_complete,
 }
 
 /*
