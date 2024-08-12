@@ -8,7 +8,7 @@ from .base_entity import base_entity
 from .callback import callback
 
 class player(ABC, base_entity):
-    def __init__(self, entity_type:str, entity_id:str, gate_name:str, conn_id:str) -> None:
+    def __init__(self, service_name:str, entity_type:str, entity_id:str, gate_name:str, conn_id:str) -> None:
         base_entity.__init__(self, entity_type, entity_id)
 
         self.hub_request_callback:dict[str, Callable[[str, int, bytes],None]] = {}
@@ -20,6 +20,7 @@ class player(ABC, base_entity):
 
         self.client_callback:dict[int, callback] = {}
 
+        self.service_name = service_name
         self.client_gate_name:str = gate_name
         self.client_conn_id:str = conn_id
         self.conn_hub_server:list[str] = []
@@ -50,11 +51,11 @@ class player(ABC, base_entity):
         from app import app
         app().ctx.hub_call_client_create_remote_entity(gate_name, [conn_id], "", self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))
     
-    def create_remote_hub_entity(self, hub_name:str, service_name:str):
+    def create_remote_hub_entity(self, hub_name:str):
         if hub_name not in self.conn_hub_server:
             self.conn_hub_server.append(hub_name)
         from app import app
-        app().ctx.create_service_entity(hub_name, service_name, self.entity_id, self.entity_type, msgpack.dumps(self.hub_info()))
+        app().ctx.create_service_entity(hub_name, self.service_name, self.entity_id, self.entity_type, msgpack.dumps(self.hub_info()))
 
     def handle_hub_request(self, source_hub:str, method:str, msg_cb_id:int, argvs:bytes):
         _call_handle = self.hub_request_callback[method]

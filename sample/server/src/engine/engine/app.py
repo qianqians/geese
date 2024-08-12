@@ -59,6 +59,7 @@ class app(object):
         self.__dbproxy_handle__:dbproxy_msg_handle = None
         self.__conn_handle__:conn_msg_handle = None
         self.__entity_create_method__:dict[str, Callable[[str, str, dict]]] = {}
+        self.__entity_migrate_method__:dict[str, Callable[[str, dict]]] = {}
         self.__loop__ = None
         self.__conn_pump__ = None
         self.__db_pump__ = None
@@ -106,10 +107,18 @@ class app(object):
     def register_service(self, service:str):
         self.ctx.register_service(service)
         
+    def register_migrate(self, entity_type:str, migrate_creator:Callable[[str, dict]]):
+        self.__entity_migrate_method__[entity_type] = migrate_creator
+        return self
+    
+    def create_migrate_entity(self, entity_type:str, entity_id:str, argvs: dict):
+        _creator = self.__entity_migrate_method__[entity_type]
+        _creator(entity_id, argvs)
+
     def register(self, entity_type:str, creator:Callable[[str, str, dict]]):
         self.__entity_create_method__[entity_type] = creator
         return self
-        
+    
     def create_entity(self, entity_type:str, source_hub_name:str, entity_id:str, argvs: dict):
         _creator = self.__entity_create_method__[entity_type]
         _creator(source_hub_name, entity_id, argvs)
