@@ -1,6 +1,9 @@
 # -*- coding: UTF-8 -*-
 from abc import ABC, abstractmethod
 
+from .player import *
+from .entity import *
+
 def ServiceDescribe(service_name:str):
     def wrapper(cls):
         cls.service_name = service_name
@@ -8,6 +11,13 @@ def ServiceDescribe(service_name:str):
     return wrapper
 
 class service(ABC):
+    def __init__(self, service_name:str) -> None:
+        self.service_name = service
+        
+    @abstractmethod
+    def on_migrate(self, _entity:entity|player):
+        pass
+    
     @abstractmethod
     def hub_query_service_entity(self, queryer_hub_name:str):
         pass
