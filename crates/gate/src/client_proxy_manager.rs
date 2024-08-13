@@ -24,6 +24,8 @@ use crate::conn_manager::ConnManager;
 use crate::client_msg_handle::GateClientMsgHandle;
 use crate::hub_proxy_manager::{HubProxy, HubReaderCallback};
 
+use proto::common::RegServer;
+
 use proto::hub::{
     HubService,
     ClientRequestLogin,
@@ -127,6 +129,7 @@ pub async fn entry_hub_service(_conn_mgr: Arc<Mutex<ConnManager>>, _service_name
                     _conn_mgr_handle.add_hub_proxy(service.id.to_string(), _hubproxy.clone()).await;
                     let _h_clone = _hubproxy.clone();
                     let mut _h = _hubproxy.as_ref().lock().await;
+                    _h.send_hub_msg(HubService::RegServer(RegServer::new(_conn_mgr_handle.get_gate_name()))).await;
                     _h.name = Some(service.id.to_string());
                     return Some(_h_clone)
                 }
