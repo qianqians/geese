@@ -22,7 +22,7 @@ class entity(ABC, base_entity):
         app().entity_mgr.add_entity(self)
 
     @abstractmethod
-    def migrate_info(self) -> dict:
+    def full_info(self) -> dict:
         pass
         
     @abstractmethod
