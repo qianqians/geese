@@ -30,7 +30,7 @@ class player(ABC, base_entity):
         app().player_mgr.add_player(self)
 
     @abstractmethod
-    def migrate_info(self) -> dict:
+    def full_info(self) -> dict:
         pass
         
     @abstractmethod
