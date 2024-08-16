@@ -62,6 +62,10 @@ impl Entity {
         &self.hub_name
     }
 
+    pub  fn set_is_migrate(&mut self, is_migrate: bool) {
+        self.is_migrate = is_migrate;
+    }
+
     pub fn is_migrate(&self) -> bool {
         self.is_migrate
     }
@@ -89,6 +93,7 @@ impl Entity {
                 _conn_mgr.delete_hub_proxy(&name);
             }
         }
+        self.is_migrate = false;
     }
 
 }
