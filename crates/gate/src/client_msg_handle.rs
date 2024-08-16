@@ -38,7 +38,7 @@ use time::{utc_unix_time, utc_unix_time_with_offset};
 use crate::client_proxy_manager::{ClientProxy, request_login, request_reconnect};
 use crate::client_proxy_manager::entry_hub_service;
 use crate::conn_manager::ConnManager;
-use crate::entity_manager::{Entity, CacheMigrateMsg};
+use crate::entity_manager::CacheMigrateMsg;
 
 struct ClientEvent {
     proxy: Weak<Mutex<ClientProxy>>,
