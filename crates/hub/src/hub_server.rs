@@ -267,7 +267,12 @@ impl HubServer {
 
     pub async fn send_hub_msg(&mut self, hub_name: String, msg: HubService) -> bool {
         let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
-        if let Some(_hub_arc) = _conn_mgr.get_hub_proxy(&hub_name) {
+        let mut _hub_opt = _conn_mgr.get_hub_proxy(&hub_name);
+        if _hub_opt.is_none() {
+            self.entry_direct_hub_server(hub_name.clone()).await;
+            _hub_opt = _conn_mgr.get_hub_proxy(&hub_name);
+        }
+        if let Some(_hub_arc) = _hub_opt {
             let mut _hub = _hub_arc.as_ref().lock().await;
             return _hub.send_hub_msg(msg).await;
         }
