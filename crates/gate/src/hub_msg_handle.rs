@@ -24,6 +24,8 @@ use proto::gate::{
     HubCallKickOffClientComplete,
     HubCallTransferClient,
     HubCallTransferEntityComplete,
+    HubCallWaitMigrateEntity,
+    HubCallMigrateEntityComplete,
 };
 
 use proto::client::{
@@ -134,6 +136,8 @@ impl GateHubMsgHandle {
                 GateHubService::KickOffComplete(ev) => GateHubMsgHandle::do_kick_off_client_complete(proxy, ev).await,
                 GateHubService::Transfer(ev) => GateHubMsgHandle::do_transfer_client(proxy, ev).await,
                 GateHubService::TransferComplete(ev) => GateHubMsgHandle::do_transfer_entity_complete(proxy, ev).await,
+                GateHubService::WaitMigrateEntity(ev) => GateHubMsgHandle::do_wait_migrate_entity(proxy, ev).await,
+                GateHubService::MigrateEntityComplete(ev) => GateHubMsgHandle::do_migrate_entity_complete(proxy, ev).await,
             }
         }
     }
@@ -789,6 +793,46 @@ impl GateHubMsgHandle {
         }
 
         trace!("do_hub_event transfer_client_complete end!");
+    }
+
+    pub async fn do_wait_migrate_entity(_proxy: Weak<Mutex<HubProxy>>, ev: HubCallWaitMigrateEntity) {
+        trace!("do_hub_event wait_migrate_entity begin!");
+
+        if let Some(_proxy_handle) = _proxy.upgrade() {
+            let mut _p = _proxy_handle.as_ref().lock().await;
+            let _conn_mgr_arc = _p.get_conn_mgr();
+            let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
+
+            let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
+            if let Some(_entity) = _conn_mgr.get_entity_mut(&ev.entity_id.unwrap()) {
+                _entity.set_is_migrate(true);
+            }
+        }
+        else {
+            error!("do_wait_migrate_entity HubProxy is destory!");
+        }
+
+        trace!("do_hub_event wait_migrate_entity end!");
+    }
+
+    pub async fn do_migrate_entity_complete(_proxy: Weak<Mutex<HubProxy>>, ev: HubCallMigrateEntityComplete) {
+        trace!("do_hub_event migrate_entity_complete begin!");
+
+        if let Some(_proxy_handle) = _proxy.upgrade() {
+            let mut _p = _proxy_handle.as_ref().lock().await;
+            let _conn_mgr_arc = _p.get_conn_mgr();
+            let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
+
+            let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
+            if let Some(_entity) = _conn_mgr.get_entity_mut(&ev.entity_id.unwrap()) {
+                _entity.do_cache_msg().await;
+            }
+        }
+        else {
+            error!("do_migrate_entity_complete HubProxy is destory!");
+        }
+
+        trace!("do_hub_event migrate_entity_complete end!");
     }
     
 }
