@@ -15,6 +15,9 @@ use proto::hub::{
     HubCallHubRsp,
     HubCallHubErr,
     HubCallHubNtf,
+    HubCallHubWaitMigrateEntity,
+    HubCallHubMigrateEntity,
+    HubCallHubMigrateEntityComplete,
 };
 
 use crate::hub_service_manager::StdMutex;
@@ -127,6 +130,41 @@ impl HubCallbackMsgHandle {
             PyBytes::new(py, &msg.argvs.unwrap()));
         if let Err(e) = py_handle.call_method1(py, "on_call_hub_ntf", argvs) {
             error!("do_call_hub_ntf python callback error:{}", e)
+        }
+    }
+
+    pub fn do_wait_migrate_entity(&mut self, py: Python<'_>, py_handle: Py<PyAny>, hub_name: String, ev: HubCallHubWaitMigrateEntity) {
+        trace!("do_wait_migrate_entity begin!");
+
+        let argvs = (
+            hub_name,
+            ev.entity_id.unwrap());
+        if let Err(e) = py_handle.call_method1(py, "on_wait_migrate_entity", argvs) {
+            error!("do_wait_migrate_entity python callback error:{}", e)
+        }
+    }
+
+    pub fn do_migrate_entity(&mut self, py: Python<'_>, py_handle: Py<PyAny>, hub_name: String, ev: HubCallHubMigrateEntity) {
+        trace!("do_migrate_entity begin!");
+
+        let argvs = (
+            hub_name,
+            ev.entity_type.unwrap(),
+            ev.entity_id.unwrap(),
+            PyBytes::new(py, &ev.argvs.unwrap()));
+        if let Err(e) = py_handle.call_method1(py, "on_migrate_entity", argvs) {
+            error!("do_migrate_entity python callback error:{}", e)
+        }
+    }
+
+    pub fn do_migrate_entity_complete(&mut self, py: Python<'_>, py_handle: Py<PyAny>, hub_name: String, ev: HubCallHubMigrateEntityComplete) {
+        trace!("do_migrate_entity_complete begin!");
+
+        let argvs = (
+            hub_name,
+            ev.entity_id.unwrap());
+        if let Err(e) = py_handle.call_method1(py, "on_migrate_entity_complete", argvs) {
+            error!("do_migrate_entity_complete python callback error:{}", e)
         }
     }
     
