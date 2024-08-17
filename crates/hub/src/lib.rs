@@ -737,7 +737,7 @@ impl HubContext {
     }
 
     pub fn hub_call_transfer_client(slf: PyRefMut<'_, Self>, old_gate_name: String, old_conn_id: String, new_gate_name: String, new_conn_id: String, is_replace: bool, prompt_info: String) -> bool {
-        trace!("hub_call_kick_off_client begin!");
+        trace!("hub_call_transfer_client begin!");
 
         let _server = slf.server.clone();
 
