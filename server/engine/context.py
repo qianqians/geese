@@ -74,6 +74,9 @@ class context(object):
     
     def hub_call_hub_migrate_entity_complete(self, hub_name:str, entity_id:str) -> bool:
         return self.ctx.hub_call_hub_migrate_entity_complete(hub_name, entity_id)
+  
+    def hub_call_response_migrate_entity(self, hub_name:str, entity_id:str) -> bool:
+        return self.ctx.hub_call_response_migrate_entity(hub_name, entity_id)
     
     def hub_call_client_create_remote_entity(self, gate_name:str, conn_id:list[str], main_conn_id:str, entity_id:str, entity_type:str, argvs:bytes) -> bool:
         return self.ctx.hub_call_client_create_remote_entity(gate_name, conn_id, main_conn_id, entity_id, entity_type, argvs)

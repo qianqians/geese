@@ -35,3 +35,10 @@ struct reg_server {
 struct reg_server_callback {
 	1:string name
 }
+
+/*
+ * response migrate entity
+ */
+ struct response_migrate_entity {
+	1:string entity_id
+ }

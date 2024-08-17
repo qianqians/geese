@@ -20,7 +20,8 @@ use proto::common::{
     Msg,
     RpcRsp,
     RpcErr,
-    RegServer
+    RegServer,
+    ResponseMigrateEntity,
 };
 
 use proto::dbproxy::{
@@ -499,6 +500,20 @@ impl HubContext {
                 hub_name, 
                 HubService::MigrateEntityComplete(
                     HubCallHubMigrateEntityComplete::new(entity_id))).await
+        })
+    }
+
+    pub fn hub_call_response_migrate_entity(slf: PyRefMut<'_, Self>, hub_name: String, entity_id: String) -> bool {
+        trace!("hub_call_hub_migrate_entity_complete begin!");
+
+        let _server = slf.server.clone();
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.send_hub_msg(
+                hub_name, 
+                HubService::ResponseMigrateEntity(
+                    ResponseMigrateEntity::new(entity_id))).await
         })
     }
 

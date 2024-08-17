@@ -4,7 +4,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use tracing::{trace, error};
 
-use proto::common::RegServer;
+use proto::common::{RegServer, ResponseMigrateEntity};
 
 // hub msg
 use proto::hub::{
@@ -165,6 +165,17 @@ impl HubCallbackMsgHandle {
             ev.entity_id.unwrap());
         if let Err(e) = py_handle.call_method1(py, "on_migrate_entity_complete", argvs) {
             error!("do_migrate_entity_complete python callback error:{}", e)
+        }
+    }
+
+    pub fn do_response_migrate_entity(&mut self, py: Python<'_>, py_handle: Py<PyAny>, hub_name: String, ev: ResponseMigrateEntity) {
+        trace!("do_response_migrate_entity begin!");
+
+        let argvs = (
+            hub_name,
+            ev.entity_id.unwrap());
+        if let Err(e) = py_handle.call_method1(py, "on_response_migrate_entity", argvs) {
+            error!("do_response_migrate_entity python callback error:{}", e)
         }
     }
     
