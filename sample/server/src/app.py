@@ -11,7 +11,9 @@ class RankSubEntity(subentity):
         self.update_rank_caller = update_rank_caller(self)
 
     def call_update_rank(self, playerEntityId):
-        self.update_rank_caller.call_update_rank(playerEntityId)
+        self.update_rank_caller.call_update_rank(playerEntityId).callBack(
+            lambda: self.trace("call_update_rank cb"),
+            lambda err: self.trace("call_update_rank err:{}", err))
 
     def Creator(source_hub_name:str, entity_id:str, description: dict):
         app().trace(f"RankSubEntity Creator source_hub_name:{source_hub_name} entity_id:{entity_id}")

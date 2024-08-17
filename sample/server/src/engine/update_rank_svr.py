@@ -42,7 +42,7 @@ class update_rank_caller(object):
         _argv_00ceffc5_7c14_306e_af59_48f2ba7a8702.append(entity_id)
         _cb_uuid = self.entity.call_hub_request("call_update_rank", dumps(_argv_00ceffc5_7c14_306e_af59_48f2ba7a8702))
 
-        return update_rank_call_update_rank_cb(_cb_uuid, self)
+        return update_rank_call_update_rank_cb(_cb_uuid, self.entity)
 
 #this module code is codegen by geese codegen for python
 class update_rank_call_update_rank_rsp(session):

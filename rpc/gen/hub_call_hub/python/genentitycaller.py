@@ -156,7 +156,7 @@ def gen_entity_caller(module_name, funcs, dependent_struct, dependent_enum, enum
                     dependent_struct, 
                     dependent_enum)
             code += "        _cb_uuid = self.entity.call_hub_request(\"" + func_name + "\", dumps(_argv_" + _argv_uuid + "))\n\n"
-            code += "        return " + module_name + "_" + func_name + "_cb(_cb_uuid, self)\n\n"
+            code += "        return " + module_name + "_" + func_name + "_cb(_cb_uuid, self.entity)\n\n"
 
         else:
             raise Exception("func:" + func_name + " wrong rpc type:" + str(i[1]) + ", must req or ntf")
