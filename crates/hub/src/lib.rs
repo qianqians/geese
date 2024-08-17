@@ -85,6 +85,8 @@ struct HubCfg {
     consul_url: String,
     health_port: u16,
     redis_url: String,
+    save_time_interval: u32,
+    migrate_time_interval: u32,
     service_port: u16,
     jaeger_url: Option<String>,
     log_level: String,
@@ -97,6 +99,8 @@ pub struct HubContext {
     hub_name: String,
     service_port: u16,
     health_port: u16,
+    save_time_interval: u32,
+    migrate_time_interval: u32,
     _guard: WorkerGuard, 
     _join_health: JoinHandle<()>,
     _listen_rt: tokio::runtime::Runtime,
@@ -162,6 +166,8 @@ impl HubContext {
             hub_name: _name,
             service_port: cfg.service_port,
             health_port: _health_port,
+            save_time_interval: cfg.save_time_interval,
+            migrate_time_interval: cfg.migrate_time_interval,
             health_handle: _health_handle,
             _guard: _guard,
             _join_health: _join_health,
@@ -174,6 +180,14 @@ impl HubContext {
 
     pub fn hub_name(slf: PyRefMut<'_, Self>) -> String {
         slf.hub_name.clone()
+    }
+
+    pub fn save_time_interval(slf: PyRefMut<'_, Self>) -> u32 {
+        slf.save_time_interval
+    }
+
+    pub fn migrate_time_interval(slf: PyRefMut<'_, Self>) -> u32 {
+        slf.migrate_time_interval
     }
 
     pub fn gate_host(slf: PyRefMut<'_, Self>, gate_name:String) -> String {

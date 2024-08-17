@@ -134,3 +134,37 @@ class conn_msg_handle(object):
             _receiver.handle_hub_notify(source_hub_name, method, argvs)
             return
         app().error("unhandle hub request method:{} entity:{}, ".format(method, entity_id))
+        
+    def on_wait_migrate_entity(self, hub_name:str, entity_id:str):
+        from app import app
+        _subentity = app().subentity_mgr.get_subentity(entity_id)
+        if _subentity != None:
+            _subentity.is_migrate = True
+            app().ctx.hub_call_response_migrate_entity(hub_name, entity_id)
+        else:
+            app().error("unhandle hub on_wait_migrate_entity entity:{}, ".format(entity_id))
+            
+    def on_migrate_entity(self, hub_name:str, entity_type:str, entity_id:str, gates:list[str], hubs:list[str], argvs:bytes):
+        from app import app
+        app().create_migrate_entity(entity_type, entity_id, loads(argvs))
+        
+        
+    def on_migrate_entity_complete(self, hub_name:str, entity_id:str):
+        from app import app
+        _subentity = app().subentity_mgr.get_subentity(entity_id)
+        if _subentity != None:
+            _subentity.do_cache_msg()
+        else:
+            app().error("unhandle hub on_migrate_entity_complete entity:{}, ".format(entity_id))
+            
+    def on_response_migrate_entity(self, svr_name:str, entity_id:str):
+        from app import app
+        _player = app().player_mgr.get_player(entity_id)
+        if _player != None:
+            _player.check_migrate_entity_lock(svr_name)
+            return
+        _entity = app().entity_mgr.get_entity(entity_id)
+        if _entity != None:
+            _entity.check_migrate_entity_lock(svr_name)
+            return
+        app().error("unhandle on_response_migrate_entity entity:{}, ".format(entity_id))

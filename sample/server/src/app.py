@@ -21,11 +21,14 @@ class RankSubEntity(subentity):
 
 class SamplePlayer(player):
     def __init__(self, entity_id: str, gate_name: str, conn_id: str):
-        player.__init__(self, "login", "SamplePlayer", entity_id, gate_name, conn_id)
+        player.__init__(self, "login", "SamplePlayer", entity_id, gate_name, conn_id, False)
         self.login_module = login_module(self)
         
         self.login_module.on_login.append(lambda rsp, _sdk_uuid: self.login_callback(rsp, _sdk_uuid))
         
+    def full_info(self) -> dict:
+        return {}
+
     def hub_info(self) -> dict:
         return {}
     

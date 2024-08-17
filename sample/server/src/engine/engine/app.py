@@ -59,11 +59,12 @@ class app(object):
         self.__dbproxy_handle__:dbproxy_msg_handle = None
         self.__conn_handle__:conn_msg_handle = None
         self.__entity_create_method__:dict[str, Callable[[str, str, dict]]] = {}
-        self.__entity_migrate_method__:dict[str, Callable[[str, dict]]] = {}
+        self.__entity_migrate_method__:dict[str, Callable[[str, list[str], list[str], dict], entity|player]] = {}
         self.__loop__ = None
         self.__conn_pump__ = None
         self.__db_pump__ = None
         
+        self.is_idle = True
         self.config:dict = None
         self.redis_proxy:Redis = None
         self.login_handle:login_service = None
@@ -111,9 +112,16 @@ class app(object):
         self.__entity_migrate_method__[entity_type] = migrate_creator
         return self
     
-    def create_migrate_entity(self, entity_type:str, entity_id:str, argvs: dict):
+    def create_migrate_entity(self, entity_type:str, entity_id:str, gates:list[str], hubs:list[str], argvs: dict):
         _creator = self.__entity_migrate_method__[entity_type]
-        _creator(entity_id, argvs)
+        _entity = _creator(entity_id, gates, hubs, argvs)
+        for gate in gates:
+            self.ctx.hub_call_gate_migrate_entity_complete(gate, entity_id)
+        for hub in hubs:
+            self.ctx.hub_call_hub_migrate_entity_complete(hub, entity_id)
+        _service = self.service_mgr.get_service(_entity.service_name)
+        if _service is not None:
+            _service.on_migrate(_entity)
 
     def register(self, entity_type:str, creator:Callable[[str, str, dict]]):
         self.__entity_create_method__[entity_type] = creator
@@ -205,12 +213,14 @@ class app(object):
                 if idle_count > 5:
                     busy_count = 0
                     self.ctx.set_health_state(True)
+                    self.is_idle = True
                 time.sleep(0.033 - tick)
             elif tick > 0.1:
                 busy_count += 1
                 if busy_count > 5:
                     idle_count = 0
                     self.ctx.set_health_state(False)
+                    self.is_idle = False
             
         self.save_mgr.for_each_entity(lambda entt: entt.save_entity())
             

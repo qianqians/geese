@@ -27,7 +27,8 @@ class save(ABC, base_dbproxy_handle):
     def set_dirty(self):
         self.__is_dirty__ = True
         if self.__save_timer__ == None:
-            self.__save_timer__ = Timer(300, self.save_entity)
+            from app import app
+            self.__save_timer__ = Timer(app().ctx.save_time_interval(), self.save_entity)
             self.__save_timer__.start()
 
     def __updata_object_callback__(self, result:bool):
@@ -58,7 +59,7 @@ class save(ABC, base_dbproxy_handle):
                 self.__random_new_dbproxy__()
                 self.__creator_entity_callback__(result)
 
-    def __load_entity_callback__(query:dict, _data:dict, err:DBExtensionError, _new_obj:save, callback:Callable[[bool, save], None]):
+    def __load_entity_callback__(query:dict, _data:dict|None, err:DBExtensionError|None, _new_obj:save, callback:Callable[[bool, save], None]):
         if err:
             raise DBExtensionError(_new_obj.__db__, _new_obj.__collection__, "load_entity get_object_info")
 

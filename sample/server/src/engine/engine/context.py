@@ -9,6 +9,12 @@ class context(object):
 
     def hub_name(self) -> str:
         return self.ctx.hub_name()
+    
+    def save_time_interval(self) -> int:
+        self.ctx.save_time_interval()
+
+    def migrate_time_interval(self) -> int:
+        self.ctx.migrate_time_interval()
 
     def log(self, level:str, content:str):
         self.ctx.log(level, content)
@@ -38,8 +44,8 @@ class context(object):
         return self.ctx.gate_host(gate_name)
     
     def flush_hub_host_cache(self):
-        tick = Timer(10, self.flush_hub_host_cache)
-        tick.start()
+        __tick__ = Timer(10, self.flush_hub_host_cache)
+        __tick__.start()
         return self.ctx.flush_hub_host_cache()
         
     def reg_hub_to_hub(self, hub_name:str) -> bool:
@@ -65,6 +71,18 @@ class context(object):
     
     def hub_call_hub_ntf(self, hub_name:str, entity_id:str, method:str, argvs:bytes) -> bool:
         return self.ctx.hub_call_hub_ntf(hub_name, entity_id, method, argvs)
+    
+    def hub_call_hub_wait_migrate_entity(self, hub_name:str, entity_id:str) -> bool:
+        return self.ctx.hub_call_hub_wait_migrate_entity(hub_name, entity_id)
+    
+    def hub_call_hub_migrate_entity(self, hub_name:str, service_name:str, entity_type:str, entity_id:str, gates:list[str], hubs:list[str], argvs:bytes) -> bool:
+        return self.ctx.hub_call_hub_migrate_entity(hub_name, service_name, entity_type, entity_id, gates, hubs, argvs)
+    
+    def hub_call_hub_migrate_entity_complete(self, hub_name:str, entity_id:str) -> bool:
+        return self.ctx.hub_call_hub_migrate_entity_complete(hub_name, entity_id)
+  
+    def hub_call_response_migrate_entity(self, hub_name:str, entity_id:str) -> bool:
+        return self.ctx.hub_call_response_migrate_entity(hub_name, entity_id)
     
     def hub_call_client_create_remote_entity(self, gate_name:str, conn_id:list[str], main_conn_id:str, entity_id:str, entity_type:str, argvs:bytes) -> bool:
         return self.ctx.hub_call_client_create_remote_entity(gate_name, conn_id, main_conn_id, entity_id, entity_type, argvs)
@@ -98,6 +116,12 @@ class context(object):
 
     def hub_call_replace_client(self, old_gate_name:str, old_conn_id:str, new_gate_name:str, new_conn_id:str, is_replace:bool, prompt_info:str) -> bool:
         return self.ctx.hub_call_transfer_client(old_gate_name, old_conn_id, new_gate_name, new_conn_id, is_replace, prompt_info)
+    
+    def hub_call_gate_wait_migrate_entity(self, gate_name:str, entity_id:str) -> bool:
+        return self.ctx.hub_call_gate_wait_migrate_entity(gate_name, entity_id)
+    
+    def hub_call_gate_migrate_entity_complete(self, gate_name:str, entity_id:str) -> bool:
+        return self.ctx.hub_call_gate_migrate_entity_complete(gate_name, entity_id)
     
     def get_guid(self, dbproxy_name:str, db:str, collection:str, callback_id:str) -> bool:
         return self.ctx.get_guid(dbproxy_name, db, collection, callback_id)

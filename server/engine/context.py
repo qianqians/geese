@@ -9,6 +9,12 @@ class context(object):
 
     def hub_name(self) -> str:
         return self.ctx.hub_name()
+    
+    def save_time_interval(self) -> int:
+        self.ctx.save_time_interval()
+
+    def migrate_time_interval(self) -> int:
+        self.ctx.migrate_time_interval()
 
     def log(self, level:str, content:str):
         self.ctx.log(level, content)
@@ -38,8 +44,8 @@ class context(object):
         return self.ctx.gate_host(gate_name)
     
     def flush_hub_host_cache(self):
-        tick = Timer(10, self.flush_hub_host_cache)
-        tick.start()
+        __tick__ = Timer(10, self.flush_hub_host_cache)
+        __tick__.start()
         return self.ctx.flush_hub_host_cache()
         
     def reg_hub_to_hub(self, hub_name:str) -> bool:
