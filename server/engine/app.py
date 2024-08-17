@@ -59,7 +59,7 @@ class app(object):
         self.__dbproxy_handle__:dbproxy_msg_handle = None
         self.__conn_handle__:conn_msg_handle = None
         self.__entity_create_method__:dict[str, Callable[[str, str, dict]]] = {}
-        self.__entity_migrate_method__:dict[str, Callable[[str, dict]]] = {}
+        self.__entity_migrate_method__:dict[str, Callable[[str, list[str], list[str], dict]]] = {}
         self.__loop__ = None
         self.__conn_pump__ = None
         self.__db_pump__ = None
@@ -111,9 +111,13 @@ class app(object):
         self.__entity_migrate_method__[entity_type] = migrate_creator
         return self
     
-    def create_migrate_entity(self, entity_type:str, entity_id:str, argvs: dict):
+    def create_migrate_entity(self, entity_type:str, entity_id:str, gates:list[str], hubs:list[str], argvs: dict):
         _creator = self.__entity_migrate_method__[entity_type]
-        _creator(entity_id, argvs)
+        _creator(entity_id, gates, hubs, argvs)
+        for gate in gates:
+            self.ctx.hub_call_gate_migrate_entity_complete(gate, entity_id)
+        for hub in hubs:
+            self.ctx.hub_call_hub_migrate_entity_complete(hub, entity_id)
 
     def register(self, entity_type:str, creator:Callable[[str, str, dict]]):
         self.__entity_create_method__[entity_type] = creator

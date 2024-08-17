@@ -478,25 +478,25 @@ impl ConnCallbackMsgHandle {
             },
             HubService::ResponseMigrateEntity(ev) => {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-                    let hub_name = rt.block_on(async move {
-                        let mut hub_name: String = "".to_string();
-                        {
-                            let mut _conn_proxy = conn_proxy.as_ref().lock().await;
-
-                            if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
-                                let _proxy_tmp = _hub_proxy.as_ref().lock().await;
-                                hub_name = _proxy_tmp.hub_name.clone().unwrap();
-                            }
-                            else {
-                                error!("HubService::WaitMigrateEntity! wrong msg handle!");
-                            }
-                        }
-                        return hub_name;
-                    });
-                    
                     let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().unwrap();
-                    _hub_msg_handle.do_response_migrate_entity(py, py_handle, hub_name, ev)
+                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+                    rt.block_on(async move {
+                        let mut _conn_proxy = conn_proxy.as_ref().lock().await;
+
+                        if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
+                            let _proxy_tmp = _hub_proxy.as_ref().lock().await;
+                            let hub_name = _proxy_tmp.hub_name.clone().unwrap();
+                            _hub_msg_handle.do_response_migrate_entity(py, py_handle, hub_name, ev)
+                        }
+                        else if let Some(_gate_proxy) = _conn_proxy.gateproxy.clone() {
+                            let _proxy_tmp = _gate_proxy.as_ref().lock().await;
+                            let gate_name = _proxy_tmp.gate_name.clone().unwrap();
+                            _hub_msg_handle.do_response_migrate_entity(py, py_handle, gate_name, ev)
+                        }
+                        else {
+                            error!("HubService::WaitMigrateEntity! wrong msg handle!");
+                        }
+                    });
                 }
                 else {
                     error!("migrate entity complete conn_proxy is destory!");

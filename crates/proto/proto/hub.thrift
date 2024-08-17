@@ -168,7 +168,9 @@ struct hub_call_hub_migrate_entity {
 	1:string service_name,
 	2:string entity_id,
 	3:string entity_type,
-	4:binary argvs
+	4:list<string> gates,
+	5:list<string> hubs,
+	6:binary argvs
 }
 
 /*

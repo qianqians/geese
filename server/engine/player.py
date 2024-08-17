@@ -8,7 +8,7 @@ from .base_entity import base_entity
 from .callback import callback
 
 class player(ABC, base_entity):
-    def __init__(self, service_name:str, entity_type:str, entity_id:str, gate_name:str, conn_id:str) -> None:
+    def __init__(self, service_name:str, entity_type:str, entity_id:str, gate_name:str, conn_id:str, is_dynamic:bool) -> None:
         base_entity.__init__(self, entity_type, entity_id)
 
         self.hub_request_callback:dict[str, Callable[[str, int, bytes],None]] = {}
@@ -25,6 +25,10 @@ class player(ABC, base_entity):
         self.client_conn_id:str = conn_id
         self.conn_hub_server:list[str] = []
         self.conn_client_gate:list[str] = []
+        
+        self.is_dynamic = is_dynamic
+        if is_dynamic:
+            self.wait_lock_migrate_svr:list[str] = []
 
         from app import app
         app().player_mgr.add_player(self)
@@ -40,6 +44,26 @@ class player(ABC, base_entity):
     @abstractmethod
     def client_info(self) -> dict:
         pass
+    
+    def start_migrate_entity(self):
+        from app import app
+        for hub in self.conn_hub_server:
+            app().ctx.hub_call_hub_wait_migrate_entity(hub, self.entity_id)
+            self.wait_lock_migrate_svr.append(hub)
+        for gate in self.conn_client_gate:
+            app().ctx.hub_call_gate_wait_migrate_entity(gate, self.entity_id)
+            self.wait_lock_migrate_svr.append(gate)
+        app().ctx.hub_call_gate_wait_migrate_entity(self.client_gate_name, self.entity_id)
+        self.wait_lock_migrate_svr.append(self.client_gate_name)
+        
+    def check_migrate_entity_lock(self, svr:str):
+        if svr not in self.wait_lock_migrate_svr:
+            return
+        self.wait_lock_migrate_svr.remove(svr)
+        if len(self.wait_lock_migrate_svr) <= 0:
+            from app import app
+            migrate_hub = app().ctx.entry_hub_service(self.service_name)
+            app().ctx.hub_call_hub_migrate_entity(migrate_hub, self.service_name, self.entity_type, self.entity_id, self.conn_client_gate, self.conn_hub_server, self.full_info())
     
     def create_main_remote_entity(self):
         from app import app

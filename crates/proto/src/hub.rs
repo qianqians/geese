@@ -1484,15 +1484,19 @@ pub struct HubCallHubMigrateEntity {
   pub service_name: Option<String>,
   pub entity_id: Option<String>,
   pub entity_type: Option<String>,
+  pub gates: Option<Vec<String>>,
+  pub hubs: Option<Vec<String>>,
   pub argvs: Option<Vec<u8>>,
 }
 
 impl HubCallHubMigrateEntity {
-  pub fn new<F1, F2, F3, F4>(service_name: F1, entity_id: F2, entity_type: F3, argvs: F4) -> HubCallHubMigrateEntity where F1: Into<Option<String>>, F2: Into<Option<String>>, F3: Into<Option<String>>, F4: Into<Option<Vec<u8>>> {
+  pub fn new<F1, F2, F3, F4, F5, F6>(service_name: F1, entity_id: F2, entity_type: F3, gates: F4, hubs: F5, argvs: F6) -> HubCallHubMigrateEntity where F1: Into<Option<String>>, F2: Into<Option<String>>, F3: Into<Option<String>>, F4: Into<Option<Vec<String>>>, F5: Into<Option<Vec<String>>>, F6: Into<Option<Vec<u8>>> {
     HubCallHubMigrateEntity {
       service_name: service_name.into(),
       entity_id: entity_id.into(),
       entity_type: entity_type.into(),
+      gates: gates.into(),
+      hubs: hubs.into(),
       argvs: argvs.into(),
     }
   }
@@ -1504,7 +1508,9 @@ impl TSerializable for HubCallHubMigrateEntity {
     let mut f_1: Option<String> = Some("".to_owned());
     let mut f_2: Option<String> = Some("".to_owned());
     let mut f_3: Option<String> = Some("".to_owned());
-    let mut f_4: Option<Vec<u8>> = Some(Vec::new());
+    let mut f_4: Option<Vec<String>> = Some(Vec::new());
+    let mut f_5: Option<Vec<String>> = Some(Vec::new());
+    let mut f_6: Option<Vec<u8>> = Some(Vec::new());
     loop {
       let field_ident = i_prot.read_field_begin()?;
       if field_ident.field_type == TType::Stop {
@@ -1525,8 +1531,28 @@ impl TSerializable for HubCallHubMigrateEntity {
           f_3 = Some(val);
         },
         4 => {
-          let val = i_prot.read_bytes()?;
+          let list_ident = i_prot.read_list_begin()?;
+          let mut val: Vec<String> = Vec::with_capacity(list_ident.size as usize);
+          for _ in 0..list_ident.size {
+            let list_elem_0 = i_prot.read_string()?;
+            val.push(list_elem_0);
+          }
+          i_prot.read_list_end()?;
           f_4 = Some(val);
+        },
+        5 => {
+          let list_ident = i_prot.read_list_begin()?;
+          let mut val: Vec<String> = Vec::with_capacity(list_ident.size as usize);
+          for _ in 0..list_ident.size {
+            let list_elem_1 = i_prot.read_string()?;
+            val.push(list_elem_1);
+          }
+          i_prot.read_list_end()?;
+          f_5 = Some(val);
+        },
+        6 => {
+          let val = i_prot.read_bytes()?;
+          f_6 = Some(val);
         },
         _ => {
           i_prot.skip(field_ident.field_type)?;
@@ -1539,7 +1565,9 @@ impl TSerializable for HubCallHubMigrateEntity {
       service_name: f_1,
       entity_id: f_2,
       entity_type: f_3,
-      argvs: f_4,
+      gates: f_4,
+      hubs: f_5,
+      argvs: f_6,
     };
     Ok(ret)
   }
@@ -1561,8 +1589,26 @@ impl TSerializable for HubCallHubMigrateEntity {
       o_prot.write_string(fld_var)?;
       o_prot.write_field_end()?
     }
+    if let Some(ref fld_var) = self.gates {
+      o_prot.write_field_begin(&TFieldIdentifier::new("gates", TType::List, 4))?;
+      o_prot.write_list_begin(&TListIdentifier::new(TType::String, fld_var.len() as i32))?;
+      for e in fld_var {
+        o_prot.write_string(e)?;
+      }
+      o_prot.write_list_end()?;
+      o_prot.write_field_end()?
+    }
+    if let Some(ref fld_var) = self.hubs {
+      o_prot.write_field_begin(&TFieldIdentifier::new("hubs", TType::List, 5))?;
+      o_prot.write_list_begin(&TListIdentifier::new(TType::String, fld_var.len() as i32))?;
+      for e in fld_var {
+        o_prot.write_string(e)?;
+      }
+      o_prot.write_list_end()?;
+      o_prot.write_field_end()?
+    }
     if let Some(ref fld_var) = self.argvs {
-      o_prot.write_field_begin(&TFieldIdentifier::new("argvs", TType::String, 4))?;
+      o_prot.write_field_begin(&TFieldIdentifier::new("argvs", TType::String, 6))?;
       o_prot.write_bytes(fld_var)?;
       o_prot.write_field_end()?
     }

@@ -69,8 +69,8 @@ class context(object):
     def hub_call_hub_wait_migrate_entity(self, hub_name:str, entity_id:str) -> bool:
         return self.ctx.hub_call_hub_wait_migrate_entity(hub_name, entity_id)
     
-    def hub_call_hub_migrate_entity(self, hub_name:str, service_name:str, entity_type:str, entity_id:str, argvs:bytes) -> bool:
-        return self.ctx.hub_call_hub_migrate_entity(hub_name, service_name, entity_type, entity_id, argvs)
+    def hub_call_hub_migrate_entity(self, hub_name:str, service_name:str, entity_type:str, entity_id:str, gates:list[str], hubs:list[str], argvs:bytes) -> bool:
+        return self.ctx.hub_call_hub_migrate_entity(hub_name, service_name, entity_type, entity_id, gates, hubs, argvs)
     
     def hub_call_hub_migrate_entity_complete(self, hub_name:str, entity_id:str) -> bool:
         return self.ctx.hub_call_hub_migrate_entity_complete(hub_name, entity_id)
