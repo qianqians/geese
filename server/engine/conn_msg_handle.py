@@ -134,3 +134,23 @@ class conn_msg_handle(object):
             _receiver.handle_hub_notify(source_hub_name, method, argvs)
             return
         app().error("unhandle hub request method:{} entity:{}, ".format(method, entity_id))
+        
+    def on_wait_migrate_entity(self, hub_name:str, entity_id:str):
+        from app import app
+        _subentity = app().subentity_mgr.get_subentity(entity_id)
+        if _subentity != None:
+            _subentity.is_migrate = True
+        else:
+            app().error("unhandle hub on_wait_migrate_entity entity:{}, ".format(entity_id))
+            
+    def on_migrate_entity(self, hub_name:str, entity_type:str, entity_id:str, argvs:bytes):
+        from app import app
+        app().create_migrate_entity(entity_type, entity_id, loads(argvs))
+        
+    def on_migrate_entity_complete(self, hub_name:str, entity_id:str):
+        from app import app
+        _subentity = app().subentity_mgr.get_subentity(entity_id)
+        if _subentity != None:
+            _subentity.do_cache_msg()
+        else:
+            app().error("unhandle hub on_migrate_entity_complete entity:{}, ".format(entity_id))
