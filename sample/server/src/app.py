@@ -60,7 +60,7 @@ class LoginEventHandle(login_event_handle):
         accound_id = await self.__get_client_account_id__(sdk_uuid)
         info_str = app().redis_proxy.get("sample:player_info:{}".format(accound_id))
         app().trace("LoginEventHandle on_login! redis_cache info_str:{}".format(info_str))
-        if info_str:
+        if info_str is not None and info_str != "":
             info = json.loads(info_str)
             app().trace("LoginEventHandle on_login! info:{}".format(info))
             self.__replace_client__(info["gate"], info["conn_id"], new_gate_name, new_conn_id, "其他位置登录!")
@@ -78,7 +78,7 @@ class LoginEventHandle(login_event_handle):
         app().trace("LoginEventHandle on_reconnect!")
         accound_id = await self.__get_client_account_id__(sdk_uuid)
         info_str = app().redis_proxy.get("sample:player_info:{}".format(accound_id))
-        if info_str:
+        if info_str is not None and info_str != "":
             info = json.loads(info_str)
             app().trace("LoginEventHandle on_reconnect! info:{}".format(info))
             self.__replace_client__(info["gate"], info["conn_id"], new_gate_name, new_conn_id, "其他位置登录!")
@@ -94,7 +94,7 @@ class LoginEventHandle(login_event_handle):
     
 class PlayerEventHandle(player_event_handle):
     def player_offline(self, _player:player) -> dict:
-        return _player.info()
+        return _player.full_info()
     
 def main(cfg_file:str):
     _app = app()

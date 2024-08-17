@@ -53,7 +53,7 @@ class RankService(service):
     
 class PlayerEventHandle(player_event_handle):
     def player_offline(self, _player:player) -> dict:
-        return _player.info()
+        return _player.full_info()
     
 def main(cfg_file:str):
     _app = app()
