@@ -738,7 +738,6 @@ impl GateHubMsgHandle {
                 _conn_mgr_arc = _p.get_conn_mgr();
             }
 
-            let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
             let conn_id = ev.conn_id.unwrap();
             let new_gate_name = ev.new_gate.unwrap();
             let new_conn_id = ev.new_conn_id.unwrap();

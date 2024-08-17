@@ -199,8 +199,10 @@ class app(object):
         self.__loop__.run_forever()
 
     def poll(self):
+        self.ctx.set_health_state(True)
         busy_count = 0
         idle_count = 0
+        health_state = True
         while self.__is_run__:
             start = time.time()
             try:
@@ -212,14 +214,18 @@ class app(object):
                 idle_count += 1
                 if idle_count > 5:
                     busy_count = 0
-                    self.ctx.set_health_state(True)
+                    if not health_state:
+                        self.ctx.set_health_state(True)
+                    health_state = True
                     self.is_idle = True
                 time.sleep(0.033 - tick)
             elif tick > 0.1:
                 busy_count += 1
                 if busy_count > 5:
                     idle_count = 0
-                    self.ctx.set_health_state(False)
+                    if health_state:
+                        self.ctx.set_health_state(False)
+                    health_state = False
                     self.is_idle = False
             
         self.save_mgr.for_each_entity(lambda entt: entt.save_entity())
