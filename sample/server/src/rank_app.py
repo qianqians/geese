@@ -6,12 +6,15 @@ from engine.get_rank_svr import *
 
 class RankImpl(entity):
     def __init__(self):
-        super().__init__("Rank", "RankImpl", str(uuid.uuid4()))
+        super().__init__("Rank", "RankImpl", str(uuid.uuid4()), False)
         self.update_rank_module = update_rank_module(self)
         self.get_rank_module = get_rank_module(self)
 
         self.update_rank_module.on_call_update_rank.append(lambda rsp, entity_id: self.on_call_update_rank(rsp, entity_id))
         self.get_rank_module.on_get_self_rank.append(lambda rsp, entity_id: self.on_get_self_rank(rsp, entity_id))
+
+    def full_info(self) -> dict:
+        return {}
 
     def hub_info(self) -> dict:
         return {}
@@ -38,6 +41,9 @@ class RankService(service):
         self._app = _app
         self.rankImpl = RankImpl()
         self._app.entity_mgr.add_entity(self.rankImpl)
+
+    def on_migrate(self, _entity:entity|player):
+        pass
 
     def hub_query_service_entity(self, queryer_hub_name:str):
         self.rankImpl.create_remote_hub_entity(queryer_hub_name)

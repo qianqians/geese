@@ -12,7 +12,7 @@ def ServiceDescribe(service_name:str):
 
 class service(ABC):
     def __init__(self, service_name:str) -> None:
-        self.service_name = service
+        self.service_name = service_name
         
     @abstractmethod
     def on_migrate(self, _entity:entity|player):
