@@ -64,6 +64,7 @@ class app(object):
         self.__conn_pump__ = None
         self.__db_pump__ = None
         
+        self.is_idle = True
         self.config:dict = None
         self.redis_proxy:Redis = None
         self.login_handle:login_service = None
@@ -209,12 +210,14 @@ class app(object):
                 if idle_count > 5:
                     busy_count = 0
                     self.ctx.set_health_state(True)
+                    self.is_idle = True
                 time.sleep(0.033 - tick)
             elif tick > 0.1:
                 busy_count += 1
                 if busy_count > 5:
                     idle_count = 0
                     self.ctx.set_health_state(False)
+                    self.is_idle = False
             
         self.save_mgr.for_each_entity(lambda entt: entt.save_entity())
             

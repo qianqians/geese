@@ -21,6 +21,9 @@ class entity(ABC, base_entity):
         self.is_dynamic = is_dynamic
         if is_dynamic:
             self.wait_lock_migrate_svr:list[str] = []
+            from threading import Timer
+            self.__migrate_timer__ = Timer(300, self.try_migrate_entity)
+            self.__migrate_timer__.start()
 
         from app import app
         app().entity_mgr.add_entity(self)
@@ -36,6 +39,19 @@ class entity(ABC, base_entity):
     @abstractmethod
     def client_info(self) -> dict:
         pass
+    
+    def try_migrate_entity(self):
+        if not self.is_dynamic:
+            return
+        from app import app
+        if not app().is_idle:
+            import random
+            if random.random() < 0.2:
+                self.start_migrate_entity()
+                return
+        from threading import Timer
+        self.__migrate_timer__ = Timer(300, self.try_migrate_entity)
+        self.__migrate_timer__.start()
     
     def start_migrate_entity(self):
         from app import app
