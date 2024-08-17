@@ -1657,6 +1657,7 @@ pub enum HubService {
   WaitMigrateEntity(HubCallHubWaitMigrateEntity),
   MigrateEntity(HubCallHubMigrateEntity),
   MigrateEntityComplete(HubCallHubMigrateEntityComplete),
+  ResponseMigrateEntity(common::ResponseMigrateEntity),
 }
 
 impl TSerializable for HubService {
@@ -1832,6 +1833,13 @@ impl TSerializable for HubService {
           }
           received_field_count += 1;
         },
+        24 => {
+          let val = common::ResponseMigrateEntity::read_from_in_protocol(i_prot)?;
+          if ret.is_none() {
+            ret = Some(HubService::ResponseMigrateEntity(val));
+          }
+          received_field_count += 1;
+        },
         _ => {
           i_prot.skip(field_ident.field_type)?;
           received_field_count += 1;
@@ -1978,6 +1986,11 @@ impl TSerializable for HubService {
       },
       HubService::MigrateEntityComplete(ref f) => {
         o_prot.write_field_begin(&TFieldIdentifier::new("migrate_entity_complete", TType::Struct, 23))?;
+        f.write_to_out_protocol(o_prot)?;
+        o_prot.write_field_end()?;
+      },
+      HubService::ResponseMigrateEntity(ref f) => {
+        o_prot.write_field_begin(&TFieldIdentifier::new("response_migrate_entity", TType::Struct, 24))?;
         f.write_to_out_protocol(o_prot)?;
         o_prot.write_field_end()?;
       },

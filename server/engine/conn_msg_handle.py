@@ -140,6 +140,7 @@ class conn_msg_handle(object):
         _subentity = app().subentity_mgr.get_subentity(entity_id)
         if _subentity != None:
             _subentity.is_migrate = True
+            app().ctx.hub_call_response_migrate_entity(hub_name, entity_id)
         else:
             app().error("unhandle hub on_wait_migrate_entity entity:{}, ".format(entity_id))
             

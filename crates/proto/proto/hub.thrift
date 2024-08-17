@@ -202,6 +202,7 @@ union hub_service {
 	21:hub_call_hub_wait_migrate_entity wait_migrate_entity,
 	22:hub_call_hub_migrate_entity migrate_entity,
 	23:hub_call_hub_migrate_entity_complete migrate_entity_complete,
+	24:common.response_migrate_entity response_migrate_entity,
 }
 
 struct ack_get_guid {
