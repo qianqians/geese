@@ -151,6 +151,8 @@ impl HubCallbackMsgHandle {
             hub_name,
             ev.entity_type.unwrap(),
             ev.entity_id.unwrap(),
+            ev.gates.unwrap(),
+            ev.hubs.unwrap(),
             PyBytes::new(py, &ev.argvs.unwrap()));
         if let Err(e) = py_handle.call_method1(py, "on_migrate_entity", argvs) {
             error!("do_migrate_entity python callback error:{}", e)
@@ -168,11 +170,11 @@ impl HubCallbackMsgHandle {
         }
     }
 
-    pub fn do_response_migrate_entity(&mut self, py: Python<'_>, py_handle: Py<PyAny>, hub_name: String, ev: ResponseMigrateEntity) {
+    pub fn do_response_migrate_entity(&mut self, py: Python<'_>, py_handle: Py<PyAny>, svr_name: String, ev: ResponseMigrateEntity) {
         trace!("do_response_migrate_entity begin!");
 
         let argvs = (
-            hub_name,
+            svr_name,
             ev.entity_id.unwrap());
         if let Err(e) = py_handle.call_method1(py, "on_response_migrate_entity", argvs) {
             error!("do_response_migrate_entity python callback error:{}", e)

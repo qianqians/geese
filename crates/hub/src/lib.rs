@@ -470,6 +470,8 @@ impl HubContext {
         service_name: String,
         entity_type: String,
         entity_id: String,
+        gates: Vec<String>,
+        hubs: Vec<String>,
         argvs: Vec<u8>) -> bool 
     {
         trace!("hub_call_hub_migrate_entity begin!");
@@ -481,7 +483,7 @@ impl HubContext {
             _server_handle.send_hub_msg(
                 hub_name, 
                 HubService::MigrateEntity(
-                    HubCallHubMigrateEntity::new(service_name, entity_id, entity_type, argvs))).await
+                    HubCallHubMigrateEntity::new(service_name, entity_id, entity_type, gates, hubs, argvs))).await
         })
     }
 
