@@ -141,22 +141,35 @@ impl ConnCallbackMsgHandle {
                         {
                             let mut _conn_proxy = conn_proxy.as_ref().lock().await;
 
-                            let hub_name = ev.name.clone().unwrap();
-
-                            let _proxy = Arc::new(Mutex::new(
-                                HubProxy::new(_conn_proxy.wr.clone())
-                            ));
-
-                            let mut _proxy_tmp = _proxy.as_ref().lock().await;
-                            _proxy_tmp.hub_name = Some(hub_name.clone());
+                            let svr_name = ev.name.clone().unwrap();
+                            let svr_type = ev.type_.clone().unwrap();
                             
-                            let mut _conn_mgr = _self.conn_mgr.as_ref().lock().await;
-                            _conn_mgr.add_hub_proxy(hub_name.clone(), _proxy.clone()).await;
-                            _conn_proxy.hubproxy = Some(_proxy.clone());
-
                             let cb_msg = RegServerCallback::new(_self.hub_name.clone());
-                            let msg = HubService::RegServerCallback(cb_msg);
-                            _proxy_tmp.send_hub_msg(msg).await;
+
+                            if svr_type == "hub" {
+                                let _proxy = Arc::new(Mutex::new(
+                                    HubProxy::new(_conn_proxy.wr.clone())
+                                ));
+    
+                                let mut _proxy_tmp = _proxy.as_ref().lock().await;
+                                _proxy_tmp.hub_name = Some(svr_name.clone());
+                                
+                                let mut _conn_mgr = _self.conn_mgr.as_ref().lock().await;
+                                _conn_mgr.add_hub_proxy(svr_name.clone(), _proxy.clone()).await;
+                                _conn_proxy.hubproxy = Some(_proxy.clone());
+    
+                                _proxy_tmp.send_hub_msg(HubService::RegServerCallback(cb_msg)).await;
+                            } else if svr_type == "gate" {
+                                let _gate_name_tmp = svr_name.clone();
+                                let mut _gate_tmp = GateProxy::new(_conn_proxy.wr.clone());
+                            
+                                _gate_tmp.gate_name = Some(svr_name.clone());
+                                _gate_tmp.send_gate_msg(GateHubService::RegServerCallback(cb_msg)).await;
+                
+                                let _gateproxy = Arc::new(Mutex::new(_gate_tmp));
+                                let mut _conn_mgr = _self.conn_mgr.as_ref().lock().await;
+                                _conn_mgr.add_gate_proxy(_gate_name_tmp, _gateproxy).await;
+                            }
                         }
                     });
                     let mut _hub_msg_handle = _hub_msg_handle_c.as_ref().lock().unwrap();
@@ -265,7 +278,7 @@ impl ConnCallbackMsgHandle {
                                             
                                             let _gate_name_tmp = _gate_name.clone();
                                             let mut _gate_tmp = GateProxy::new(_wr_arc_clone);
-                                            _gate_tmp.send_gate_msg(GateHubService::RegServer(RegServer::new(_conn_mgr.get_hub_name()))).await;
+                                            _gate_tmp.send_gate_msg(GateHubService::RegServer(RegServer::new(_conn_mgr.get_hub_name(), "hub".to_string()))).await;
                                         
                                             _gate_tmp.gate_name = Some(_gate_name);
                                             _gate_tmp.gate_host = Some(_gate_host);

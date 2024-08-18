@@ -210,7 +210,7 @@ impl HubServer {
                     
                     let _gate_name_tmp = _gate_name.clone();
                     let mut _gate_tmp = GateProxy::new(_wr_arc_clone);
-                    _gate_tmp.send_gate_msg(GateHubService::RegServer(RegServer::new(_conn_mgr.get_hub_name()))).await;
+                    _gate_tmp.send_gate_msg(GateHubService::RegServer(RegServer::new(_conn_mgr.get_hub_name(), "hub".to_string()))).await;
                 
                     _gate_tmp.gate_name = Some(_gate_name);
     
