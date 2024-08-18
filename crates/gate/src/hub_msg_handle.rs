@@ -741,6 +741,7 @@ impl GateHubMsgHandle {
             let conn_id = ev.conn_id.unwrap();
             let new_gate_name = ev.new_gate.unwrap();
             let new_conn_id = ev.new_conn_id.unwrap();
+            trace!("do_hub_event transfer_client conn_id:{conn_id} ,new_gate_name:{new_gate_name}, new_conn_id:{new_conn_id}");
             {
                 let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
                 if let Some(_client_arc) = _conn_mgr.get_client_proxy(&conn_id) {

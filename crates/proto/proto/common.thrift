@@ -27,6 +27,7 @@ struct redis_msg {
  */
 struct reg_server {
 	1:string name
+	2:string type;
 }
 
 /*

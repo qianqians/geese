@@ -59,7 +59,7 @@ pub async fn entry_direct_hub_server(
             let _hubproxy = Arc::new(Mutex::new(HubProxy::new(_wr_arc)));
             let _hub_clone = _hubproxy.clone();
             let mut _hub_send = _hubproxy.as_ref().lock().await;
-            _hub_send.send_hub_msg(HubService::RegServer(RegServer::new(_conn_mgr_handle.get_hub_name()))).await;
+            _hub_send.send_hub_msg(HubService::RegServer(RegServer::new(_conn_mgr_handle.get_hub_name(), "hub".to_string()))).await;
             _hub_send.hub_name = Some(_hub_name.clone());
             _conn_mgr_handle.add_hub_proxy(_hub_name.clone(), _hub_clone).await;
         }
@@ -114,7 +114,7 @@ pub async fn entry_hub_service(
                     let _hub_clone = _hubproxy.clone();
 
                     let mut _hub_send = _hubproxy.as_ref().lock().await;
-                    _hub_send.send_hub_msg(HubService::RegServer(RegServer::new(_conn_mgr_handle.get_hub_name()))).await;
+                    _hub_send.send_hub_msg(HubService::RegServer(RegServer::new(_conn_mgr_handle.get_hub_name(), "hub".to_string()))).await;
                     _hub_send.hub_name = Some(service.id.clone());
                     _conn_mgr_handle.add_hub_proxy(service.id.clone(), _hub_clone).await;
                     return service.id.clone();

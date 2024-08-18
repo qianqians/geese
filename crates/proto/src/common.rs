@@ -339,12 +339,14 @@ impl TSerializable for RedisMsg {
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RegServer {
   pub name: Option<String>,
+  pub type_: Option<String>,
 }
 
 impl RegServer {
-  pub fn new<F1>(name: F1) -> RegServer where F1: Into<Option<String>> {
+  pub fn new<F1, F2>(name: F1, type_: F2) -> RegServer where F1: Into<Option<String>>, F2: Into<Option<String>> {
     RegServer {
       name: name.into(),
+      type_: type_.into(),
     }
   }
 }
@@ -353,6 +355,7 @@ impl TSerializable for RegServer {
   fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<RegServer> {
     i_prot.read_struct_begin()?;
     let mut f_1: Option<String> = Some("".to_owned());
+    let mut f_2: Option<String> = Some("".to_owned());
     loop {
       let field_ident = i_prot.read_field_begin()?;
       if field_ident.field_type == TType::Stop {
@@ -364,6 +367,10 @@ impl TSerializable for RegServer {
           let val = i_prot.read_string()?;
           f_1 = Some(val);
         },
+        2 => {
+          let val = i_prot.read_string()?;
+          f_2 = Some(val);
+        },
         _ => {
           i_prot.skip(field_ident.field_type)?;
         },
@@ -373,6 +380,7 @@ impl TSerializable for RegServer {
     i_prot.read_struct_end()?;
     let ret = RegServer {
       name: f_1,
+      type_: f_2,
     };
     Ok(ret)
   }
@@ -381,6 +389,11 @@ impl TSerializable for RegServer {
     o_prot.write_struct_begin(&struct_ident)?;
     if let Some(ref fld_var) = self.name {
       o_prot.write_field_begin(&TFieldIdentifier::new("name", TType::String, 1))?;
+      o_prot.write_string(fld_var)?;
+      o_prot.write_field_end()?
+    }
+    if let Some(ref fld_var) = self.type_ {
+      o_prot.write_field_begin(&TFieldIdentifier::new("type", TType::String, 2))?;
       o_prot.write_string(fld_var)?;
       o_prot.write_field_end()?
     }

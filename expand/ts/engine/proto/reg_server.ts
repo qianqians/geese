@@ -7,12 +7,17 @@
 import * as thrift from "thrift";
 export interface Ireg_serverArgs {
     name?: string;
+    type?: string;
 }
 export class reg_server {
     public name?: string;
+    public type?: string;
     constructor(args?: Ireg_serverArgs) {
         if (args != null && args.name != null) {
             this.name = args.name;
+        }
+        if (args != null && args.type != null) {
+            this.type = args.type;
         }
     }
     public write(output: thrift.TProtocol): void {
@@ -20,6 +25,11 @@ export class reg_server {
         if (this.name != null) {
             output.writeFieldBegin("name", thrift.Thrift.Type.STRING, 1);
             output.writeString(this.name);
+            output.writeFieldEnd();
+        }
+        if (this.type != null) {
+            output.writeFieldBegin("type", thrift.Thrift.Type.STRING, 2);
+            output.writeString(this.type);
             output.writeFieldEnd();
         }
         output.writeFieldStop();
@@ -41,6 +51,15 @@ export class reg_server {
                     if (fieldType === thrift.Thrift.Type.STRING) {
                         const value_1: string = input.readString();
                         _args.name = value_1;
+                    }
+                    else {
+                        input.skip(fieldType);
+                    }
+                    break;
+                case 2:
+                    if (fieldType === thrift.Thrift.Type.STRING) {
+                        const value_2: string = input.readString();
+                        _args.type = value_2;
                     }
                     else {
                         input.skip(fieldType);
