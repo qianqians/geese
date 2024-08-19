@@ -31,7 +31,7 @@ impl GateCallbackMsgHandle {
     pub fn do_client_request_login(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: ClientRequestLogin) {
         trace!("do_client_request_login begin py_handle:{}!", py_handle);
 
-        let argvs = (ev.gate_name.unwrap(), ev.conn_id.unwrap(), ev.sdk_uuid.unwrap(), ev.argvs.unwrap());
+        let argvs = (ev.gate_name.unwrap(), ev.conn_id.unwrap(), ev.sdk_uuid.unwrap(), PyBytes::new(py, &ev.argvs.unwrap()));
         if let Err(e) = py_handle.call_method1(py, "on_client_request_login", argvs) {
             error!("do_client_request_login python callback error:{}", e)
         }
