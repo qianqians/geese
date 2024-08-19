@@ -37,6 +37,9 @@ class SamplePlayer(player):
     def client_info(self) -> dict:
         return {}
     
+    def on_migrate_to_other_hub(self, migrate_hub:str):
+        pass
+    
     def login_callback(self, rsp:login_login_rsp, _sdk_uuid:str):
         app().trace(f"SamplePlayer login_callback _sdk_uuid:{_sdk_uuid}")
         rsp.rsp(True)
