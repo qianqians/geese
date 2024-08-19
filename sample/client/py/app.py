@@ -54,7 +54,7 @@ class SamplePlayer(player):
 
 def conn_callback(conn_id:str):
     print("conn_callback begin!")
-    app().login(str(uuid.uuid4()))
+    app().login(str(uuid.uuid4()), {})
     print("conn_callback end!")
 
 def main():

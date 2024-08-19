@@ -14,7 +14,7 @@ class login_event_handle(ABC, base_dbproxy_handle):
         self.kick_off_client_callback:dict[str, Callable[[bool],None]]
     
     @abstractmethod
-    async def on_login(self, new_gate_name:str, new_conn_id:str, sdk_uuid:str):
+    async def on_login(self, new_gate_name:str, new_conn_id:str, sdk_uuid:str, argvs:dict):
         pass
     
     @abstractmethod
@@ -36,8 +36,8 @@ class login_service(object):
     def __init__(self, login_event_handle:login_event_handle) -> None:
         self.__login_event_handle__ = login_event_handle
 
-    async def login(self, gate_name:str, conn_id:str, sdk_uuid:str):
-        await self.__login_event_handle__.on_login(gate_name, conn_id, sdk_uuid)
+    async def login(self, gate_name:str, conn_id:str, sdk_uuid:str, argvs:dict):
+        await self.__login_event_handle__.on_login(gate_name, conn_id, sdk_uuid, argvs)
         
     async def reconnect(self, gate_name:str, conn_id:str, sdk_uuid:str, token:str):
         await self.__login_event_handle__.on_reconnect(gate_name, conn_id, sdk_uuid, token)

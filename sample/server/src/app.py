@@ -58,7 +58,7 @@ class LoginEventHandle(login_event_handle):
         else:
             return uuidObj["GUID"]
         
-    async def on_login(self, new_gate_name:str, new_conn_id:str, sdk_uuid:str):
+    async def on_login(self, new_gate_name:str, new_conn_id:str, sdk_uuid:str, argvs:dict):
         app().trace("LoginEventHandle on_login!")
         accound_id = await self.__get_client_account_id__(sdk_uuid)
         info_str = app().redis_proxy.get("sample:player_info:{}".format(accound_id))

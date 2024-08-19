@@ -98,9 +98,10 @@ export abstract class context {
         trans.flush();
     }
 
-    public login(sdk_uuid:string) : boolean {
+    public login(sdk_uuid:string, argvs:Uint8Array) : boolean {
         let loginData = new proto.client_request_hub_login();
         loginData.sdk_uuid = sdk_uuid;
+        loginData.argvs = Buffer.from(argvs);
         let reqData = proto.gate_client_service.fromLogin(loginData);
         
         this.send(reqData);

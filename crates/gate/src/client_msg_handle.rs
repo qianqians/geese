@@ -137,7 +137,7 @@ impl GateClientMsgHandle {
                 let _gate_name = _conn_mgr_handle.get_gate_name();
                 let _gate_host = _conn_mgr_handle.get_gate_host();
 
-                if !request_login(_hub.clone(), _gate_name, _gate_host, _conn_id, ev.sdk_uuid.unwrap()).await {
+                if !request_login(_hub.clone(), _gate_name, _gate_host, _conn_id, ev.sdk_uuid.unwrap(), ev.argvs.unwrap()).await {
                     let _hub_handle = _hub.as_ref().lock().await;
                     _conn_mgr_handle.delete_hub_proxy(&_hub_handle.get_hub_name());
                 }

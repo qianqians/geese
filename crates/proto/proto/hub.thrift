@@ -7,7 +7,8 @@ struct client_request_login {
 	1:string gate_name, 
 	2:string gate_host,
 	3:string conn_id,
-	4:string sdk_uuid
+	4:string sdk_uuid,
+	5:binary argvs,
 }
 
 /*

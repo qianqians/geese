@@ -8,26 +8,16 @@ import * as thrift from "thrift";
 export interface Ihub_call_kick_off_clientArgs {
     conn_id?: string;
     prompt_info?: string;
-    new_gate?: string;
-    new_conn_id?: string;
 }
 export class hub_call_kick_off_client {
     public conn_id?: string;
     public prompt_info?: string;
-    public new_gate?: string;
-    public new_conn_id?: string;
     constructor(args?: Ihub_call_kick_off_clientArgs) {
         if (args != null && args.conn_id != null) {
             this.conn_id = args.conn_id;
         }
         if (args != null && args.prompt_info != null) {
             this.prompt_info = args.prompt_info;
-        }
-        if (args != null && args.new_gate != null) {
-            this.new_gate = args.new_gate;
-        }
-        if (args != null && args.new_conn_id != null) {
-            this.new_conn_id = args.new_conn_id;
         }
     }
     public write(output: thrift.TProtocol): void {
@@ -40,16 +30,6 @@ export class hub_call_kick_off_client {
         if (this.prompt_info != null) {
             output.writeFieldBegin("prompt_info", thrift.Thrift.Type.STRING, 2);
             output.writeString(this.prompt_info);
-            output.writeFieldEnd();
-        }
-        if (this.new_gate != null) {
-            output.writeFieldBegin("new_gate", thrift.Thrift.Type.STRING, 3);
-            output.writeString(this.new_gate);
-            output.writeFieldEnd();
-        }
-        if (this.new_conn_id != null) {
-            output.writeFieldBegin("new_conn_id", thrift.Thrift.Type.STRING, 4);
-            output.writeString(this.new_conn_id);
             output.writeFieldEnd();
         }
         output.writeFieldStop();
@@ -80,24 +60,6 @@ export class hub_call_kick_off_client {
                     if (fieldType === thrift.Thrift.Type.STRING) {
                         const value_2: string = input.readString();
                         _args.prompt_info = value_2;
-                    }
-                    else {
-                        input.skip(fieldType);
-                    }
-                    break;
-                case 3:
-                    if (fieldType === thrift.Thrift.Type.STRING) {
-                        const value_3: string = input.readString();
-                        _args.new_gate = value_3;
-                    }
-                    else {
-                        input.skip(fieldType);
-                    }
-                    break;
-                case 4:
-                    if (fieldType === thrift.Thrift.Type.STRING) {
-                        const value_4: string = input.readString();
-                        _args.new_conn_id = value_4;
                     }
                     else {
                         input.skip(fieldType);

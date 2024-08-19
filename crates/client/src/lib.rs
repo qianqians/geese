@@ -48,9 +48,9 @@ impl ClientContext {
         _ctx_handle.connect_ws(host);
     }
 
-    pub fn login(slf: PyRefMut<'_, Self>, sdk_uuid: String) -> bool {
+    pub fn login(slf: PyRefMut<'_, Self>, sdk_uuid: String, argvs:Vec<u8>) -> bool {
         let mut _ctx_handle = slf.ctx.as_ref().lock().unwrap();
-        _ctx_handle.send_msg(GateClientService::Login(ClientRequestHubLogin::new(sdk_uuid)))
+        _ctx_handle.send_msg(GateClientService::Login(ClientRequestHubLogin::new(sdk_uuid, argvs)))
     }
 
     pub fn reconnect(slf: PyRefMut<'_, Self>, account_id: String, token: String) -> bool {

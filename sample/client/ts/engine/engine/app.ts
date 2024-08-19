@@ -3,6 +3,7 @@
  * qianqians
  * 2023/10/5
  */
+import { encode } from '@msgpack/msgpack'
 import * as context from './context'
 import * as ConnMsgHandle from './conn_msg_handle'
 import * as player from './player'
@@ -51,7 +52,7 @@ export class app {
 
     public build(handle:client_event_handle) {
         this.client_event_handle = handle;
-        setInterval(this.heartbeats.bind(this), 2000);
+        setInterval(this.heartbeats.bind(this), 1000);
         return this;
     }
 
@@ -94,9 +95,9 @@ export class app {
         this.__hub_global_callback__.set(method, callback);
     }
 
-    public login(sdk_uuid:string) : boolean {
+    public login(sdk_uuid:string, argvs:object) : boolean {
         if (this.ctx) {
-            return this.ctx.login(sdk_uuid)
+            return this.ctx.login(sdk_uuid, encode(argvs))
         }
         return false;
     }

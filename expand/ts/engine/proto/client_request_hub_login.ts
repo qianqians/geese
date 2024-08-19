@@ -7,12 +7,17 @@
 import * as thrift from "thrift";
 export interface Iclient_request_hub_loginArgs {
     sdk_uuid?: string;
+    argvs?: Buffer;
 }
 export class client_request_hub_login {
     public sdk_uuid?: string;
+    public argvs?: Buffer;
     constructor(args?: Iclient_request_hub_loginArgs) {
         if (args != null && args.sdk_uuid != null) {
             this.sdk_uuid = args.sdk_uuid;
+        }
+        if (args != null && args.argvs != null) {
+            this.argvs = args.argvs;
         }
     }
     public write(output: thrift.TProtocol): void {
@@ -20,6 +25,11 @@ export class client_request_hub_login {
         if (this.sdk_uuid != null) {
             output.writeFieldBegin("sdk_uuid", thrift.Thrift.Type.STRING, 1);
             output.writeString(this.sdk_uuid);
+            output.writeFieldEnd();
+        }
+        if (this.argvs != null) {
+            output.writeFieldBegin("argvs", thrift.Thrift.Type.STRING, 2);
+            output.writeBinary(this.argvs);
             output.writeFieldEnd();
         }
         output.writeFieldStop();
@@ -41,6 +51,15 @@ export class client_request_hub_login {
                     if (fieldType === thrift.Thrift.Type.STRING) {
                         const value_1: string = input.readString();
                         _args.sdk_uuid = value_1;
+                    }
+                    else {
+                        input.skip(fieldType);
+                    }
+                    break;
+                case 2:
+                    if (fieldType === thrift.Thrift.Type.STRING) {
+                        const value_2: Buffer = input.readBinary();
+                        _args.argvs = value_2;
                     }
                     else {
                         input.skip(fieldType);
