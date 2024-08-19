@@ -44,14 +44,15 @@ pub async fn request_login(
     _gate_name: String,
     _gate_host: String,
     _conn_id: String,
-    _sdk_uuid: String) -> bool
+    _sdk_uuid: String,
+    _argvs: Vec<u8>) -> bool
 {
     trace!("request_login begin!");
 
     let mut _hub = _hubproxy.as_ref().lock().await;
     trace!("request_login _hubproxy lock!");
     _hub.send_hub_msg(HubService::ClientRequestLogin(
-        ClientRequestLogin::new(_gate_name, _gate_host, _conn_id, _sdk_uuid))).await
+        ClientRequestLogin::new(_gate_name, _gate_host, _conn_id, _sdk_uuid, _argvs))).await
 
 }
 

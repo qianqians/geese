@@ -11,8 +11,8 @@ class context(object):
     def connect_ws(self, host:str) -> bool:
         return self.ctx.connect_ws(host)
     
-    def login(self, sdk_uuid:str) -> bool:
-        return self.ctx.login(sdk_uuid)
+    def login(self, sdk_uuid:str, argvs:bytes) -> bool:
+        return self.ctx.login(sdk_uuid, argvs)
     
     def reconnect(self, account_id:str, token:str) -> bool:
         return self.ctx.reconnect(account_id, token)

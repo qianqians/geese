@@ -144,7 +144,8 @@ union gate_hub_service {
  * ntf_client_request_login.
  */
 struct client_request_hub_login {
-	1:string sdk_uuid
+	1:string sdk_uuid,
+	2:binary argvs,
 }
 
 /*

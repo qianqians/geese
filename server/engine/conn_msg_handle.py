@@ -3,9 +3,9 @@ from collections.abc import Callable
 from .msgpack import *
 
 class conn_msg_handle(object):
-    def on_client_request_login(self, gate_name:str, conn_id:str, sdk_uuid:str):
+    def on_client_request_login(self, gate_name:str, conn_id:str, sdk_uuid:str, argvs:bytes):
         from app import app
-        app().run_coroutine_async(app().login_handle.login(gate_name, conn_id, sdk_uuid))
+        app().run_coroutine_async(app().login_handle.login(gate_name, conn_id, sdk_uuid, loads(argvs)))
 
     def on_client_request_reconnect(self, gate_name:str, conn_id:str, entity_id:str, token:str):
         from app import app

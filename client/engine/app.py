@@ -6,6 +6,7 @@ import _thread
 
 from collections.abc import Callable
 import asyncio
+from .msgpack import *
 
 from .pyclient import ClientPump
 from .context import context
@@ -100,8 +101,8 @@ class app(object):
         self.__conn_id_callback__ = callback
         return self.ctx.connect_ws(host)
     
-    def login(self, sdk_uuid:str) -> bool:
-        return self.ctx.login(sdk_uuid)
+    def login(self, sdk_uuid:str, argvs:dict) -> bool:
+        return self.ctx.login(sdk_uuid, dumps(argvs))
     
     def reconnect(self, account_id:str, token:str) -> bool:
         return self.ctx.reconnect(account_id, token)

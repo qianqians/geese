@@ -38,15 +38,17 @@ pub struct ClientRequestLogin {
   pub gate_host: Option<String>,
   pub conn_id: Option<String>,
   pub sdk_uuid: Option<String>,
+  pub argvs: Option<Vec<u8>>,
 }
 
 impl ClientRequestLogin {
-  pub fn new<F1, F2, F3, F4>(gate_name: F1, gate_host: F2, conn_id: F3, sdk_uuid: F4) -> ClientRequestLogin where F1: Into<Option<String>>, F2: Into<Option<String>>, F3: Into<Option<String>>, F4: Into<Option<String>> {
+  pub fn new<F1, F2, F3, F4, F5>(gate_name: F1, gate_host: F2, conn_id: F3, sdk_uuid: F4, argvs: F5) -> ClientRequestLogin where F1: Into<Option<String>>, F2: Into<Option<String>>, F3: Into<Option<String>>, F4: Into<Option<String>>, F5: Into<Option<Vec<u8>>> {
     ClientRequestLogin {
       gate_name: gate_name.into(),
       gate_host: gate_host.into(),
       conn_id: conn_id.into(),
       sdk_uuid: sdk_uuid.into(),
+      argvs: argvs.into(),
     }
   }
 }
@@ -58,6 +60,7 @@ impl TSerializable for ClientRequestLogin {
     let mut f_2: Option<String> = Some("".to_owned());
     let mut f_3: Option<String> = Some("".to_owned());
     let mut f_4: Option<String> = Some("".to_owned());
+    let mut f_5: Option<Vec<u8>> = Some(Vec::new());
     loop {
       let field_ident = i_prot.read_field_begin()?;
       if field_ident.field_type == TType::Stop {
@@ -81,6 +84,10 @@ impl TSerializable for ClientRequestLogin {
           let val = i_prot.read_string()?;
           f_4 = Some(val);
         },
+        5 => {
+          let val = i_prot.read_bytes()?;
+          f_5 = Some(val);
+        },
         _ => {
           i_prot.skip(field_ident.field_type)?;
         },
@@ -93,6 +100,7 @@ impl TSerializable for ClientRequestLogin {
       gate_host: f_2,
       conn_id: f_3,
       sdk_uuid: f_4,
+      argvs: f_5,
     };
     Ok(ret)
   }
@@ -117,6 +125,11 @@ impl TSerializable for ClientRequestLogin {
     if let Some(ref fld_var) = self.sdk_uuid {
       o_prot.write_field_begin(&TFieldIdentifier::new("sdk_uuid", TType::String, 4))?;
       o_prot.write_string(fld_var)?;
+      o_prot.write_field_end()?
+    }
+    if let Some(ref fld_var) = self.argvs {
+      o_prot.write_field_begin(&TFieldIdentifier::new("argvs", TType::String, 5))?;
+      o_prot.write_bytes(fld_var)?;
       o_prot.write_field_end()?
     }
     o_prot.write_field_stop()?;

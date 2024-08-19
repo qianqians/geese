@@ -5,38 +5,28 @@
  * DO NOT EDIT UNLESS YOU ARE SURE THAT YOU KNOW WHAT YOU ARE DOING
 */
 import * as thrift from "thrift";
-export interface Ireg_serverArgs {
-    name?: string;
-    type?: string;
+export interface Ihub_call_wait_migrate_entityArgs {
+    entity_id?: string;
 }
-export class reg_server {
-    public name?: string;
-    public type?: string;
-    constructor(args?: Ireg_serverArgs) {
-        if (args != null && args.name != null) {
-            this.name = args.name;
-        }
-        if (args != null && args.type != null) {
-            this.type = args.type;
+export class hub_call_wait_migrate_entity {
+    public entity_id?: string;
+    constructor(args?: Ihub_call_wait_migrate_entityArgs) {
+        if (args != null && args.entity_id != null) {
+            this.entity_id = args.entity_id;
         }
     }
     public write(output: thrift.TProtocol): void {
-        output.writeStructBegin("reg_server");
-        if (this.name != null) {
-            output.writeFieldBegin("name", thrift.Thrift.Type.STRING, 1);
-            output.writeString(this.name);
-            output.writeFieldEnd();
-        }
-        if (this.type != null) {
-            output.writeFieldBegin("type", thrift.Thrift.Type.STRING, 2);
-            output.writeString(this.type);
+        output.writeStructBegin("hub_call_wait_migrate_entity");
+        if (this.entity_id != null) {
+            output.writeFieldBegin("entity_id", thrift.Thrift.Type.STRING, 1);
+            output.writeString(this.entity_id);
             output.writeFieldEnd();
         }
         output.writeFieldStop();
         output.writeStructEnd();
         return;
     }
-    public static read(input: thrift.TProtocol): reg_server {
+    public static read(input: thrift.TProtocol): hub_call_wait_migrate_entity {
         input.readStructBegin();
         let _args: any = {};
         while (true) {
@@ -50,16 +40,7 @@ export class reg_server {
                 case 1:
                     if (fieldType === thrift.Thrift.Type.STRING) {
                         const value_1: string = input.readString();
-                        _args.name = value_1;
-                    }
-                    else {
-                        input.skip(fieldType);
-                    }
-                    break;
-                case 2:
-                    if (fieldType === thrift.Thrift.Type.STRING) {
-                        const value_2: string = input.readString();
-                        _args.type = value_2;
+                        _args.entity_id = value_1;
                     }
                     else {
                         input.skip(fieldType);
@@ -72,6 +53,6 @@ export class reg_server {
             input.readFieldEnd();
         }
         input.readStructEnd();
-        return new reg_server(_args);
+        return new hub_call_wait_migrate_entity(_args);
     }
 }
