@@ -49,6 +49,10 @@ class player(ABC, base_entity):
     def client_info(self) -> dict:
         pass
     
+    @abstractmethod
+    def on_migrate_to_other_hub(self, migrate_hub:str):
+        pass
+    
     def try_migrate_entity(self):
         if not self.is_dynamic:
             return
@@ -70,6 +74,7 @@ class player(ABC, base_entity):
             migrate_hub = app().ctx.entry_hub_service(self.service_name)
             app().ctx.hub_call_hub_migrate_entity(migrate_hub, self.service_name, self.entity_type, self.entity_id, self.conn_client_gate, self.conn_hub_server, self.full_info())
             app().player_mgr.del_player(self.entity_id)
+            self.on_migrate_to_other_hub(migrate_hub)
         
     def start_migrate_entity(self):
         from app import app
@@ -91,7 +96,8 @@ class player(ABC, base_entity):
             migrate_hub = app().ctx.entry_hub_service(self.service_name)
             app().ctx.hub_call_hub_migrate_entity(migrate_hub, self.service_name, self.entity_type, self.entity_id, self.conn_client_gate, self.conn_hub_server, self.full_info())
             app().player_mgr.del_player(self.entity_id)
-    
+            self.on_migrate_to_other_hub(migrate_hub)
+            
     def create_main_remote_entity(self):
         from app import app
         app().ctx.hub_call_client_create_remote_entity(self.client_gate_name, [], self.client_conn_id, self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))

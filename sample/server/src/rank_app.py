@@ -22,6 +22,9 @@ class RankImpl(entity):
     def client_info(self) -> dict:
         return {}
     
+    def on_migrate_to_other_hub(self, migrate_hub:str):
+        pass
+    
     def on_call_update_rank(self, rsp:update_rank_call_update_rank_rsp, _entity_id:str):
         app().trace(f"RankImpl on_call_update_rank _entity_id:{_entity_id}")
         rsp.rsp()
