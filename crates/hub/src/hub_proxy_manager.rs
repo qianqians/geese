@@ -131,7 +131,6 @@ pub async fn entry_hub_service(
 
 pub struct HubProxy {
     pub hub_name: Option<String>,
-    pub hub_host: Option<String>,
     pub wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>
 }
 
@@ -140,7 +139,6 @@ impl HubProxy {
     {
         HubProxy {
             hub_name: None,
-            hub_host: None,
             wr: _wr
         }
     }
