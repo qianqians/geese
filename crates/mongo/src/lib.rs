@@ -1,4 +1,4 @@
-use mongodb::options::{UpdateOptions, FindOneAndUpdateOptions, IndexOptions, ReturnDocument, FindOptions};
+use mongodb::options::{IndexOptions, ReturnDocument, FindOptions};
 use mongodb::{Client, options::ClientOptions, IndexModel};
 use mongodb::bson::{doc, Document};
 use futures::stream::TryStreamExt;
@@ -27,7 +27,7 @@ impl MongoProxy {
             .keys(doc!{ key: 1})
             .options(_options)
             .build();
-        let result = _collection.create_index(_index, None).await;
+        let result = _collection.create_index(_index).await;
         match result {
             Ok(_v) => return true,
             Err(_e) => {
@@ -43,7 +43,7 @@ impl MongoProxy {
         let _db = self.client.database(&db);
         let _collection  = _db.collection::<Document>(&collection);
 
-        let result = _collection.insert_one(doc!{ "GuidIndexKey": "__guid__", "guid": initial_guid }, None).await;
+        let result = _collection.insert_one(doc!{ "GuidIndexKey": "__guid__", "guid": initial_guid }).await;
         match result {
             Ok(_v) => return true,
             Err(_e) => {
@@ -69,7 +69,7 @@ impl MongoProxy {
             }
         };
 
-        let result = _collection.insert_one(_doc, None).await;
+        let result = _collection.insert_one(_doc).await;
         match result {
             Ok(_v) => return true,
             Err(_e) => {
@@ -105,8 +105,7 @@ impl MongoProxy {
             }
         };
 
-        let _opts = UpdateOptions::builder().upsert(is_upsert).build();
-        let result = _collection.update_one(_query, _update, _opts).await;
+        let result = _collection.update_one(_query, _update).upsert(is_upsert).await;
         match result {
             Ok(_v) => return true,
             Err(_e) => {
@@ -129,12 +128,7 @@ impl MongoProxy {
         let _update = mongodb::bson::Document::from_reader(&mut _update_bin)?; 
 
         let _return_document = if _new { ReturnDocument::After } else { ReturnDocument::Before };
-        let _opts = FindOneAndUpdateOptions::builder()
-            .projection(doc! { "_id": 0 })
-            .return_document(_return_document)
-            .upsert(_upsert)
-            .build();
-        let result = _collection.find_one_and_update(_query, _update, _opts).await?;
+        let result = _collection.find_one_and_update(_query, _update).projection(doc! { "_id": 0 }).return_document(_return_document).upsert(_upsert).await?;
         Ok(result)
     }
 
@@ -151,14 +145,15 @@ impl MongoProxy {
         let mut _opts_builder = FindOptions::builder().projection(doc! { "_id": 0 });
         let _opts: FindOptions;
         if !sort.is_empty() {
-            _opts = _opts_builder.sort(doc! { sort: ascending }).skip(skip as u64).limit(limit as i64).build();
+            let mut _cursor = _collection.find(_query).sort(doc! { sort: ascending }).skip(skip as u64).limit(limit as i64).await?;
+            let vec: Vec<_> = _cursor.try_collect().await?;
+            Ok(vec)
         }
         else {
-            _opts = _opts_builder.skip(skip as u64).limit(limit as i64).build();
+            let mut _cursor = _collection.find(_query).skip(skip as u64).limit(limit as i64).await?;
+            let vec: Vec<_> = _cursor.try_collect().await?;
+            Ok(vec)
         }
-        let mut _cursor = _collection.find(_query, _opts).await?;
-        let vec: Vec<_> = _cursor.try_collect().await?;
-        Ok(vec)
     }
 
     pub async fn count(&mut self, db: String, collection: String, query: &Vec<u8>) -> i32 {
@@ -177,7 +172,7 @@ impl MongoProxy {
             }
         };
 
-        let result = _collection.count_documents(_query, None).await;
+        let result = _collection.count_documents(_query).await;
         match result {
             Ok(v) => return v as i32,
             Err(_e) =>  {
@@ -203,7 +198,7 @@ impl MongoProxy {
             }
         };
 
-        let result = _collection.delete_many(_query, None).await;
+        let result = _collection.delete_many(_query).await;
         match result {
             Ok(_v) => return true,
             Err(_e) => {
@@ -223,10 +218,7 @@ impl MongoProxy {
         let _update = doc!{ "$inc": doc!{ "guid": 1 } };
 
         let _return_document = ReturnDocument::Before;
-        let _opts = FindOneAndUpdateOptions::builder()
-            .return_document(_return_document)
-            .build();
-        let result = _collection.find_one_and_update(_query, _update, _opts).await;
+        let result = _collection.find_one_and_update(_query, _update).return_document(_return_document).await;
         let _doc = match result {
             Ok(_v) => _v,
             Err(_e) => {
