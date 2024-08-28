@@ -280,8 +280,9 @@ impl Context {
                 let _gate_proxy = GateProxy::new(_wr_arc.clone(), self.msg_handle.clone());
                 self.gate_proxy = Some(_gate_proxy.clone());
 
-                let _ = rd.start(Arc::new(Mutex::new(Box::new(
-                    GateProxyReaderCallback::new(_gate_proxy)))));
+                let mut _gate_proxy_mut = _gate_proxy.as_ref().lock().unwrap();
+                _gate_proxy_mut.join = Some(rd.start(Arc::new(Mutex::new(Box::new(
+                    GateProxyReaderCallback::new(_gate_proxy.clone()))))));
             }
             else {
                 println!("connect_tcp faild! host:{}", format!("{}:{}", addr, port));
@@ -299,8 +300,9 @@ impl Context {
                 let _gate_proxy = GateProxy::new(_wr_arc.clone(), self.msg_handle.clone());
                 self.gate_proxy = Some(_gate_proxy.clone());
 
-                let _ = rd.start(Arc::new(Mutex::new(Box::new(
-                    GateProxyReaderCallback::new(_gate_proxy)))));
+                let mut _gate_proxy_mut = _gate_proxy.as_ref().lock().unwrap();
+                _gate_proxy_mut.join = Some(rd.start(Arc::new(Mutex::new(Box::new(
+                    GateProxyReaderCallback::new(_gate_proxy.clone()))))));
             }
             else {
                 println!("connect_ws faild! host:{}", host);
