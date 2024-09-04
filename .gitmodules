@@ -4,3 +4,6 @@
 [submodule "tools/behavior3editor"]
 	path = tools/behavior3editor
 	url = git@github.com:behavior3/behavior3editor.git
+[submodule "tools/Blenvy"]
+	path = tools/Blenvy
+	url = git@github.com:kaosat-dev/Blenvy.git
