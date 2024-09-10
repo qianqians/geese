@@ -52,7 +52,7 @@ class update_rank_call_update_rank_rsp(session):
         self.is_rsp = False
         self.msg_cb_id = msg_cb_id
 
-    def rsp(self, ):
+    def rsp(self):
         if self.is_rsp:
             return
         self.is_rsp = True

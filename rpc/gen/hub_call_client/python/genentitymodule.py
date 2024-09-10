@@ -103,16 +103,15 @@ def gen_entity_module(module_name, funcs, dependent_struct, dependent_enum, enum
             rsp_code += "        self.is_rsp = False\n"
             rsp_code += "        self.msg_cb_id = msg_cb_id\n\n"
 
-            rsp_code += "    def rsp(self, "
+            rsp_code += "    def rsp(self"
             count = 0
             for _type, _name, _parameter in i[4]:
+                rsp_code += ", "
                 if _parameter == None:
                     rsp_code += _name + ":" + convert_type(_type, dependent_struct, dependent_enum)
                 else:
                     rsp_code += _name + ":" + convert_type(_type, dependent_struct, dependent_enum) + " = " + convert_parameter(_type, _parameter, dependent_enum, enum)
                 count = count + 1
-                if count < len(i[4]):
-                    rsp_code += ", "
             rsp_code += "):\n"
             rsp_code += "        if self.is_rsp:\n"
             rsp_code += "            return\n"

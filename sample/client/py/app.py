@@ -62,7 +62,8 @@ def main():
     _app.build(ClientEventHandle())
     _app.register("SamplePlayer", SamplePlayer.Creator)
     _app.register("RankImpl", RankSubEntity.Creator)
-    _app.connect_tcp("127.0.0.1", 8000, conn_callback)
+    #_app.connect_tcp("127.0.0.1", 8000, conn_callback)
+    _app.connect_ws("ws://127.0.0.1:8100", conn_callback)
     print(f"run begin!")
     _app.run()
     
