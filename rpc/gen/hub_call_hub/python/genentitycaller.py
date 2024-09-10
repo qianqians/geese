@@ -18,16 +18,15 @@ def gen_entity_caller(module_name, funcs, dependent_struct, dependent_enum, enum
         func_name = i[0]
 
         if i[1] == "ntf":
-            code += "    def " + func_name + "(self, "
+            code += "    def " + func_name + "(self"
             count = 0
             for _type, _name, _parameter in i[2]:
+                code += ", "
                 if _parameter == None:
                     code += _name + ":" + convert_type(_type, dependent_struct, dependent_enum)
                 else:
                     code += _name + ":" + convert_type(_type, dependent_struct, dependent_enum) + " = " + convert_parameter(_type, _parameter, dependent_enum, enum)
                 count = count + 1
-                if count < len(i[2]):
-                    code += ", "
             code += "):\n"
             _argv_uuid = '_'.join(str(uuid.uuid3(uuid.NAMESPACE_DNS, func_name)).split('-'))
             code += "        _argv_" + _argv_uuid + " = []\n"
@@ -130,16 +129,15 @@ def gen_entity_caller(module_name, funcs, dependent_struct, dependent_enum, enum
             _cb_uuid_uuid = '_'.join(str(uuid.uuid5(uuid.NAMESPACE_DNS, func_name)).split('-'))
             _argv_uuid = '_'.join(str(uuid.uuid3(uuid.NAMESPACE_DNS, func_name)).split('-'))
 
-            code += "    def " + func_name + "(self, "
+            code += "    def " + func_name + "(self"
             count = 0
             for _type, _name, _parameter in i[2]:
+                code += ", "
                 if _parameter == None:
                     code += _name + ":" + convert_type(_type, dependent_struct, dependent_enum)
                 else:
                     code += _name + ":" + convert_type(_type, dependent_struct, dependent_enum) + " = " + convert_parameter(_type, _parameter, dependent_enum, enum)
                 count = count + 1
-                if count < len(i[2]):
-                    code += ", "
             code += "):\n"
             code += "        _argv_" + _argv_uuid + " = []\n"
             for _type, _name, _parameter in i[2]:
