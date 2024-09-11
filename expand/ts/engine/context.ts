@@ -210,7 +210,7 @@ export abstract class context {
             }
         }
         else if (ev.heartbeats) {
-            this.heartbeats();
+            console.log("heartbeats ev:", ev);
         }
         else if (ev.create_remote_entity) {
             let event = ev.create_remote_entity;
