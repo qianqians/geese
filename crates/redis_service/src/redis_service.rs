@@ -168,6 +168,9 @@ impl RedisService {
             if ret {
                 conn_ref.expire(lock_key.clone(), timeout as i64)?;
                 break;
+            } 
+            else {
+                tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
             }
         }
         Ok(value)
