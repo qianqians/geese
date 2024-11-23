@@ -28,41 +28,32 @@ pub async fn entry_direct_hub_server(
     let mut _hub_host: String = "".to_string();
     {
         let mut _r = _redis_mq_service.as_ref().lock().await;
-        match _r.get(create_host_cache_key(_hub_name.clone())).await {
-            Err(e) => {
-                error!("get _hub_host:{} host faild:{}!", _hub_name.clone(), e);
-                return;
-            },
-            Ok(host) => {
-                _hub_host = host;
-            }
-        }
+        _hub_host = _r.get(create_host_cache_key(_hub_name.clone())).await;
     }
 
     let mut _conn_mgr_handle = _conn_mgr.as_ref().lock().await;
     let mut _service = _redis_mq_service.as_ref().lock().await;
     let lock_key = create_lock_key(_conn_mgr_handle.get_hub_name(), _hub_name.clone());
-    if let Ok(value) = _service.acquire_lock(lock_key.clone(), 3).await {
-        if let Some(_hubproxy) = _conn_mgr_handle.get_hub_proxy(&_hub_name) {
-            let _ = _service.release_lock(lock_key.clone(), value.clone()).await;
-            return;
-        }
+    let value = _service.acquire_lock(lock_key.clone(), 3).await;
+    if let Some(_hubproxy) = _conn_mgr_handle.get_hub_proxy(&_hub_name) {
+        let _ = _service.release_lock(lock_key.clone(), value.clone()).await;
+        return;
+    }
 
-        _conn_mgr_handle.add_lock(lock_key.clone(), value);
+    _conn_mgr_handle.add_lock(lock_key.clone(), value);
 
-        if let Some(_wr_arc) = _conn_mgr_handle.direct_connect_server(
-            _hub_name.clone(), 
-            _hub_host, 
-            _conn_msg_handle.clone(), 
-            _close.clone()).await
-        {
-            let _hubproxy = Arc::new(Mutex::new(HubProxy::new(_wr_arc)));
-            let _hub_clone = _hubproxy.clone();
-            let mut _hub_send = _hubproxy.as_ref().lock().await;
-            _hub_send.send_hub_msg(HubService::RegServer(RegServer::new(_conn_mgr_handle.get_hub_name(), "hub".to_string()))).await;
-            _hub_send.hub_name = Some(_hub_name.clone());
-            _conn_mgr_handle.add_hub_proxy(_hub_name.clone(), _hub_clone).await;
-        }
+    if let Some(_wr_arc) = _conn_mgr_handle.direct_connect_server(
+        _hub_name.clone(), 
+        _hub_host, 
+        _conn_msg_handle.clone(), 
+        _close.clone()).await
+    {
+        let _hubproxy = Arc::new(Mutex::new(HubProxy::new(_wr_arc)));
+        let _hub_clone = _hubproxy.clone();
+        let mut _hub_send = _hubproxy.as_ref().lock().await;
+        _hub_send.send_hub_msg(HubService::RegServer(RegServer::new(_conn_mgr_handle.get_hub_name(), "hub".to_string()))).await;
+        _hub_send.hub_name = Some(_hub_name.clone());
+        _conn_mgr_handle.add_hub_proxy(_hub_name.clone(), _hub_clone).await;
     }
 }
 
@@ -96,30 +87,29 @@ pub async fn entry_hub_service(
         else {
             let mut _service = _redis_mq_service.as_ref().lock().await;
             let lock_key = create_lock_key(_conn_mgr_handle.get_hub_name(), service.id.clone());
-            if let Ok(value) = _service.acquire_lock(lock_key.clone(), 3).await {
-                if let Some(_hubproxy) = _conn_mgr_handle.get_hub_proxy(&service.id) {
-                    let _ = _service.release_lock(lock_key.clone(), value.clone()).await;
-                    return service.id.clone();
-                }
+            let value = _service.acquire_lock(lock_key.clone(), 3).await;
+            if let Some(_hubproxy) = _conn_mgr_handle.get_hub_proxy(&service.id) {
+                let _ = _service.release_lock(lock_key.clone(), value.clone()).await;
+                return service.id.clone();
+            }
 
-                _conn_mgr_handle.add_lock(lock_key.clone(), value);
+            _conn_mgr_handle.add_lock(lock_key.clone(), value);
 
-                if let Some(_wr_arc) = _conn_mgr_handle.direct_connect_server(
-                    service.id.clone(), 
-                    format!("{}:{}", service.addr, service.port), 
-                    _conn_msg_handle.clone(), 
-                    _close.clone()).await
-                {
-                    let _hubproxy = Arc::new(Mutex::new(HubProxy::new(_wr_arc)));
-                    let _hub_clone = _hubproxy.clone();
+            if let Some(_wr_arc) = _conn_mgr_handle.direct_connect_server(
+                service.id.clone(), 
+                format!("{}:{}", service.addr, service.port), 
+                _conn_msg_handle.clone(), 
+                _close.clone()).await
+            {
+                let _hubproxy = Arc::new(Mutex::new(HubProxy::new(_wr_arc)));
+                let _hub_clone = _hubproxy.clone();
 
-                    let mut _hub_send = _hubproxy.as_ref().lock().await;
-                    _hub_send.send_hub_msg(HubService::RegServer(RegServer::new(_conn_mgr_handle.get_hub_name(), "hub".to_string()))).await;
-                    _hub_send.hub_name = Some(service.id.clone());
-                    _conn_mgr_handle.add_hub_proxy(service.id.clone(), _hub_clone).await;
-                    return service.id.clone();
-                }
-            }   
+                let mut _hub_send = _hubproxy.as_ref().lock().await;
+                _hub_send.send_hub_msg(HubService::RegServer(RegServer::new(_conn_mgr_handle.get_hub_name(), "hub".to_string()))).await;
+                _hub_send.hub_name = Some(service.id.clone());
+                _conn_mgr_handle.add_hub_proxy(service.id.clone(), _hub_clone).await;
+                return service.id.clone();
+            }
         }
         services.remove(index);
         if services.len() <= 0 {

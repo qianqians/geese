@@ -112,31 +112,30 @@ pub async fn entry_hub_service(_conn_mgr: Arc<Mutex<ConnManager>>, _service_name
             let _redis_service = _conn_mgr_handle.get_redis_service();
             let mut _service = _redis_service.as_ref().lock().await;
             let lock_key = create_lock_key(_conn_mgr_handle.get_gate_name(), service.id.clone());
-            if let Ok(value) = _service.acquire_lock(lock_key.clone(), 3).await {
-                if let Some(_hubproxy) = _conn_mgr_handle.get_hub_proxy(&service.id) {
-                    let _ = _service.release_lock(lock_key.clone(), value.clone()).await;
-                    return Some(_hubproxy.clone())
-                }
+            let value = _service.acquire_lock(lock_key.clone(), 3).await;
+            if let Some(_hubproxy) = _conn_mgr_handle.get_hub_proxy(&service.id) {
+                let _ = _service.release_lock(lock_key.clone(), value.clone()).await;
+                return Some(_hubproxy.clone())
+            }
 
-                _conn_mgr_handle.add_lock(lock_key, value);
+            _conn_mgr_handle.add_lock(lock_key, value);
 
-                if let Ok((rd, wr)) = TcpConnect::connect(format!("{}:{}", service.addr, service.port)).await {
-                    let _wr_arc: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>> = Arc::new(Mutex::new(Box::new(wr)));
-                    let _conn_mgr_clone = _conn_mgr.clone();
-                    let _hubproxy = Arc::new(Mutex::new(HubProxy::new(
-                        _wr_arc, _conn_mgr_clone)));
-                    let _ = rd.start(Arc::new(Mutex::new(Box::new(
-                        HubReaderCallback::new(_hubproxy.clone(), _conn_mgr_handle.get_hub_msg_handle())))));
-                    _conn_mgr_handle.add_hub_proxy(service.id.to_string(), _hubproxy.clone()).await;
-                    let _h_clone = _hubproxy.clone();
-                    let mut _h = _hubproxy.as_ref().lock().await;
-                    _h.send_hub_msg(HubService::RegServer(RegServer::new(_conn_mgr_handle.get_gate_name(), "gate".to_string()))).await;
-                    _h.name = Some(service.id.to_string());
-                    return Some(_h_clone)
-                }
-                else {
-                    error!("entry_hub_service tcp connect faild!");
-                }
+            if let Ok((rd, wr)) = TcpConnect::connect(format!("{}:{}", service.addr, service.port)).await {
+                let _wr_arc: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>> = Arc::new(Mutex::new(Box::new(wr)));
+                let _conn_mgr_clone = _conn_mgr.clone();
+                let _hubproxy = Arc::new(Mutex::new(HubProxy::new(
+                    _wr_arc, _conn_mgr_clone)));
+                let _ = rd.start(Arc::new(Mutex::new(Box::new(
+                    HubReaderCallback::new(_hubproxy.clone(), _conn_mgr_handle.get_hub_msg_handle())))));
+                _conn_mgr_handle.add_hub_proxy(service.id.to_string(), _hubproxy.clone()).await;
+                let _h_clone = _hubproxy.clone();
+                let mut _h = _hubproxy.as_ref().lock().await;
+                _h.send_hub_msg(HubService::RegServer(RegServer::new(_conn_mgr_handle.get_gate_name(), "gate".to_string()))).await;
+                _h.name = Some(service.id.to_string());
+                return Some(_h_clone)
+            }
+            else {
+                error!("entry_hub_service tcp connect faild!");
             }
         }
         services.remove(index);
