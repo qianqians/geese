@@ -180,47 +180,38 @@ impl HubServer {
         {
             if let Some(rs) = &self.hub_redis_service {
                 let mut _r = rs.as_ref().lock().await;
-                match _r.get(create_host_cache_key(_gate_name.clone())).await {
-                    Err(e) => {
-                        error!("get gate:{} host faild:{}!", _gate_name.clone(), e);
-                        return;
-                    },
-                    Ok(host) => {
-                        gate_host = host;
-                    }
-                }
+                gate_host = _r.get(create_host_cache_key(_gate_name.clone())).await;
             }
         }
 
         let redis_service = self.hub_redis_service.clone().unwrap();
         let mut _service = redis_service.as_ref().lock().await;
         let lock_key = create_lock_key( self.hub_name.clone(), _gate_name.clone());
-        if let Ok(value) = _service.acquire_lock(lock_key.clone(), 3).await {
-            let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
-            if _conn_mgr.get_gate_proxy(&_gate_name).is_none() {
-                _conn_mgr.add_lock(lock_key, value);
+        let value = _service.acquire_lock(lock_key.clone(), 3).await;
+        let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
+        if _conn_mgr.get_gate_proxy(&_gate_name).is_none() {
+            _conn_mgr.add_lock(lock_key, value);
 
-                if let Some(wr) = _conn_mgr.direct_connect_server(
-                    _gate_name.clone(), 
-                    gate_host, 
-                    self.conn_msg_handle.clone(), 
-                    self.close.clone()).await 
-                {
-                    let _wr_arc_clone = wr.clone();
-                    
-                    let _gate_name_tmp = _gate_name.clone();
-                    let mut _gate_tmp = GateProxy::new(_wr_arc_clone);
-                    _gate_tmp.send_gate_msg(GateHubService::RegServer(RegServer::new(_conn_mgr.get_hub_name(), "hub".to_string()))).await;
+            if let Some(wr) = _conn_mgr.direct_connect_server(
+                _gate_name.clone(), 
+                gate_host, 
+                self.conn_msg_handle.clone(), 
+                self.close.clone()).await 
+            {
+                let _wr_arc_clone = wr.clone();
                 
-                    _gate_tmp.gate_name = Some(_gate_name);
-    
-                    let _gateproxy = Arc::new(Mutex::new(_gate_tmp));
-                    _conn_mgr.add_gate_proxy(_gate_name_tmp, _gateproxy).await;
-                }  
-            }
-            else {
-                let _ = _service.release_lock(lock_key.clone(), value).await;
-            }
+                let _gate_name_tmp = _gate_name.clone();
+                let mut _gate_tmp = GateProxy::new(_wr_arc_clone);
+                _gate_tmp.send_gate_msg(GateHubService::RegServer(RegServer::new(_conn_mgr.get_hub_name(), "hub".to_string()))).await;
+            
+                _gate_tmp.gate_name = Some(_gate_name);
+
+                let _gateproxy = Arc::new(Mutex::new(_gate_tmp));
+                _conn_mgr.add_gate_proxy(_gate_name_tmp, _gateproxy).await;
+            }  
+        }
+        else {
+            let _ = _service.release_lock(lock_key.clone(), value).await;
         }
     }
 

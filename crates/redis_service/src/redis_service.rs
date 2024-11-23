@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 use thrift::protocol::{TCompactInputProtocol, TSerializable};
 use thrift::transport::TBufferChannel;
-use redis::{Connection, Commands};
+use redis::{Client, Commands, Connection, RedisError};
 use async_trait::async_trait;
 use tracing::{trace, error};
 
@@ -34,6 +34,7 @@ pub fn create_host_cache_key(name:String) -> String {
 
 pub struct RedisService{
     lname: String,
+    client: Arc<Mutex<Client>>,
     conn: Arc<Mutex<Connection>>,
     rds: Arc<Mutex<BTreeMap<String, (Arc<Mutex<RedisMQReader>>, Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>)>>>,
     join: Option<JoinHandle<()>>
@@ -53,6 +54,7 @@ impl RedisService {
 
         Ok(RedisService {
             lname: lname,
+            client: Arc::new(Mutex::new(client)),
             conn: conn,
             rds: rds,
             join: None
@@ -136,6 +138,7 @@ impl RedisService {
 
         Ok(RedisService {
             lname: service_lname,
+            client: Arc::new(Mutex::new(client)),
             conn: service_conn,
             rds: service_rds,
             join: Some(_join)
@@ -160,46 +163,127 @@ impl RedisService {
         }
     }
 
-    pub async fn acquire_lock(&mut self, lock_key: String, timeout: usize) -> redis::RedisResult<String> {
+    pub async fn acquire_lock(&mut self, lock_key: String, timeout: usize) -> String {
         let value = Uuid::new_v4().to_string();
-        let mut conn_ref = self.conn.as_ref().lock().await;
         loop {
-            let ret: bool = conn_ref.set_nx(lock_key.clone(), value.clone())?;
-            if ret {
-                conn_ref.expire(lock_key.clone(), timeout as i64)?;
-                break;
+            let _c = self.conn.clone();
+            let mut conn_ref = _c.as_ref().lock().await;
+            match conn_ref.set_nx(lock_key.clone(), value.clone()) {
+                Ok(ret) => {
+                    if ret {
+                        break;
+                    }
+                },
+                Err(_) => {
+                    if let Ok(conn) = self.client.blocking_lock().get_connection() {
+                        self.conn = Arc::new(Mutex::new(conn));
+                    }
+                }
             } 
-            else {
-                tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
+            tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
+        }
+        loop {
+            let _c = self.conn.clone();
+            let mut conn_ref = _c.as_ref().lock().await;
+            let ret: Result<(), RedisError> = conn_ref.expire(lock_key.clone(), timeout as i64);
+            match ret {
+                Ok(_) => {
+                    break;
+                },
+                Err(_) => {
+                    if let Ok(conn) = self.client.blocking_lock().get_connection() {
+                        self.conn = Arc::new(Mutex::new(conn));
+                    }
+                }
             }
+            tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
         }
-        Ok(value)
+        return value;
     }
 
-    pub async fn release_lock(&mut self, lock_key: String, value: String) -> redis::RedisResult<()> {
-        let mut conn_ref = self.conn.as_ref().lock().await;
-        let _old_value: String = conn_ref.get(lock_key.clone())?;
-        if _old_value == value {
-            conn_ref.del(lock_key)?
+    pub async fn release_lock(&mut self, lock_key: String, value: String) {
+        loop {
+            let _c = self.conn.clone();
+            let mut conn_ref = _c.as_ref().lock().await;
+            let v: Result<String, RedisError> = conn_ref.get(lock_key.clone());
+            match v {
+                Ok(_old_value) =>  {
+                    if _old_value == value {
+                        let ret: Result<(), RedisError> = conn_ref.del(lock_key.clone());
+                        match ret {
+                            Ok(_) => {
+                                break;
+                            },
+                            Err(_) => {
+                                if let Ok(conn) = self.client.blocking_lock().get_connection() {
+                                    self.conn = Arc::new(Mutex::new(conn));
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(_) => {
+                    if let Ok(conn) = self.client.blocking_lock().get_connection() {
+                        self.conn = Arc::new(Mutex::new(conn));
+                    }
+                }
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
         }
-        Ok(())
     }
 
-    pub async fn set(&mut self, key: String, value: String, timeout:usize) -> redis::RedisResult<()> {
-        let mut conn_ref = self.conn.as_ref().lock().await;
-        conn_ref.set_ex(key, value, timeout as u64)?;
-        Ok(())
+    pub async fn set(&mut self, key: String, value: String, timeout:usize) {
+        loop {
+            let _c = self.conn.clone();
+            let mut conn_ref = _c.as_ref().lock().await;
+            let ret: Result<(), RedisError> = conn_ref.set_ex(key.clone(), value.clone(), timeout as u64);
+            match ret {
+                Ok(_) => {
+                    break;
+                },
+                Err(_) => {
+                    if let Ok(conn) = self.client.blocking_lock().get_connection() {
+                        self.conn = Arc::new(Mutex::new(conn));
+                    }
+                }
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
+        }
     }
 
-    pub async fn get(&mut self, key: String) -> redis::RedisResult<String> {
-        let mut conn_ref = self.conn.as_ref().lock().await;
-        let v: String = conn_ref.get(key.clone())?;
-        Ok(v)
+    pub async fn get(&mut self, key: String) -> String {
+        loop {
+            let _c = self.conn.clone();
+            let mut conn_ref = _c.as_ref().lock().await;
+            match conn_ref.get(key.clone()) {
+                Ok(v) => return v,
+                Err(_) => {
+                    if let Ok(conn) = self.client.blocking_lock().get_connection() {
+                        self.conn = Arc::new(Mutex::new(conn));
+                    }
+                }
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
+        }
     }
 
     pub async fn expire(&mut self, key: String, timeout:usize) -> redis::RedisResult<()> {
-        let mut conn_ref = self.conn.as_ref().lock().await;
-        conn_ref.expire(key, timeout as i64)?;
+        loop {
+            let _c = self.conn.clone();
+            let mut conn_ref = _c.as_ref().lock().await;
+            let ret: Result<(), RedisError> = conn_ref.expire(key.clone(), timeout as i64);
+            match ret {
+                Ok(_) => {
+                    break;
+                },
+                Err(_) => {
+                    if let Ok(conn) = self.client.blocking_lock().get_connection() {
+                        self.conn = Arc::new(Mutex::new(conn));
+                    }
+                }
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
+        }
         Ok(())
     }
 
