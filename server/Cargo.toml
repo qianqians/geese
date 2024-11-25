@@ -16,16 +16,16 @@ signal-hook = "0.3.17"
 tokio = { version = "1.41.1", features = ["full"] }
 pyo3 = { version = "0.20.3", features = ["extension-module"] }
 proto = { path = "../crates/proto", version = "0.1.0" }
-dbproxy = { path = "../crates/dbproxy", version = "0.1.0" }
 wss = { path = "../crates/wss", version = "0.1.0" }
 config = { path = "../crates/config", version = "0.1.0" }
 log = { path = "../crates/log", version = "0.1.0" }
 health = { path = "../crates/health", version = "0.1.0" }
 consul = { path = "../crates/consul", version = "0.1.0" }
 local_ip = { path = "../crates/local_ip", version = "0.1.0" }
-gate = { path = "../crates/gate", version = "0.1.0" }
-hub = { path = "../crates/hub", version = "0.1.0" }
 redis_service = { path = "../crates/redis_service", version = "0.1.0" }
+dbproxy = { path = "./lib/dbproxy", version = "0.1.0" }
+gate = { path = "./lib/gate", version = "0.1.0" }
+hub = { path = "./lib/hub", version = "0.1.0" }
 
 [lib]
 name="pyhub"
