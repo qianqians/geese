@@ -12,7 +12,7 @@ uuid = "1.3.3"
 serde = "1.0.163"
 rand = "0.8.5"
 async-trait = "0.1.68"
-tokio = { version = "1.35.1", features = ["full"] }
+tokio = { version = "1.41.1", features = ["full"] }
 net = { path = "../net", version = "0.1.0" }
 redis_service = { path = "../redis_service", version = "0.1.0" }
 wss = { path = "../wss", version = "0.1.0" }

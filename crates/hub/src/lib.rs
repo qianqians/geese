@@ -197,7 +197,7 @@ impl HubContext {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             let mut _server_handle = _server.as_ref().lock().await;
-        _server_handle.gate_host(gate_name).await
+            _server_handle.gate_host(gate_name).await
         })
     }
 

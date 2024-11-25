@@ -6,19 +6,19 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = "0.13.0"
-bevy_egui = "0.25.0"
-winit = "0.29.10"
-image = "0.24.8"
-embed-resource = "2.4.1"
+bevy = "0.14.2"
+bevy_egui = "0.30.1"
+winit = "0.30.5"
+image = "0.25.5"
 thrift = "0.17.0"
 serde = "1.0.163"
 serde_json = "1.0.96"
 tracing = "0.1.37"
 uuid = "1.3.3"
 consulrs = "0.1.0"
+async-channel = "2.3.1"
 tokio = { version = "1.28.2", features = ["full"] }
-pyo3 = { version = "0.20.0", features = ["extension-module"] }
+pyo3 = { version = "0.20.3", features = ["extension-module"] }
 pyo3-asyncio = { version = "0.20.0", features = ["attributes", "tokio-runtime"] }
 client = { path = "../crates/client", version = "0.1.0" }
 
