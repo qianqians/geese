@@ -1,0 +1,24 @@
+[package]
+name = "dbproxy"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+thrift = "0.17.0"
+mongodb = "3.1.0"
+tracing = "0.1.37"
+async-trait = "0.1.68"
+serde = "1.0.163"
+serde_json = "1.0.96"
+tokio = { version = "1.41.1", features = ["full"] }
+mongo = { path = "../../../crates/mongo", version = "0.1.0" }
+proto = { path = "../../../crates/proto", version = "0.1.0" }
+queue = { path = "../../../crates/queue", version = "0.1.0" }
+time = { path = "../../../crates/time", version = "0.1.0" }
+log = { path = "../../../crates/log", version = "0.1.0" }
+net = { path = "../../../crates/net", version = "0.1.0" }
+redis_service = { path = "../../../crates/redis_service", version = "0.1.0" }
+close_handle = { path = "../../../crates/close_handle", version = "0.1.0" }
+health = { path = "../../../crates/health", version = "0.1.0" }
