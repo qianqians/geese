@@ -9,11 +9,11 @@ edition = "2021"
 tracing = "0.1.37"
 async-trait = "0.1.68"
 native-tls = "0.2.11"
-tungstenite = "0.21.0"
+tungstenite = "0.24.0"
 futures-util = "0.3.30"
 tokio-native-tls = "0.3.1"
 url = { version = "2.5.0" }
-tokio-tungstenite = { version = "0.21.0", features = ["native-tls"] }
-tokio = { version = "1.35.1", features = ["full"] }
+tokio-tungstenite = { version = "0.24.0", features = ["native-tls"] }
+tokio = { version = "1.41.1", features = ["full"] }
 queue = { path = "../queue", version = "0.1.0" }
 net = { path = "../net", version = "0.1.0" }

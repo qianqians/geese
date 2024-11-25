@@ -7,5 +7,5 @@ edition = "2021"
 
 [dependencies]
 tracing = "0.1.37"
-axum = "0.6.20"
-tokio = { version = "1.35.1", features = ["full"] }
+axum = "0.7.9"
+tokio = { version = "1.41.1", features = ["full"] }

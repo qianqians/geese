@@ -16,7 +16,7 @@ struct SceneState {
 
 fn main() {
     App::new()
-        .insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)))
+        .insert_resource(ClearColor(Color::srgb(0.0, 0.0, 0.0)))
         .insert_resource(Msaa::Sample4)
         .init_resource::<SceneState>()
         .add_plugins(DefaultPlugins.set(WindowPlugin{
@@ -78,12 +78,12 @@ fn setup_system(
 
     commands.spawn(PbrBundle {
         mesh: meshes.add(Plane3d::default().mesh().size(5.0, 5.0)),
-        material: materials.add(Color::rgb(0.3, 0.5, 0.3)),
+        material: materials.add(Color::srgb(0.3, 0.5, 0.3)),
         ..Default::default()
     });
     commands.spawn(PbrBundle {
         mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
-        material: materials.add(Color::rgb(0.8, 0.7, 0.6)),
+        material: materials.add(Color::srgb(0.8, 0.7, 0.6)),
         transform: Transform::from_xyz(0.0, 0.5, 0.0),
         ..Default::default()
     });

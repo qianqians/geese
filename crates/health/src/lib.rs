@@ -36,8 +36,9 @@ impl HealthHandle {
             .route("/health", get(HealthHandle::health_handle))
             .with_state(handle.clone());
         
-        axum::Server::bind(&host.parse().unwrap())
-            .serve(app.into_make_service())
+        let listener = tokio::net::TcpListener::bind(host).await.unwrap();
+
+        axum::serve(listener, app.into_make_service())
             .await
             .unwrap();
     }
