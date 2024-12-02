@@ -20,7 +20,7 @@ async-channel = "2.3.1"
 tokio = { version = "1.28.2", features = ["full"] }
 pyo3 = { version = "0.20.3", features = ["extension-module"] }
 pyo3-asyncio = { version = "0.20.0", features = ["attributes", "tokio-runtime"] }
-client = { path = "../crates/client", version = "0.1.0" }
+client = { path = "../client/lib/client", version = "0.1.0" }
 
 [[bin]]
 name="edit"
