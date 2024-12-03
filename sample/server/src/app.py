@@ -22,14 +22,14 @@ class RankSubEntity(subentity):
         return rankImpl
 
 class SamplePlayer(player):
-    def __init__(self, entity_id: str, gate_name: str, conn_id: str):
+    def __init__(self, entity_id: str, gate_name: str, conn_id: str, accound_id: int):
         player.__init__(self, "login", "SamplePlayer", entity_id, gate_name, conn_id, False)
         self.login_module = login_module(self)
-        
         self.login_module.on_login.append(lambda rsp, _sdk_uuid: self.login_callback(rsp, _sdk_uuid))
+        self.accound_id = accound_id
         
     def full_info(self) -> dict:
-        return {}
+        return {"accound_id":self.accound_id}
 
     def hub_info(self) -> dict:
         return {}
@@ -68,7 +68,7 @@ class LoginEventHandle(login_event_handle):
             app().trace("LoginEventHandle on_login! info:{}".format(info))
             self.__replace_client__(info["gate"], info["conn_id"], new_gate_name, new_conn_id, False, "其他位置登录!")
         else:
-            _p = SamplePlayer(str(uuid.uuid4()), new_gate_name, new_conn_id)
+            _p = SamplePlayer(str(uuid.uuid4()), new_gate_name, new_conn_id, accound_id)
             app().player_mgr.add_player(_p)
             app().trace("LoginEventHandle on_login! create_main_remote_entity:{} begin!".format(_p))
             _p.create_main_remote_entity()
@@ -87,7 +87,7 @@ class LoginEventHandle(login_event_handle):
             app().trace("LoginEventHandle on_reconnect! info:{}".format(info))
             self.__replace_client__(info["gate"], info["conn_id"], new_gate_name, new_conn_id, True, "其他位置登录!")
         else:
-            _p = SamplePlayer(str(uuid.uuid4()), new_gate_name, new_conn_id)
+            _p = SamplePlayer(str(uuid.uuid4()), new_gate_name, new_conn_id, accound_id)
             app().player_mgr.add_player(_p)
             app().trace("LoginEventHandle on_reconnect! create_main_remote_entity:{} begin!".format(_p))
             _p.create_main_remote_entity()
@@ -99,7 +99,9 @@ class LoginEventHandle(login_event_handle):
     
 class PlayerEventHandle(player_event_handle):
     def player_offline(self, _player:player) -> dict:
-        return _player.full_info()
+        info = _player.full_info()
+        app().redis_proxy.delete("sample:player_info:{}".format(info["accound_id"]))
+        return info
     
 def main(cfg_file:str):
     _app = app()
