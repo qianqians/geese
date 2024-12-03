@@ -66,7 +66,7 @@ class LoginEventHandle(login_event_handle):
         if info_str is not None and info_str != "":
             info = json.loads(info_str)
             app().trace("LoginEventHandle on_login! info:{}".format(info))
-            self.__replace_client__(info["gate"], info["conn_id"], new_gate_name, new_conn_id, "其他位置登录!")
+            self.__replace_client__(info["gate"], info["conn_id"], new_gate_name, new_conn_id, False, "其他位置登录!")
         else:
             _p = SamplePlayer(str(uuid.uuid4()), new_gate_name, new_conn_id)
             app().player_mgr.add_player(_p)
@@ -84,7 +84,7 @@ class LoginEventHandle(login_event_handle):
         if info_str is not None and info_str != "":
             info = json.loads(info_str)
             app().trace("LoginEventHandle on_reconnect! info:{}".format(info))
-            self.__replace_client__(info["gate"], info["conn_id"], new_gate_name, new_conn_id, "其他位置登录!")
+            self.__replace_client__(info["gate"], info["conn_id"], new_gate_name, new_conn_id, True, "其他位置登录!")
         else:
             _p = SamplePlayer(str(uuid.uuid4()), new_gate_name, new_conn_id)
             app().player_mgr.add_player(_p)
