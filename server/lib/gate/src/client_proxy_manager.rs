@@ -17,7 +17,6 @@ use tcp::tcp_server::TcpListenCallback;
 use wss::wss_socket::{WSSReader, WSSWriter};
 use wss::wss_server::WSSListenCallback;
 use redis_service::redis_service::create_lock_key;
-use time::utc_unix_time;
 use tracing::{trace, info, error};
 
 use crate::conn_manager::ConnManager;
@@ -158,7 +157,7 @@ pub struct ClientProxy {
 }
 
 impl ClientProxy {
-    pub fn new(_conn_id: String, _wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>, _conn_mgr: Arc<Mutex<ConnManager>>) -> ClientProxy {
+    pub fn new(_conn_id: String, _wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>, _conn_mgr: Arc<Mutex<ConnManager>>, start_time: i64) -> ClientProxy {
         ClientProxy {
             conn_id: _conn_id,
             wr: _wr,
@@ -167,7 +166,7 @@ impl ClientProxy {
             entities: BTreeSet::new(),
             wait_transfer_entity: BTreeSet::new(),
             conn_mgr: _conn_mgr,
-            last_heartbeats_timetmp: utc_unix_time()
+            last_heartbeats_timetmp: start_time
         }
     }
 
@@ -277,7 +276,9 @@ impl TcpListenCallback for TcpClientProxyManager {
         let _conn_id = Uuid::new_v4().to_string();
         
         let _conn_mgr_clone = self.conn_mgr.clone();
-        let _clientproxy = Arc::new(Mutex::new(ClientProxy::new(_conn_id.clone(), _wr_arc.clone(), _conn_mgr_clone)));
+        let _conn_mgr_clone_offset = self.conn_mgr.as_ref().lock().await;
+        let _offset_time = _conn_mgr_clone_offset.offset_time.as_ref().lock().await;
+        let _clientproxy = Arc::new(Mutex::new(ClientProxy::new(_conn_id.clone(), _wr_arc.clone(), _conn_mgr_clone, _offset_time.utc_unix_time_with_offset())));
         let _clientproxy_clone = _clientproxy.clone();
         let _client_msg_handle: Arc<Mutex<GateClientMsgHandle>>;
         {
@@ -320,7 +321,9 @@ impl WSSListenCallback for WSSClientProxyManager {
         let _conn_id = Uuid::new_v4().to_string();
         
         let _conn_mgr_clone = self.conn_mgr.clone();
-        let _clientproxy = Arc::new(Mutex::new(ClientProxy::new(_conn_id.clone(), _wr_arc.clone(), _conn_mgr_clone)));
+        let _conn_mgr_clone_offset = self.conn_mgr.as_ref().lock().await;
+        let _offset_time = _conn_mgr_clone_offset.offset_time.as_ref().lock().await;
+        let _clientproxy = Arc::new(Mutex::new(ClientProxy::new(_conn_id.clone(), _wr_arc.clone(), _conn_mgr_clone, _offset_time.utc_unix_time_with_offset())));
         let _clientproxy_clone = _clientproxy.clone();
         let _client_msg_handle: Arc<Mutex<GateClientMsgHandle>>;
         {

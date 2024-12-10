@@ -109,9 +109,8 @@ impl ClientPump {
         })
     }
 
-    pub fn poll_conn_msg<'a>(slf: PyRefMut<'a, Self>, py_handle: &'a PyAny) -> bool {
+    pub fn poll_conn_msg<'a>(slf: PyRefMut<'a, Self>, py_handle: Py<PyAny>) -> bool {
         let py = slf.py();
-        let _py_handle = py_handle.into_py(py);
-        GateMsgHandle::poll(slf.msg_handle.clone(), py, _py_handle)
+        GateMsgHandle::poll(slf.msg_handle.clone(), py, py_handle)
     }
 }

@@ -12,7 +12,7 @@ use redis_service::redis_mq_channel::RedisMQReader;
 use close_handle::CloseHandle;
 use mongo::MongoProxy;
 use health::HealthHandle;
-use time::utc_unix_time;
+use time::OffsetTime;
 use async_trait::async_trait;
 
 mod db;
@@ -100,6 +100,7 @@ pub struct DBProxyServer {
     handle: Arc<Mutex<DBProxyHubMsgHandle>>,
     health: Arc<Mutex<HealthHandle>>,
     close: Arc<Mutex<CloseHandle>>,
+    offset_time: OffsetTime,
     server: RedisService
 }
 
@@ -130,6 +131,7 @@ impl DBProxyServer {
             handle: _handle,
             health: health_handle,
             close: _close,
+            offset_time: OffsetTime::new(),
             server: _s
         })
     }
@@ -152,9 +154,10 @@ impl DBProxyServer {
 
     pub async fn run(&mut self) {
         loop {
-            let begin = utc_unix_time();
+            let _offset_time = &self.offset_time;
+            let begin = _offset_time.utc_unix_time_with_offset();
             DBProxyHubMsgHandle::poll(self.handle.clone()).await;
-            let tick = utc_unix_time() - begin;
+            let tick = _offset_time.utc_unix_time_with_offset() - begin;
 
             let _c_ref = self.close.as_ref().lock().await;
             if _c_ref.is_closed() {
