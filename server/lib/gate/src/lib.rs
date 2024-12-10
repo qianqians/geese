@@ -12,7 +12,7 @@ use redis_service::redis_service::{RedisService, create_host_cache_key};
 use close_handle::CloseHandle;
 use health::HealthHandle;
 use consul::ConsulImpl;
-use time::utc_unix_time;
+use time::OffsetTime;
 
 mod client_proxy_manager;
 mod hub_proxy_manager;
@@ -54,6 +54,7 @@ pub struct GateServer {
     conn_mgr: Arc<Mutex<ConnManager>>,
     redis: Arc<Mutex<RedisService>>,
     health: Arc<Mutex<HealthHandle>>,
+    offset_time: Arc<Mutex<OffsetTime>>,
     close: Arc<Mutex<CloseHandle>>
 }
 
@@ -68,12 +69,14 @@ impl GateServer {
         consul_impl: Arc<Mutex<ConsulImpl>>,
         health_handle: Arc<Mutex<HealthHandle>>) -> Result<GateServer, Box<dyn std::error::Error>> 
     {
+        let offset_time = Arc::new(Mutex::new(OffsetTime::new()));
+
         let _hub_handle = GateHubMsgHandle::new();
-        let _client_handle = GateClientMsgHandle::new();
+        let _client_handle = GateClientMsgHandle::new(offset_time.clone());
         let _close = Arc::new(Mutex::new(CloseHandle::new()));
         
         let _conn_mgr = Arc::new(Mutex::new(ConnManager::new(
-            gate_name.clone(), gate_hub_host.clone(), _hub_handle, _client_handle, consul_impl, _close.clone())));
+            gate_name.clone(), gate_hub_host.clone(), _hub_handle, _client_handle, consul_impl, offset_time.clone(), _close.clone())));
         let _conn_mgr_clone = _conn_mgr.clone();
 
         let _redis_service = Arc::new(Mutex::new(RedisService::new(
@@ -120,15 +123,17 @@ impl GateServer {
             wss_server: _wss_s,
             conn_mgr: _conn_mgr_clone,
             health: health_handle,
+            offset_time: offset_time,
             redis: _redis_service,
             close: _close
         })
     }
 
     pub async fn run(&mut self) {
-        let mut flush_gate_key_time = utc_unix_time();
+        let offset_time_impl = self.offset_time.as_ref().lock().await;
+        let mut flush_gate_key_time = offset_time_impl.utc_unix_time_with_offset();
         loop {
-            let begin = utc_unix_time();
+            let begin = offset_time_impl.utc_unix_time_with_offset();
             
             let hub_msg_handle:Option<Arc<Mutex<GateHubMsgHandle>>>;
             let client_msg_handle: Option<Arc<Mutex<GateClientMsgHandle>>>;
@@ -148,7 +153,7 @@ impl GateServer {
                 _handle_l.poll().await;
             }
 
-            let tick = utc_unix_time() - begin;
+            let tick = offset_time_impl.utc_unix_time_with_offset() - begin;
 
             let _c_ref = self.close.as_ref().lock().await;
             if _c_ref.is_closed() {
@@ -165,8 +170,8 @@ impl GateServer {
                 _health.set_health_status(false);
             }
 
-            if (utc_unix_time() - flush_gate_key_time) > 1000 * 10 {
-                flush_gate_key_time = utc_unix_time();
+            if (offset_time_impl.utc_unix_time_with_offset() - flush_gate_key_time) > 1000 * 10 {
+                flush_gate_key_time = offset_time_impl.utc_unix_time_with_offset();
                 let mut _r = self.redis.as_ref().lock().await;
                 let _ = _r.expire(self.gate_name.clone(), 10).await;
             }

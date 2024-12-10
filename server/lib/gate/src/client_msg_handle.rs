@@ -33,7 +33,7 @@ use proto::client::{
 };
 
 use queue::Queue;
-use time::{utc_unix_time, utc_unix_time_with_offset};
+use time::OffsetTime;
 
 use crate::client_proxy_manager::{ClientProxy, request_login, request_reconnect};
 use crate::client_proxy_manager::entry_hub_service;
@@ -46,7 +46,8 @@ struct ClientEvent {
 }
 
 pub struct GateClientMsgHandle {
-    queue: Queue<Box<ClientEvent>>
+    queue: Queue<Box<ClientEvent>>,
+    offset_time: Arc<Mutex<OffsetTime>>
 }
 
 fn deserialize(data: Vec<u8>) -> Result<GateClientService, Box<dyn std::error::Error>> {
@@ -59,9 +60,10 @@ fn deserialize(data: Vec<u8>) -> Result<GateClientService, Box<dyn std::error::E
 }
 
 impl GateClientMsgHandle {
-    pub fn new() -> Arc<Mutex<GateClientMsgHandle>> {
+    pub fn new(offset_time: Arc<Mutex<OffsetTime>>) -> Arc<Mutex<GateClientMsgHandle>> {
         Arc::new(Mutex::new(GateClientMsgHandle {
             queue: Queue::new(), 
+            offset_time: offset_time
         }))
     }
 
@@ -108,7 +110,7 @@ impl GateClientMsgHandle {
                 GateClientService::CallRsp(ev) => GateClientMsgHandle::do_call_hub_rsp(proxy, ev).await,
                 GateClientService::CallErr(ev) => GateClientMsgHandle::do_call_hub_err(proxy, ev).await,
                 GateClientService::CallNtf(ev) => GateClientMsgHandle::do_call_hub_ntf(proxy, ev).await,
-                GateClientService::Heartbeats(ev) => GateClientMsgHandle::do_call_gate_heartbeats(proxy, ev).await
+                GateClientService::Heartbeats(ev) => GateClientMsgHandle::do_call_gate_heartbeats(proxy, self.offset_time.clone(), ev).await
             }
         }
     }
@@ -490,13 +492,14 @@ impl GateClientMsgHandle {
         }
     }
 
-    pub async fn do_call_gate_heartbeats(_proxy: Weak<Mutex<ClientProxy>>, _: ClientCallGateHeartbeats) {
+    pub async fn do_call_gate_heartbeats(_proxy: Weak<Mutex<ClientProxy>>, offset_time: Arc<Mutex<OffsetTime>>, _: ClientCallGateHeartbeats) {
         trace!("do_client_event call_gate_heartbeats begin!");
 
         if let Some(_proxy_handle) = _proxy.upgrade() {
             let mut _client = _proxy_handle.as_ref().lock().await;
-            _client.set_timetmp(utc_unix_time());
-            if !_client.send_client_msg(ClientService::Heartbeats(GateCallHeartbeats::new(utc_unix_time_with_offset()))).await {
+            let _offset_time = offset_time.as_ref().lock().await;
+            _client.set_timetmp(_offset_time.utc_unix_time_with_offset());
+            if !_client.send_client_msg(ClientService::Heartbeats(GateCallHeartbeats::new(_offset_time.utc_unix_time_with_offset()))).await {
                 let _conn_mgr_arc = _client.get_conn_mgr();
                 let mut _conn_mgr_tmp = _conn_mgr_arc.as_ref().lock().await;
                 _conn_mgr_tmp.delete_client_proxy(_client.get_conn_id());

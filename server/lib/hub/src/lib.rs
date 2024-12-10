@@ -261,24 +261,24 @@ impl HubContext {
         })
     }
 
-    pub fn entry_hub_service(slf: PyRefMut<'_, Self>, service_name: String) -> PyResult<&PyAny> {
+    pub fn entry_hub_service(slf: PyRefMut<'_, Self>, service_name: String) -> PyResult<Bound<PyAny>> {
         trace!("entry_hub_service begin!");
 
         let _server = slf.server.clone();
         let py = slf.py();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut _server_handle = _server.as_ref().lock().await;
             let _hub_id = _server_handle.entry_hub_service(service_name).await;
             Ok(_hub_id.clone())
         })
     }
 
-    pub fn entry_direct_hub_server(slf: PyRefMut<'_, Self>, hub_name: String) -> PyResult<&PyAny> {
+    pub fn entry_direct_hub_server(slf: PyRefMut<'_, Self>, hub_name: String) -> PyResult<Bound<PyAny>> {
         trace!("entry_direct_hub_server begin!");
 
         let _server = slf.server.clone();
         let py = slf.py();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut _server_handle = _server.as_ref().lock().await;
             _server_handle.entry_direct_hub_server(hub_name).await;
             Ok(())
@@ -296,11 +296,11 @@ impl HubContext {
         })
     }
 
-    pub fn entry_gate_service(slf: PyRefMut<'_, Self>, gate_name: String) -> PyResult<&PyAny> {
+    pub fn entry_gate_service(slf: PyRefMut<'_, Self>, gate_name: String) -> PyResult<Bound<PyAny>> {
         trace!("entry_gate_service begin!");
 
         let _server = slf.server.clone();let py = slf.py();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut _server_handle = _server.as_ref().lock().await;
             _server_handle.entry_gate_service(gate_name).await;
             Ok(())
@@ -967,10 +967,9 @@ impl HubConnMsgPump {
         })
     }
 
-    pub fn poll_conn_msg<'a>(slf: PyRefMut<'a, Self>, py_handle: &'a PyAny) -> bool {
+    pub fn poll_conn_msg<'a>(slf: PyRefMut<'a, Self>, py_handle: Py<PyAny>) -> bool {
         let py = slf.py();
-        let _py_handle = py_handle.into_py(py);
-        ConnCallbackMsgHandle::poll(slf.conn_msg_handle.clone(), py, _py_handle)
+        ConnCallbackMsgHandle::poll(slf.conn_msg_handle.clone(), py, py_handle)
     }
 }
 
@@ -990,9 +989,8 @@ impl HubDBMsgPump {
         })
     }
 
-    pub fn poll_db_msg<'a>(slf: PyRefMut<'a, Self>, py_handle: &'a PyAny) -> bool {
+    pub fn poll_db_msg<'a>(slf: PyRefMut<'a, Self>, py_handle: Py<PyAny>) -> bool {
         let py = slf.py();
-        let _py_handle = py_handle.into_py(py);
-        DBCallbackMsgHandle::poll(slf.db_msg_handle.clone(), py, _py_handle)
+        DBCallbackMsgHandle::poll(slf.db_msg_handle.clone(), py, py_handle)
     }
 }

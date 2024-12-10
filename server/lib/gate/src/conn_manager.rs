@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 use consul::ConsulImpl;
 use close_handle::CloseHandle;
 use redis_service::redis_service::RedisService;
-use time::utc_unix_time;
+use time::OffsetTime;
 
 use proto::hub::{
     HubService,
@@ -21,6 +21,7 @@ use crate::hub_msg_handle::GateHubMsgHandle;
 use crate::client_msg_handle::GateClientMsgHandle;
 
 pub struct ConnManager {
+    pub offset_time: Arc<Mutex<OffsetTime>>,
     gate_name: String,
     gate_host: String,
     redis_service: Option<Arc<Mutex<RedisService>>>,
@@ -41,6 +42,7 @@ impl ConnManager {
         _hub_handle: Arc<Mutex<GateHubMsgHandle>>, 
         _client_handle: Arc<Mutex<GateClientMsgHandle>>, 
         _consul_impl: Arc<Mutex<ConsulImpl>>,
+        _offset_time: Arc<Mutex<OffsetTime>>,
         _close: Arc<Mutex<CloseHandle>>) -> ConnManager 
     {
         ConnManager {
@@ -54,6 +56,7 @@ impl ConnManager {
             client_msg_handle: _client_handle,
             entities: EntityManager::new(),
             consul_impl: _consul_impl,
+            offset_time: _offset_time,
             close: _close
         }
     }
@@ -166,7 +169,9 @@ impl ConnManager {
     }
 
     pub async fn poll(&mut self) {
-        let _timetmp = utc_unix_time();
+        let _offset_time_arc = self.offset_time.clone();
+        let _offset_time = _offset_time_arc.as_ref().lock().await;
+        let _timetmp = _offset_time.utc_unix_time_with_offset();
         let _clients = self.get_all_client_proxy();
         for _client_arc in _clients.iter() {
             let _client_conn_id:String;

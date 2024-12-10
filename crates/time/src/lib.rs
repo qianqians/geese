@@ -1,22 +1,29 @@
 use std::sync::atomic::{AtomicI64, Ordering};
 use chrono::prelude::*;
 
-pub fn utc_unix_time() -> i64 {
-    let utc: DateTime<Utc> = Utc::now();
-    utc.timestamp_millis()
+pub struct OffsetTime {
+    off_set: AtomicI64
 }
 
-static mut OFFSET: AtomicI64 = AtomicI64::new(0);
+impl OffsetTime {
+    pub fn new() -> OffsetTime {
+        OffsetTime {
+            off_set: AtomicI64::new(0)
+        }
+    }
 
-pub fn set_time_offset(offset: i64) {
-    unsafe {
-        OFFSET.store(offset, Ordering::SeqCst)
+    fn utc_unix_time(&self) -> i64 {
+        let utc: DateTime<Utc> = Utc::now();
+        utc.timestamp_millis()
+    }
+
+    pub fn set_time_offset(&mut self, offset: i64) {
+        self.off_set.store(offset, Ordering::SeqCst)
+    }
+
+    pub fn utc_unix_time_with_offset(&self) -> i64 {
+        let offset = self.off_set.load(Ordering::SeqCst);
+        self.utc_unix_time() + offset
     }
 }
 
-pub fn utc_unix_time_with_offset() -> i64 {
-    unsafe {
-        let offset = OFFSET.load(Ordering::SeqCst);
-        utc_unix_time() + offset
-    }
-}
