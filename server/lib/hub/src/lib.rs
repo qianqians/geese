@@ -15,6 +15,7 @@ use health::HealthHandle;
 use consul::ConsulImpl;
 use config::{load_data_from_file, load_cfg_from_data};
 use local_ip::get_local_ip;
+use time::OffsetTime;
 
 use proto::common::{
     Msg,
@@ -105,6 +106,7 @@ pub struct HubContext {
     _join_health: JoinHandle<()>,
     _listen_rt: tokio::runtime::Runtime,
     _health_rt: tokio::runtime::Runtime,
+    offset_time: Arc<Mutex<OffsetTime>>,
     health_handle: Arc<Mutex<HealthHandle>>,
     consul_impl: Arc<Mutex<ConsulImpl>>,
     server: Arc<Mutex<HubServer>>
@@ -135,6 +137,8 @@ impl HubContext {
 
         let (_, _guard) = log::init(cfg.log_level, cfg.log_dir, cfg.log_file, cfg.jaeger_url, Some(_name.clone()));
     
+        let offset_time = Arc::new(Mutex::new(OffsetTime::new()));
+
         let _health_port = cfg.health_port;
         let _health_host = format!("0.0.0.0:{}", _health_port);
         let _health_handle = HealthHandle::new(_health_host.clone());
@@ -168,6 +172,7 @@ impl HubContext {
             health_port: _health_port,
             save_time_interval: cfg.save_time_interval,
             migrate_time_interval: cfg.migrate_time_interval,
+            offset_time: offset_time,
             health_handle: _health_handle,
             _guard: _guard,
             _join_health: _join_health,
@@ -198,6 +203,26 @@ impl HubContext {
         rt.block_on(async move {
             let mut _server_handle = _server.as_ref().lock().await;
             _server_handle.gate_host(gate_name).await
+        })
+    }
+
+    pub fn set_time_offset(slf: PyRefMut<'_, Self>, offset: i64) {
+        trace!("set_time_offset offset:{} begin!", offset);
+
+        let _offset_time = slf.offset_time.clone();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _offset_time_handle = _offset_time.as_ref().lock().await;
+            _offset_time_handle.set_time_offset(offset);
+        })
+    }
+
+    pub fn utc_unix_time_with_offset(slf: PyRefMut<'_, Self>) -> i64 {
+        let _offset_time = slf.offset_time.clone();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _offset_time_handle = _offset_time.as_ref().lock().await;
+            _offset_time_handle.utc_unix_time_with_offset()
         })
     }
 

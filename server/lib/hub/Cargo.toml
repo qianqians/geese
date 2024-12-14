@@ -28,5 +28,6 @@ config = { path = "../../../crates/config", version = "0.1.0" }
 log = { path = "../../../crates/log", version = "0.1.0" }
 close_handle = { path = "../../../crates/close_handle", version = "0.1.0" }
 local_ip = { path = "../../../crates/local_ip", version = "0.1.0" }
+time = { path = "../../../crates/time", version = "0.1.0" }
 health = { path = "../../../crates/health", version = "0.1.0" }
 consul = { path = "../../../crates/consul", version = "0.1.0" }

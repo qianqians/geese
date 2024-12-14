@@ -172,6 +172,12 @@ class app(object):
         
     def close(self):
         self.__is_run__ = False
+
+    def set_time_offset(self, offset_time:int):
+        self.ctx.set_time_offset(offset_time)
+
+    def utc_unix_time_with_offset(self) -> int :
+        self.ctx.utc_unix_time_with_offset()
         
     def poll_db_msg(self):
         while True:
