@@ -130,9 +130,13 @@ impl GateServer {
     }
 
     pub async fn run(&mut self) {
-        let offset_time_impl = self.offset_time.as_ref().lock().await;
-        let mut flush_gate_key_time = offset_time_impl.utc_unix_time_with_offset();
+        let mut flush_gate_key_time:i64;
+        {
+            let offset_time_impl = self.offset_time.as_ref().lock().await;
+            flush_gate_key_time = offset_time_impl.utc_unix_time_with_offset();
+        }
         loop {
+            let offset_time_impl = self.offset_time.as_ref().lock().await;
             let begin = offset_time_impl.utc_unix_time_with_offset();
             
             let hub_msg_handle:Option<Arc<Mutex<GateHubMsgHandle>>>;
