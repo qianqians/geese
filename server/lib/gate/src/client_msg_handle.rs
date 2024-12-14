@@ -498,8 +498,9 @@ impl GateClientMsgHandle {
         if let Some(_proxy_handle) = _proxy.upgrade() {
             let mut _client = _proxy_handle.as_ref().lock().await;
             let _offset_time = offset_time.as_ref().lock().await;
-            _client.set_timetmp(_offset_time.utc_unix_time_with_offset());
-            if !_client.send_client_msg(ClientService::Heartbeats(GateCallHeartbeats::new(_offset_time.utc_unix_time_with_offset()))).await {
+            let _utc_unix_time = _offset_time.utc_unix_time_with_offset();
+            _client.set_timetmp(_utc_unix_time);
+            if !_client.send_client_msg(ClientService::Heartbeats(GateCallHeartbeats::new(_utc_unix_time))).await {
                 let _conn_mgr_arc = _client.get_conn_mgr();
                 let mut _conn_mgr_tmp = _conn_mgr_arc.as_ref().lock().await;
                 _conn_mgr_tmp.delete_client_proxy(_client.get_conn_id());
