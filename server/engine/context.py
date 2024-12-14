@@ -43,6 +43,12 @@ class context(object):
     def gate_host(self, gate_name:str):
         return self.ctx.gate_host(gate_name)
     
+    def set_time_offset(self, offset_time:int):
+        self.ctx.set_time_offset(offset_time)
+
+    def utc_unix_time_with_offset(self) -> int :
+        self.ctx.utc_unix_time_with_offset()
+    
     def flush_hub_host_cache(self):
         __tick__ = Timer(10, self.flush_hub_host_cache)
         __tick__.start()
