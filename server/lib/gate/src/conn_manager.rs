@@ -21,7 +21,7 @@ use crate::hub_msg_handle::GateHubMsgHandle;
 use crate::client_msg_handle::GateClientMsgHandle;
 
 pub struct ConnManager {
-    pub offset_time: Arc<Mutex<OffsetTime>>,
+    offset_time: Arc<Mutex<OffsetTime>>,
     gate_name: String,
     gate_host: String,
     redis_service: Option<Arc<Mutex<RedisService>>>,
@@ -168,10 +168,13 @@ impl ConnManager {
         }
     }
 
+    pub async fn get_utc_unix_time_with_offset(&self) -> i64 {
+        let _offset_time = self.offset_time.as_ref().lock().await;
+        _offset_time.utc_unix_time_with_offset()
+    }
+
     pub async fn poll(&mut self) {
-        let _offset_time_arc = self.offset_time.clone();
-        let _offset_time = _offset_time_arc.as_ref().lock().await;
-        let _timetmp = _offset_time.utc_unix_time_with_offset();
+        let _timetmp = self.get_utc_unix_time_with_offset().await;
         let _clients = self.get_all_client_proxy();
         for _client_arc in _clients.iter() {
             let _client_conn_id:String;

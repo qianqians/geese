@@ -280,8 +280,7 @@ impl TcpListenCallback for TcpClientProxyManager {
         {
             let _conn_mgr_offset_clone = self.conn_mgr.clone();
             let _conn_mgr_offset = _conn_mgr_offset_clone.as_ref().lock().await;
-            let _offset_time = _conn_mgr_offset.offset_time.as_ref().lock().await;
-            _utc_unix_time = _offset_time.utc_unix_time_with_offset()
+            _utc_unix_time = _conn_mgr_offset.get_utc_unix_time_with_offset().await;
         }
         let _clientproxy = Arc::new(Mutex::new(ClientProxy::new(_conn_id.clone(), _wr_arc.clone(), _conn_mgr_clone, _utc_unix_time)));
         let _clientproxy_clone = _clientproxy.clone();
@@ -330,8 +329,7 @@ impl WSSListenCallback for WSSClientProxyManager {
         {
             let _conn_mgr_offset_clone = self.conn_mgr.clone();
             let _conn_mgr = _conn_mgr_offset_clone.as_ref().lock().await;
-            let _offset_time = _conn_mgr.offset_time.as_ref().lock().await;
-            utc_uinx_time = _offset_time.utc_unix_time_with_offset();
+            utc_uinx_time = _conn_mgr.get_utc_unix_time_with_offset().await;
         }
         let _clientproxy = Arc::new(Mutex::new(ClientProxy::new(_conn_id.clone(), _wr_arc.clone(), _conn_mgr_clone, utc_uinx_time)));
         let _clientproxy_clone = _clientproxy.clone();

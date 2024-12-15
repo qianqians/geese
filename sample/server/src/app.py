@@ -61,6 +61,7 @@ class LoginEventHandle(login_event_handle):
     async def on_login(self, new_gate_name:str, new_conn_id:str, sdk_uuid:str, argvs:dict):
         app().trace("LoginEventHandle on_login!")
         accound_id = await self.__get_client_account_id__(sdk_uuid)
+        app().trace("LoginEventHandle on_login! accound_id:{}".format(accound_id))
         info_str = app().redis_proxy.get("sample:player_info:{}".format(accound_id))
         app().trace("LoginEventHandle on_login! redis_cache info_str:{}".format(info_str))
         if info_str is not None and info_str != "":

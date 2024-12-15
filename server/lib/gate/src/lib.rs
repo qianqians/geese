@@ -129,15 +129,15 @@ impl GateServer {
         })
     }
 
+    pub async fn get_utc_unix_time_with_offset(&self) -> i64{
+        let offset_time_impl = self.offset_time.as_ref().lock().await;
+        offset_time_impl.utc_unix_time_with_offset()
+    }
+
     pub async fn run(&mut self) {
-        let mut flush_gate_key_time:i64;
-        {
-            let offset_time_impl = self.offset_time.as_ref().lock().await;
-            flush_gate_key_time = offset_time_impl.utc_unix_time_with_offset();
-        }
+        let mut flush_gate_key_time = self.get_utc_unix_time_with_offset().await;
         loop {
-            let offset_time_impl = self.offset_time.as_ref().lock().await;
-            let begin = offset_time_impl.utc_unix_time_with_offset();
+            let begin = self.get_utc_unix_time_with_offset().await;
             
             let hub_msg_handle:Option<Arc<Mutex<GateHubMsgHandle>>>;
             let client_msg_handle: Option<Arc<Mutex<GateClientMsgHandle>>>;
@@ -157,7 +157,7 @@ impl GateServer {
                 _handle_l.poll().await;
             }
 
-            let tick = offset_time_impl.utc_unix_time_with_offset() - begin;
+            let tick = self.get_utc_unix_time_with_offset().await - begin;
 
             let _c_ref = self.close.as_ref().lock().await;
             if _c_ref.is_closed() {
@@ -174,8 +174,8 @@ impl GateServer {
                 _health.set_health_status(false);
             }
 
-            if (offset_time_impl.utc_unix_time_with_offset() - flush_gate_key_time) > 1000 * 10 {
-                flush_gate_key_time = offset_time_impl.utc_unix_time_with_offset();
+            if (self.get_utc_unix_time_with_offset().await - flush_gate_key_time) > 1000 * 10 {
+                flush_gate_key_time = self.get_utc_unix_time_with_offset().await;
                 let mut _r = self.redis.as_ref().lock().await;
                 let _ = _r.expire(self.gate_name.clone(), 10).await;
             }

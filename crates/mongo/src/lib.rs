@@ -37,7 +37,7 @@ impl MongoProxy {
         }
     }
 
-    pub async fn check_int_guid(&mut self, db: String, collection: String, initial_guid: u32) -> bool {
+    pub async fn check_int_guid(&mut self, db: String, collection: String, initial_guid: i64) -> bool {
         trace!("check_int_guid db:{}, collection:{}!", db, collection);
 
         let _db = self.client.database(&db);
