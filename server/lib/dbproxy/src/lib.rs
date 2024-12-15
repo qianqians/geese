@@ -25,7 +25,7 @@ use crate::handle::DBProxyHubMsgHandle;
 pub struct GuidCfg {
     pub db: String,
     pub collection: String,
-    pub initial_guid: u32,
+    pub initial_guid: i64,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
