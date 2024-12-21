@@ -67,10 +67,11 @@ async fn main() {
         ),
     ).await;
 
-    let _ = tokio::spawn(HealthHandle::start_health_service(health_host.clone(), health_handle.clone()));
+    let health_service = tokio::spawn(HealthHandle::start_health_service(health_host.clone(), health_handle.clone()));
     
     server.run().await;
     server.join().await;
+    health_service.abort();
 
     info!("dbproxy exit!");
 }
