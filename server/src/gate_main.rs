@@ -62,14 +62,8 @@ async fn main() {
     let health_handle = HealthHandle::new(health_host.clone());
 
     let host = format!("0.0.0.0:{}", cfg.service_port);
-    let client_tcp_host = match cfg.client_tcp_port {
-        None => None,
-        Some(port) => Some(format!("0.0.0.0:{}", port))
-    };
-    let client_ws_host = match cfg.client_ws_port {
-        None => None,
-        Some(port) => Some(format!("0.0.0.0:{}", port))
-    };
+    let client_tcp_host = cfg.client_ws_port.map(|port| format!("0.0.0.0:{}", port));
+    let client_ws_host = cfg.client_ws_port.map(|port| format!("0.0.0.0:{}", port));
 
     let _local_ip = get_local_ip();
     let _health_host = format!("http://{_local_ip}:{health_port}/health");
@@ -111,11 +105,12 @@ async fn main() {
     };
     trace!("server new server!");
 
-    let _ = tokio::spawn(HealthHandle::start_health_service(health_host.clone(), health_handle.clone()));
+    let health_service = tokio::spawn(HealthHandle::start_health_service(health_host.clone(), health_handle.clone()));
 
     trace!("server start run!");
     server.run().await;
     server.join().await;
+    health_service.abort();
 
     info!("gate exit!");
 }
