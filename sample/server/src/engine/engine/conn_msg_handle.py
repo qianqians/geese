@@ -1,5 +1,6 @@
 # -*- coding: UTF-8 -*-
 from collections.abc import Callable
+import asyncio
 from .msgpack import *
 
 class conn_msg_handle(object):
@@ -161,10 +162,10 @@ class conn_msg_handle(object):
         from app import app
         _player = app().player_mgr.get_player(entity_id)
         if _player != None:
-            _player.check_migrate_entity_lock(svr_name)
+            asyncio.run(_player.check_migrate_entity_lock(svr_name))
             return
         _entity = app().entity_mgr.get_entity(entity_id)
         if _entity != None:
-            _entity.check_migrate_entity_lock(svr_name)
+            asyncio.run(_entity.check_migrate_entity_lock(svr_name))
             return
         app().error("unhandle on_response_migrate_entity entity:{}, ".format(entity_id))
