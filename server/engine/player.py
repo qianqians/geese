@@ -103,11 +103,11 @@ class player(ABC, base_entity):
         from app import app
         app().ctx.hub_call_client_create_remote_entity(self.client_gate_name, [], self.client_conn_id, self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))
     
-    def create_remote_entity(self, gate_name:str, conn_id:str):
+    def create_remote_entity(self, gate_name:str, conn_id:list[str]):
         if gate_name not in self.conn_client_gate:
             self.conn_client_gate.append(gate_name)
         from app import app
-        app().ctx.hub_call_client_create_remote_entity(gate_name, [conn_id], "", self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))
+        app().ctx.hub_call_client_(gate_name, conn_id, "", self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))
     
     def create_remote_hub_entity(self, hub_name:str):
         if hub_name not in self.conn_hub_server:
@@ -267,7 +267,7 @@ class player_manager(object):
             app().ctx.hub_call_client_refresh_entity(gate_name, conn_id, is_main, _player.entity_id, _player.entity_type, msgpack.dumps(_player.info()))
         else:
             if is_main:
-                app().ctx.hub_call_client_create_remote_entity(gate_name, [], conn_id, _player.entity_id, _player.entity_type, msgpack.dumps(_player.info()))
+                app().ctx.hub_call_client_(gate_name, [], conn_id, _player.entity_id, _player.entity_type, msgpack.dumps(_player.info()))
             else:
                 app().ctx.hub_call_client_create_remote_entity(gate_name, [conn_id], None, _player.entity_id, _player.entity_type, msgpack.dumps(_player.info()))
         
