@@ -142,7 +142,7 @@ class entity(ABC, base_entity):
             self.error("unhandle request method:{}, source:({}, {})".format(method, gate_name, conn_id))
 
     def handle_client_notify(self, gate_name:str, method:str, argvs:bytes):
-        _call_handle = self.hub_request_callback[method]
+        _call_handle = self.client_notify_callback[method]
         if _call_handle != None:
             _call_handle(gate_name, argvs)
         else:
