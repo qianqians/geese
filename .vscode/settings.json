@@ -3,5 +3,8 @@
         ".\\client\\Cargo.toml",
         ".\\edit\\Cargo.toml",
         ".\\server\\Cargo.toml"
-    ]
+    ],
+    "files.watcherExclude": {
+        "**/target": true
+    }
 }

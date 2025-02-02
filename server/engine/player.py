@@ -64,9 +64,6 @@ class player(ABC, base_entity):
             import random
             if random.random() < 0.2:
                 self.start_migrate_entity()
-                return
-        self.__migrate_timer__ = Timer(app().ctx.migrate_time_interval(), self.try_migrate_entity)
-        self.__migrate_timer__.start()
 
     async def start_migrate_entity(self):
         from app import app
@@ -79,6 +76,8 @@ class player(ABC, base_entity):
             for gate in self.conn_client_gate:
                 app().ctx.hub_call_gate_wait_migrate_entity(gate, self.entity_id)
             self.is_migrate = True
+            
+            self.__migrate_timer__.cancel()
             
     async def migrate_entity_complete(self):
         from app import app
