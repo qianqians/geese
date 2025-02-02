@@ -58,7 +58,7 @@ class app(object):
         self.__is_run__ = True
         self.__dbproxy_handle__:dbproxy_msg_handle = None
         self.__conn_handle__:conn_msg_handle = None
-        self.__entity_create_method__:dict[str, Callable[[str, str, dict]]] = {}
+        self.__entity_create_method__:dict[str, Callable[[bool, str, str, dict]]] = {}
         self.__entity_migrate_method__:dict[str, Callable[[str, list[str], list[str], dict], entity|player]] = {}
         self.__loop__ = None
         self.__conn_pump__ = None
@@ -127,9 +127,9 @@ class app(object):
         self.__entity_create_method__[entity_type] = creator
         return self
     
-    def create_entity(self, entity_type:str, source_hub_name:str, entity_id:str, argvs: dict):
+    def create_entity(self, is_migrate:bool, entity_type:str, source_hub_name:str, entity_id:str, argvs: dict):
         _creator = self.__entity_create_method__[entity_type]
-        _creator(source_hub_name, entity_id, argvs)
+        _creator(is_migrate, source_hub_name, entity_id, argvs)
         
     def kick_off_client(self, gate_name:str, conn_id:str, prompt_info:str):
         self.ctx.hub_call_kick_off_client(gate_name, conn_id, prompt_info)

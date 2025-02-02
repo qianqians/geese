@@ -34,6 +34,7 @@ use crate::common;
 
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HubCallClientCreateRemoteEntity {
+  pub is_migrate: Option<bool>,
   pub conn_id: Option<Vec<String>>,
   pub main_conn_id: Option<String>,
   pub entity_id: Option<String>,
@@ -42,8 +43,9 @@ pub struct HubCallClientCreateRemoteEntity {
 }
 
 impl HubCallClientCreateRemoteEntity {
-  pub fn new<F1, F2, F3, F4, F5>(conn_id: F1, main_conn_id: F2, entity_id: F3, entity_type: F4, argvs: F5) -> HubCallClientCreateRemoteEntity where F1: Into<Option<Vec<String>>>, F2: Into<Option<String>>, F3: Into<Option<String>>, F4: Into<Option<String>>, F5: Into<Option<Vec<u8>>> {
+  pub fn new<F1, F2, F3, F4, F5, F6>(is_migrate: F1, conn_id: F2, main_conn_id: F3, entity_id: F4, entity_type: F5, argvs: F6) -> HubCallClientCreateRemoteEntity where F1: Into<Option<bool>>, F2: Into<Option<Vec<String>>>, F3: Into<Option<String>>, F4: Into<Option<String>>, F5: Into<Option<String>>, F6: Into<Option<Vec<u8>>> {
     HubCallClientCreateRemoteEntity {
+      is_migrate: is_migrate.into(),
       conn_id: conn_id.into(),
       main_conn_id: main_conn_id.into(),
       entity_id: entity_id.into(),
@@ -56,11 +58,12 @@ impl HubCallClientCreateRemoteEntity {
 impl TSerializable for HubCallClientCreateRemoteEntity {
   fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<HubCallClientCreateRemoteEntity> {
     i_prot.read_struct_begin()?;
-    let mut f_1: Option<Vec<String>> = Some(Vec::new());
-    let mut f_2: Option<String> = Some("".to_owned());
+    let mut f_1: Option<bool> = Some(false);
+    let mut f_2: Option<Vec<String>> = Some(Vec::new());
     let mut f_3: Option<String> = Some("".to_owned());
     let mut f_4: Option<String> = Some("".to_owned());
-    let mut f_5: Option<Vec<u8>> = Some(Vec::new());
+    let mut f_5: Option<String> = Some("".to_owned());
+    let mut f_6: Option<Vec<u8>> = Some(Vec::new());
     loop {
       let field_ident = i_prot.read_field_begin()?;
       if field_ident.field_type == TType::Stop {
@@ -69,6 +72,10 @@ impl TSerializable for HubCallClientCreateRemoteEntity {
       let field_id = field_id(&field_ident)?;
       match field_id {
         1 => {
+          let val = i_prot.read_bool()?;
+          f_1 = Some(val);
+        },
+        2 => {
           let list_ident = i_prot.read_list_begin()?;
           let mut val: Vec<String> = Vec::with_capacity(list_ident.size as usize);
           for _ in 0..list_ident.size {
@@ -76,10 +83,6 @@ impl TSerializable for HubCallClientCreateRemoteEntity {
             val.push(list_elem_0);
           }
           i_prot.read_list_end()?;
-          f_1 = Some(val);
-        },
-        2 => {
-          let val = i_prot.read_string()?;
           f_2 = Some(val);
         },
         3 => {
@@ -91,8 +94,12 @@ impl TSerializable for HubCallClientCreateRemoteEntity {
           f_4 = Some(val);
         },
         5 => {
-          let val = i_prot.read_bytes()?;
+          let val = i_prot.read_string()?;
           f_5 = Some(val);
+        },
+        6 => {
+          let val = i_prot.read_bytes()?;
+          f_6 = Some(val);
         },
         _ => {
           i_prot.skip(field_ident.field_type)?;
@@ -102,19 +109,25 @@ impl TSerializable for HubCallClientCreateRemoteEntity {
     }
     i_prot.read_struct_end()?;
     let ret = HubCallClientCreateRemoteEntity {
-      conn_id: f_1,
-      main_conn_id: f_2,
-      entity_id: f_3,
-      entity_type: f_4,
-      argvs: f_5,
+      is_migrate: f_1,
+      conn_id: f_2,
+      main_conn_id: f_3,
+      entity_id: f_4,
+      entity_type: f_5,
+      argvs: f_6,
     };
     Ok(ret)
   }
   fn write_to_out_protocol(&self, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {
     let struct_ident = TStructIdentifier::new("hub_call_client_create_remote_entity");
     o_prot.write_struct_begin(&struct_ident)?;
+    if let Some(fld_var) = self.is_migrate {
+      o_prot.write_field_begin(&TFieldIdentifier::new("is_migrate", TType::Bool, 1))?;
+      o_prot.write_bool(fld_var)?;
+      o_prot.write_field_end()?
+    }
     if let Some(ref fld_var) = self.conn_id {
-      o_prot.write_field_begin(&TFieldIdentifier::new("conn_id", TType::List, 1))?;
+      o_prot.write_field_begin(&TFieldIdentifier::new("conn_id", TType::List, 2))?;
       o_prot.write_list_begin(&TListIdentifier::new(TType::String, fld_var.len() as i32))?;
       for e in fld_var {
         o_prot.write_string(e)?;
@@ -123,22 +136,22 @@ impl TSerializable for HubCallClientCreateRemoteEntity {
       o_prot.write_field_end()?
     }
     if let Some(ref fld_var) = self.main_conn_id {
-      o_prot.write_field_begin(&TFieldIdentifier::new("main_conn_id", TType::String, 2))?;
+      o_prot.write_field_begin(&TFieldIdentifier::new("main_conn_id", TType::String, 3))?;
       o_prot.write_string(fld_var)?;
       o_prot.write_field_end()?
     }
     if let Some(ref fld_var) = self.entity_id {
-      o_prot.write_field_begin(&TFieldIdentifier::new("entity_id", TType::String, 3))?;
+      o_prot.write_field_begin(&TFieldIdentifier::new("entity_id", TType::String, 4))?;
       o_prot.write_string(fld_var)?;
       o_prot.write_field_end()?
     }
     if let Some(ref fld_var) = self.entity_type {
-      o_prot.write_field_begin(&TFieldIdentifier::new("entity_type", TType::String, 4))?;
+      o_prot.write_field_begin(&TFieldIdentifier::new("entity_type", TType::String, 5))?;
       o_prot.write_string(fld_var)?;
       o_prot.write_field_end()?
     }
     if let Some(ref fld_var) = self.argvs {
-      o_prot.write_field_begin(&TFieldIdentifier::new("argvs", TType::String, 5))?;
+      o_prot.write_field_begin(&TFieldIdentifier::new("argvs", TType::String, 6))?;
       o_prot.write_bytes(fld_var)?;
       o_prot.write_field_end()?
     }
@@ -210,6 +223,7 @@ impl TSerializable for HubCallClientDeleteRemoteEntity {
 
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HubCallClientRefreshEntity {
+  pub is_migrate: Option<bool>,
   pub conn_id: Option<String>,
   pub is_main: Option<bool>,
   pub entity_id: Option<String>,
@@ -218,8 +232,9 @@ pub struct HubCallClientRefreshEntity {
 }
 
 impl HubCallClientRefreshEntity {
-  pub fn new<F1, F2, F3, F4, F5>(conn_id: F1, is_main: F2, entity_id: F3, entity_type: F4, argvs: F5) -> HubCallClientRefreshEntity where F1: Into<Option<String>>, F2: Into<Option<bool>>, F3: Into<Option<String>>, F4: Into<Option<String>>, F5: Into<Option<Vec<u8>>> {
+  pub fn new<F1, F2, F3, F4, F5, F6>(is_migrate: F1, conn_id: F2, is_main: F3, entity_id: F4, entity_type: F5, argvs: F6) -> HubCallClientRefreshEntity where F1: Into<Option<bool>>, F2: Into<Option<String>>, F3: Into<Option<bool>>, F4: Into<Option<String>>, F5: Into<Option<String>>, F6: Into<Option<Vec<u8>>> {
     HubCallClientRefreshEntity {
+      is_migrate: is_migrate.into(),
       conn_id: conn_id.into(),
       is_main: is_main.into(),
       entity_id: entity_id.into(),
@@ -232,11 +247,12 @@ impl HubCallClientRefreshEntity {
 impl TSerializable for HubCallClientRefreshEntity {
   fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<HubCallClientRefreshEntity> {
     i_prot.read_struct_begin()?;
-    let mut f_1: Option<String> = Some("".to_owned());
-    let mut f_2: Option<bool> = Some(false);
-    let mut f_3: Option<String> = Some("".to_owned());
+    let mut f_1: Option<bool> = Some(false);
+    let mut f_2: Option<String> = Some("".to_owned());
+    let mut f_3: Option<bool> = Some(false);
     let mut f_4: Option<String> = Some("".to_owned());
-    let mut f_5: Option<Vec<u8>> = Some(Vec::new());
+    let mut f_5: Option<String> = Some("".to_owned());
+    let mut f_6: Option<Vec<u8>> = Some(Vec::new());
     loop {
       let field_ident = i_prot.read_field_begin()?;
       if field_ident.field_type == TType::Stop {
@@ -245,15 +261,15 @@ impl TSerializable for HubCallClientRefreshEntity {
       let field_id = field_id(&field_ident)?;
       match field_id {
         1 => {
-          let val = i_prot.read_string()?;
+          let val = i_prot.read_bool()?;
           f_1 = Some(val);
         },
         2 => {
-          let val = i_prot.read_bool()?;
+          let val = i_prot.read_string()?;
           f_2 = Some(val);
         },
         3 => {
-          let val = i_prot.read_string()?;
+          let val = i_prot.read_bool()?;
           f_3 = Some(val);
         },
         4 => {
@@ -261,8 +277,12 @@ impl TSerializable for HubCallClientRefreshEntity {
           f_4 = Some(val);
         },
         5 => {
-          let val = i_prot.read_bytes()?;
+          let val = i_prot.read_string()?;
           f_5 = Some(val);
+        },
+        6 => {
+          let val = i_prot.read_bytes()?;
+          f_6 = Some(val);
         },
         _ => {
           i_prot.skip(field_ident.field_type)?;
@@ -272,39 +292,45 @@ impl TSerializable for HubCallClientRefreshEntity {
     }
     i_prot.read_struct_end()?;
     let ret = HubCallClientRefreshEntity {
-      conn_id: f_1,
-      is_main: f_2,
-      entity_id: f_3,
-      entity_type: f_4,
-      argvs: f_5,
+      is_migrate: f_1,
+      conn_id: f_2,
+      is_main: f_3,
+      entity_id: f_4,
+      entity_type: f_5,
+      argvs: f_6,
     };
     Ok(ret)
   }
   fn write_to_out_protocol(&self, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {
     let struct_ident = TStructIdentifier::new("hub_call_client_refresh_entity");
     o_prot.write_struct_begin(&struct_ident)?;
+    if let Some(fld_var) = self.is_migrate {
+      o_prot.write_field_begin(&TFieldIdentifier::new("is_migrate", TType::Bool, 1))?;
+      o_prot.write_bool(fld_var)?;
+      o_prot.write_field_end()?
+    }
     if let Some(ref fld_var) = self.conn_id {
-      o_prot.write_field_begin(&TFieldIdentifier::new("conn_id", TType::String, 1))?;
+      o_prot.write_field_begin(&TFieldIdentifier::new("conn_id", TType::String, 2))?;
       o_prot.write_string(fld_var)?;
       o_prot.write_field_end()?
     }
     if let Some(fld_var) = self.is_main {
-      o_prot.write_field_begin(&TFieldIdentifier::new("is_main", TType::Bool, 2))?;
+      o_prot.write_field_begin(&TFieldIdentifier::new("is_main", TType::Bool, 3))?;
       o_prot.write_bool(fld_var)?;
       o_prot.write_field_end()?
     }
     if let Some(ref fld_var) = self.entity_id {
-      o_prot.write_field_begin(&TFieldIdentifier::new("entity_id", TType::String, 3))?;
+      o_prot.write_field_begin(&TFieldIdentifier::new("entity_id", TType::String, 4))?;
       o_prot.write_string(fld_var)?;
       o_prot.write_field_end()?
     }
     if let Some(ref fld_var) = self.entity_type {
-      o_prot.write_field_begin(&TFieldIdentifier::new("entity_type", TType::String, 4))?;
+      o_prot.write_field_begin(&TFieldIdentifier::new("entity_type", TType::String, 5))?;
       o_prot.write_string(fld_var)?;
       o_prot.write_field_end()?
     }
     if let Some(ref fld_var) = self.argvs {
-      o_prot.write_field_begin(&TFieldIdentifier::new("argvs", TType::String, 5))?;
+      o_prot.write_field_begin(&TFieldIdentifier::new("argvs", TType::String, 6))?;
       o_prot.write_bytes(fld_var)?;
       o_prot.write_field_end()?
     }

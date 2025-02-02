@@ -60,8 +60,8 @@ class context(object):
     def query_service(self, hub_name:str, service_name:str) -> bool:
         return self.ctx.query_service(hub_name, service_name)
     
-    def create_service_entity(self, hub_name:str, service_name:str, entity_id:str, entity_type:str, argvs:bytes) -> bool:
-        return self.ctx.create_service_entity(hub_name, service_name, entity_id, entity_type, argvs)
+    def create_service_entity(self, is_migrate: bool, hub_name:str, service_name:str, entity_id:str, entity_type:str, argvs:bytes) -> bool:
+        return self.ctx.create_service_entity(is_migrate, hub_name, service_name, entity_id, entity_type, argvs)
     
     def forward_client_request_service(self, hub_name:str, service_name:str, gate_name:str, gate_host:str, conn_id:str) -> bool:
         return self.ctx.forward_client_request_service(hub_name, service_name, gate_name, gate_host, conn_id)
@@ -90,14 +90,14 @@ class context(object):
     def hub_call_response_migrate_entity(self, hub_name:str, entity_id:str) -> bool:
         return self.ctx.hub_call_response_migrate_entity(hub_name, entity_id)
     
-    def hub_call_client_create_remote_entity(self, gate_name:str, conn_id:list[str], main_conn_id:str, entity_id:str, entity_type:str, argvs:bytes) -> bool:
-        return self.ctx.hub_call_client_create_remote_entity(gate_name, conn_id, main_conn_id, entity_id, entity_type, argvs)
+    def hub_call_client_create_remote_entity(self, gate_name:str, is_migrate: bool, conn_id:list[str], main_conn_id:str, entity_id:str, entity_type:str, argvs:bytes) -> bool:
+        return self.ctx.hub_call_client_create_remote_entity(gate_name, is_migrate, conn_id, main_conn_id, entity_id, entity_type, argvs)
     
     def hub_call_client_delete_remote_entity(self, gate_name:str, entity_id:str) -> bool:
         return self.ctx.hub_call_client_delete_remote_entity(gate_name, entity_id)
     
-    def hub_call_client_refresh_entity(self, gate_name:str, conn_id:str, is_main:bool, entity_id:str, entity_type:str, argvs:bytes):
-        return self.ctx.hub_call_client_refresh_entity(gate_name, conn_id, is_main, entity_id, entity_type, argvs)
+    def hub_call_client_refresh_entity(self, gate_name:str, is_migrate: bool, conn_id:str, is_main:bool, entity_id:str, entity_type:str, argvs:bytes):
+        return self.ctx.hub_call_client_refresh_entity(gate_name, is_migrate, conn_id, is_main, entity_id, entity_type, argvs)
     
     def hub_call_client_rpc(self, gate_name:str, entity_id:str, msg_cb_id:int, method:str, argvs:bytes) -> bool:
         return self.ctx.hub_call_client_rpc(gate_name, entity_id, msg_cb_id, method, argvs)

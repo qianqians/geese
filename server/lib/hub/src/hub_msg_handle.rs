@@ -54,6 +54,7 @@ impl HubCallbackMsgHandle {
 
         let argvs = (
             hub_name, 
+            ev.is_migrate.unwrap(),
             ev.service_name.unwrap(), 
             ev.entity_id.unwrap(), 
             ev.entity_type.unwrap(), 

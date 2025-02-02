@@ -6,11 +6,12 @@ include "common.thrift"
  * create remote entity in client.
  */
 struct hub_call_client_create_remote_entity {
-	1:list<string> conn_id,
-	2:string main_conn_id,
-	3:string entity_id,
-	4:string entity_type,
-	5:binary argvs
+	1:bool is_migrate,
+	2:list<string> conn_id,
+	3:string main_conn_id,
+	4:string entity_id,
+	5:string entity_type,
+	6:binary argvs
 }
  
 /*
@@ -25,11 +26,12 @@ struct hub_call_client_delete_remote_entity {
  * refresh remote entity in client.
  */
 struct hub_call_client_refresh_entity {
-	1:string conn_id,
-	2:bool is_main,
-	3:string entity_id,
-	4:string entity_type,
-	5:binary argvs
+	1:bool is_migrate,
+	2:string conn_id,
+	3:bool is_main,
+	4:string entity_id,
+	5:string entity_type,
+	6:binary argvs
 }
 
 /*

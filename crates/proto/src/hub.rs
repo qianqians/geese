@@ -978,6 +978,7 @@ impl TSerializable for QueryServiceEntity {
 
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CreateServiceEntity {
+  pub is_migrate: Option<bool>,
   pub service_name: Option<String>,
   pub entity_id: Option<String>,
   pub entity_type: Option<String>,
@@ -985,8 +986,9 @@ pub struct CreateServiceEntity {
 }
 
 impl CreateServiceEntity {
-  pub fn new<F1, F2, F3, F4>(service_name: F1, entity_id: F2, entity_type: F3, argvs: F4) -> CreateServiceEntity where F1: Into<Option<String>>, F2: Into<Option<String>>, F3: Into<Option<String>>, F4: Into<Option<Vec<u8>>> {
+  pub fn new<F1, F2, F3, F4, F5>(is_migrate: F1, service_name: F2, entity_id: F3, entity_type: F4, argvs: F5) -> CreateServiceEntity where F1: Into<Option<bool>>, F2: Into<Option<String>>, F3: Into<Option<String>>, F4: Into<Option<String>>, F5: Into<Option<Vec<u8>>> {
     CreateServiceEntity {
+      is_migrate: is_migrate.into(),
       service_name: service_name.into(),
       entity_id: entity_id.into(),
       entity_type: entity_type.into(),
@@ -998,10 +1000,11 @@ impl CreateServiceEntity {
 impl TSerializable for CreateServiceEntity {
   fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<CreateServiceEntity> {
     i_prot.read_struct_begin()?;
-    let mut f_1: Option<String> = Some("".to_owned());
+    let mut f_1: Option<bool> = Some(false);
     let mut f_2: Option<String> = Some("".to_owned());
     let mut f_3: Option<String> = Some("".to_owned());
-    let mut f_4: Option<Vec<u8>> = Some(Vec::new());
+    let mut f_4: Option<String> = Some("".to_owned());
+    let mut f_5: Option<Vec<u8>> = Some(Vec::new());
     loop {
       let field_ident = i_prot.read_field_begin()?;
       if field_ident.field_type == TType::Stop {
@@ -1010,7 +1013,7 @@ impl TSerializable for CreateServiceEntity {
       let field_id = field_id(&field_ident)?;
       match field_id {
         1 => {
-          let val = i_prot.read_string()?;
+          let val = i_prot.read_bool()?;
           f_1 = Some(val);
         },
         2 => {
@@ -1022,8 +1025,12 @@ impl TSerializable for CreateServiceEntity {
           f_3 = Some(val);
         },
         4 => {
-          let val = i_prot.read_bytes()?;
+          let val = i_prot.read_string()?;
           f_4 = Some(val);
+        },
+        5 => {
+          let val = i_prot.read_bytes()?;
+          f_5 = Some(val);
         },
         _ => {
           i_prot.skip(field_ident.field_type)?;
@@ -1033,33 +1040,39 @@ impl TSerializable for CreateServiceEntity {
     }
     i_prot.read_struct_end()?;
     let ret = CreateServiceEntity {
-      service_name: f_1,
-      entity_id: f_2,
-      entity_type: f_3,
-      argvs: f_4,
+      is_migrate: f_1,
+      service_name: f_2,
+      entity_id: f_3,
+      entity_type: f_4,
+      argvs: f_5,
     };
     Ok(ret)
   }
   fn write_to_out_protocol(&self, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {
     let struct_ident = TStructIdentifier::new("create_service_entity");
     o_prot.write_struct_begin(&struct_ident)?;
+    if let Some(fld_var) = self.is_migrate {
+      o_prot.write_field_begin(&TFieldIdentifier::new("is_migrate", TType::Bool, 1))?;
+      o_prot.write_bool(fld_var)?;
+      o_prot.write_field_end()?
+    }
     if let Some(ref fld_var) = self.service_name {
-      o_prot.write_field_begin(&TFieldIdentifier::new("service_name", TType::String, 1))?;
+      o_prot.write_field_begin(&TFieldIdentifier::new("service_name", TType::String, 2))?;
       o_prot.write_string(fld_var)?;
       o_prot.write_field_end()?
     }
     if let Some(ref fld_var) = self.entity_id {
-      o_prot.write_field_begin(&TFieldIdentifier::new("entity_id", TType::String, 2))?;
+      o_prot.write_field_begin(&TFieldIdentifier::new("entity_id", TType::String, 3))?;
       o_prot.write_string(fld_var)?;
       o_prot.write_field_end()?
     }
     if let Some(ref fld_var) = self.entity_type {
-      o_prot.write_field_begin(&TFieldIdentifier::new("entity_type", TType::String, 3))?;
+      o_prot.write_field_begin(&TFieldIdentifier::new("entity_type", TType::String, 4))?;
       o_prot.write_string(fld_var)?;
       o_prot.write_field_end()?
     }
     if let Some(ref fld_var) = self.argvs {
-      o_prot.write_field_begin(&TFieldIdentifier::new("argvs", TType::String, 4))?;
+      o_prot.write_field_begin(&TFieldIdentifier::new("argvs", TType::String, 5))?;
       o_prot.write_bytes(fld_var)?;
       o_prot.write_field_end()?
     }

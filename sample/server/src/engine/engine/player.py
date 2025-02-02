@@ -35,6 +35,7 @@ class player(ABC, base_entity):
             from threading import Timer
             self.__migrate_timer__ = Timer(app().ctx.migrate_time_interval(), self.try_migrate_entity)
             self.__migrate_timer__.start()
+        self.is_migrate = False
 
         app().player_mgr.add_player(self)
 
@@ -85,8 +86,10 @@ class player(ABC, base_entity):
         for gate in self.conn_client_gate:
             app().ctx.hub_call_gate_wait_migrate_entity(gate, self.entity_id)
             self.wait_lock_migrate_svr.append(gate)
-        app().ctx.hub_call_gate_wait_migrate_entity(self.client_gate_name, self.entity_id)
-        self.wait_lock_migrate_svr.append(self.client_gate_name)
+        if self.client_gate_name not in self.wait_lock_migrate_svr:
+            app().ctx.hub_call_gate_wait_migrate_entity(self.client_gate_name, self.entity_id)
+            self.wait_lock_migrate_svr.append(self.client_gate_name)
+        self.is_migrate = True
         
     async def check_migrate_entity_lock(self, svr:str):
         if svr not in self.wait_lock_migrate_svr:
@@ -101,19 +104,19 @@ class player(ABC, base_entity):
             
     def create_main_remote_entity(self):
         from app import app
-        app().ctx.hub_call_client_create_remote_entity(self.client_gate_name, [], self.client_conn_id, self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))
+        app().ctx.hub_call_client_create_remote_entity(self.client_gate_name, self.is_migrate, [], self.client_conn_id, self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))
     
     def create_remote_entity(self, gate_name:str, conn_id:list[str]):
         if gate_name not in self.conn_client_gate:
             self.conn_client_gate.append(gate_name)
         from app import app
-        app().ctx.hub_call_client_(gate_name, conn_id, "", self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))
+        app().ctx.hub_call_client_create_remote_entity(gate_name, self.is_migrate, conn_id, "", self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))
     
     def create_remote_hub_entity(self, hub_name:str):
         if hub_name not in self.conn_hub_server:
             self.conn_hub_server.append(hub_name)
         from app import app
-        app().ctx.create_service_entity(hub_name, self.service_name, self.entity_id, self.entity_type, msgpack.dumps(self.hub_info()))
+        app().ctx.create_service_entity(self.is_migrate, hub_name, self.service_name, self.entity_id, self.entity_type, msgpack.dumps(self.hub_info()))
 
     def handle_hub_request(self, source_hub:str, method:str, msg_cb_id:int, argvs:bytes):
         _call_handle = self.hub_request_callback[method]
@@ -264,12 +267,12 @@ class player_manager(object):
         
         from app import app
         if is_reconnect:
-            app().ctx.hub_call_client_refresh_entity(gate_name, conn_id, is_main, _player.entity_id, _player.entity_type, msgpack.dumps(_player.info()))
+            app().ctx.hub_call_client_refresh_entity(gate_name, _player.is_migrate, conn_id, is_main, _player.entity_id, _player.entity_type, msgpack.dumps(_player.info()))
         else:
             if is_main:
-                app().ctx.hub_call_client_(gate_name, [], conn_id, _player.entity_id, _player.entity_type, msgpack.dumps(_player.info()))
+                app().ctx.hub_call_client_create_remote_entity(gate_name, _player.is_migrate, [], conn_id, _player.entity_id, _player.entity_type, msgpack.dumps(_player.info()))
             else:
-                app().ctx.hub_call_client_create_remote_entity(gate_name, [conn_id], None, _player.entity_id, _player.entity_type, msgpack.dumps(_player.info()))
+                app().ctx.hub_call_client_create_remote_entity(gate_name, _player.is_migrate, [conn_id], None, _player.entity_id, _player.entity_type, msgpack.dumps(_player.info()))
         
         return True
     
