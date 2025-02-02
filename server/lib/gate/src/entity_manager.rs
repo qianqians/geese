@@ -22,13 +22,13 @@ pub struct Entity {
 }
 
 impl Entity {
-    pub fn new(_entity_id: String, _hub_name: String) -> Entity {
+    pub fn new(_is_migrate: bool, _entity_id: String, _hub_name: String) -> Entity {
         Entity {
             entity_id: _entity_id,
             hub_name: _hub_name,
             main_conn_id: None,
             conn_ids: vec![],
-            is_migrate: false,
+            is_migrate: _is_migrate,
             cache_migrate_msg: vec![]
         }
     }

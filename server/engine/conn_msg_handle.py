@@ -79,9 +79,9 @@ class conn_msg_handle(object):
         _service = app().service_mgr.get_service(service_name)
         _service.hub_query_service_entity(hub_name)
 
-    def on_create_service_entity(self, source_hub_name:str, service_name:str, entity_id:str, entity_type:str, argvs:bytes):
+    def on_create_service_entity(self, source_hub_name:str, is_migrate:bool, service_name:str, entity_id:str, entity_type:str, argvs:bytes):
         from app import app
-        app().create_entity(entity_type, source_hub_name, entity_id, loads(argvs))
+        app().create_entity(is_migrate, entity_type, source_hub_name, entity_id, loads(argvs))
 
     def on_forward_client_request_service(self, hub_name:str, service_name:str, gate_name:str, conn_id:str):
         from app import app

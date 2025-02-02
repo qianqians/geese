@@ -6,8 +6,8 @@ from engine.update_rank_svr import *
 rankImpl = None
 
 class RankSubEntity(subentity):
-    def __init__(self, source_hub_name: str, entity_type: str, entity_id: str) -> None:
-        super().__init__(source_hub_name, entity_type, entity_id)
+    def __init__(self, is_migrate:bool, source_hub_name: str, entity_type: str, entity_id: str) -> None:
+        super().__init__(is_migrate, source_hub_name, entity_type, entity_id)
         self.update_rank_caller = update_rank_caller(self)
 
     def call_update_rank(self, playerEntityId):
@@ -15,10 +15,10 @@ class RankSubEntity(subentity):
             lambda: self.trace("call_update_rank cb"),
             lambda err: self.trace("call_update_rank err:{}", err))
 
-    def Creator(source_hub_name:str, entity_id:str, description: dict):
+    def Creator(is_migrate:bool, source_hub_name:str, entity_id:str, description: dict):
         app().trace(f"RankSubEntity Creator source_hub_name:{source_hub_name} entity_id:{entity_id}")
         global rankImpl
-        rankImpl = RankSubEntity(source_hub_name, "RankImpl", entity_id)
+        rankImpl = RankSubEntity(is_migrate, source_hub_name, "RankImpl", entity_id)
         return rankImpl
 
 class SamplePlayer(player):

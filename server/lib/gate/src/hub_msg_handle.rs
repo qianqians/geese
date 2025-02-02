@@ -216,6 +216,7 @@ impl GateHubMsgHandle {
                 _source_hub_name = _p.get_hub_name();
             }
 
+            let is_migrate = ev.is_migrate.unwrap();
             let entity_id = ev.entity_id.unwrap();
             let entity_type = ev.entity_type.unwrap();
             let argvs = ev.argvs.unwrap();
@@ -240,7 +241,7 @@ impl GateHubMsgHandle {
                 let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
                 let _entity = match _conn_mgr.get_entity_mut(&entity_id) {
                     None => {
-                        let e = Entity::new(entity_id.clone(), _source_hub_name.clone());
+                        let e = Entity::new(is_migrate.clone(), entity_id.clone(), _source_hub_name.clone());
                         _conn_mgr.update_entity(e);
                         _conn_mgr.get_entity_mut(&entity_id.clone()).unwrap()
                     }
@@ -280,7 +281,7 @@ impl GateHubMsgHandle {
                     if send_ret {
                         let _entity = match _conn_mgr.get_entity_mut(&entity_id) {
                             None => {
-                                let e = Entity::new(entity_id.clone(), _source_hub_name.clone());
+                                let e = Entity::new(is_migrate.clone(), entity_id.clone(), _source_hub_name.clone());
                                 _conn_mgr.update_entity(e);
                                 _conn_mgr.get_entity_mut(&entity_id.clone()).unwrap()
                             }
@@ -376,6 +377,7 @@ impl GateHubMsgHandle {
                 _source_hub_name = _p.get_hub_name();
             }
             
+            let is_migrate = ev.is_migrate.unwrap();
             let is_main = ev.is_main.unwrap();
             let conn_id = ev.conn_id.unwrap();
             let entity_id = ev.entity_id.unwrap();
@@ -397,7 +399,7 @@ impl GateHubMsgHandle {
                 let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
                 let _entity = match _conn_mgr.get_entity_mut(&entity_id) {
                     None => {
-                        let e = Entity::new(entity_id.clone(), _source_hub_name.clone());
+                        let e = Entity::new(is_migrate, entity_id.clone(), _source_hub_name.clone());
                         _conn_mgr.update_entity(e);
                         _conn_mgr.get_entity_mut(&entity_id.clone()).unwrap()
                     }

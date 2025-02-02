@@ -62,7 +62,7 @@ async fn main() {
     let health_handle = HealthHandle::new(health_host.clone());
 
     let host = format!("0.0.0.0:{}", cfg.service_port);
-    let client_tcp_host = cfg.client_ws_port.map(|port| format!("0.0.0.0:{}", port));
+    let client_tcp_host = cfg.client_tcp_port.map(|port| format!("0.0.0.0:{}", port));
     let client_ws_host = cfg.client_ws_port.map(|port| format!("0.0.0.0:{}", port));
 
     let _local_ip = get_local_ip();

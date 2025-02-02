@@ -6,7 +6,7 @@ from .base_entity import base_entity
 from .callback import callback
 
 class subentity(base_entity):
-    def __init__(self, source_hub_name:str, entity_type:str, entity_id:str) -> None:
+    def __init__(self, is_migrate:bool, source_hub_name:str, entity_type:str, entity_id:str) -> None:
         base_entity.__init__(self, entity_type, entity_id)
 
         self.request_msg_cb_id = random.randint(100, 10011)
@@ -16,7 +16,7 @@ class subentity(base_entity):
 
         self.source_hub_name = source_hub_name
 
-        self.is_migrate = False
+        self.is_migrate = is_migrate
         self.cache_msg:list[Callable[[]]] = []
 
         from app import app

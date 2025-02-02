@@ -369,6 +369,7 @@ impl HubContext {
 
     pub fn create_service_entity(
         slf: PyRefMut<'_, Self>, 
+        is_migrate: bool,
         hub_name: String, 
         service_name: String, 
         entity_id: String,
@@ -381,7 +382,7 @@ impl HubContext {
         let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             let mut _server_handle = _server.as_ref().lock().await;
-            _server_handle.send_hub_msg(hub_name, HubService::CreateServiceEntity(CreateServiceEntity::new(service_name, entity_id, entity_type, argvs))).await
+            _server_handle.send_hub_msg(hub_name, HubService::CreateServiceEntity(CreateServiceEntity::new(is_migrate, service_name, entity_id, entity_type, argvs))).await
         })
     }
 
@@ -561,6 +562,7 @@ impl HubContext {
     pub fn hub_call_client_create_remote_entity(
         slf: PyRefMut<'_, Self>, 
         gate_name: String, 
+        is_migrate: bool,
         conn_id: Vec<String>, 
         main_conn_id: String, 
         entity_id: String, 
@@ -578,7 +580,7 @@ impl HubContext {
             _server_handle.send_gate_msg(
                 gate_name, 
                 GateHubService::CreateRemoteEntity(
-                    HubCallClientCreateRemoteEntity::new(conn_id, main_conn_id, entity_id, entity_type, argvs))).await
+                    HubCallClientCreateRemoteEntity::new(is_migrate, conn_id, main_conn_id, entity_id, entity_type, argvs))).await
         })
     }
 
@@ -600,6 +602,7 @@ impl HubContext {
 
     pub fn hub_call_client_refresh_entity(slf: PyRefMut<'_, Self>, 
         gate_name: String, 
+        is_migrate: bool,
         conn_id: String, 
         is_main: bool, 
         entity_id: String, 
@@ -617,7 +620,7 @@ impl HubContext {
             _server_handle.send_gate_msg(
                 gate_name, 
                 GateHubService::RefreshEntity(
-                    HubCallClientRefreshEntity::new(conn_id, is_main, entity_id, entity_type, argvs))).await
+                    HubCallClientRefreshEntity::new(is_migrate, conn_id, is_main, entity_id, entity_type, argvs))).await
         })
     }
 

@@ -108,10 +108,11 @@ struct query_service_entity {
  * ack hub query service entity
  */
 struct create_service_entity {
-	1:string service_name,
-	2:string entity_id,
-	3:string entity_type,
-	4:binary argvs
+	1:bool is_migrate,
+	2:string service_name,
+	3:string entity_id,
+	4:string entity_type,
+	5:binary argvs
 }
 
 /*
