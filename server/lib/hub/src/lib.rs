@@ -22,7 +22,6 @@ use proto::common::{
     RpcRsp,
     RpcErr,
     RegServer,
-    ResponseMigrateEntity,
 };
 
 use proto::dbproxy::{
@@ -47,6 +46,7 @@ use proto::hub::{
     HubCallHubNtf,
     HubCallHubWaitMigrateEntity,
     HubCallHubMigrateEntity,
+    HubCallHubCreateMigrateEntity,
     HubCallHubMigrateEntityComplete,
 };
 
@@ -510,6 +510,8 @@ impl HubContext {
         service_name: String,
         entity_type: String,
         entity_id: String,
+        main_gate_name: String,
+        main_conn_id: String,
         gates: Vec<String>,
         hubs: Vec<String>,
         argvs: Vec<u8>) -> bool 
@@ -523,7 +525,21 @@ impl HubContext {
             _server_handle.send_hub_msg(
                 hub_name, 
                 HubService::MigrateEntity(
-                    HubCallHubMigrateEntity::new(service_name, entity_id, entity_type, gates, hubs, argvs))).await
+                    HubCallHubMigrateEntity::new(service_name, entity_id, entity_type, main_gate_name, main_conn_id, gates, hubs, argvs))).await
+        })
+    }
+
+    pub fn hub_call_create_migrate_entity(slf: PyRefMut<'_, Self>, hub_name: String, entity_id: String) -> bool {
+        trace!("hub_call_hub_migrate_entity_complete begin!");
+
+        let _server = slf.server.clone();
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.send_hub_msg(
+                hub_name, 
+                HubService::CreateMigrateEntity(
+                    HubCallHubCreateMigrateEntity::new(slf.hub_name.clone(), entity_id))).await
         })
     }
 
@@ -541,21 +557,7 @@ impl HubContext {
             _server_handle.send_hub_msg(
                 hub_name, 
                 HubService::MigrateEntityComplete(
-                    HubCallHubMigrateEntityComplete::new(entity_id))).await
-        })
-    }
-
-    pub fn hub_call_response_migrate_entity(slf: PyRefMut<'_, Self>, hub_name: String, entity_id: String) -> bool {
-        trace!("hub_call_hub_migrate_entity_complete begin!");
-
-        let _server = slf.server.clone();
-        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async move {
-            let mut _server_handle = _server.as_ref().lock().await;
-            _server_handle.send_hub_msg(
-                hub_name, 
-                HubService::ResponseMigrateEntity(
-                    ResponseMigrateEntity::new(entity_id))).await
+                    HubCallHubMigrateEntityComplete::new(slf.hub_name.clone(), entity_id))).await
         })
     }
 
@@ -805,7 +807,7 @@ impl HubContext {
             _server_handle.send_gate_msg(
                 gate_name, 
                 GateHubService::MigrateEntityComplete(
-                    HubCallMigrateEntityComplete::new(entity_id))).await
+                    HubCallMigrateEntityComplete::new(slf.hub_name.clone(), entity_id))).await
         })
     }
 

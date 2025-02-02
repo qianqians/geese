@@ -141,31 +141,30 @@ class conn_msg_handle(object):
         _subentity = app().subentity_mgr.get_subentity(entity_id)
         if _subentity != None:
             _subentity.is_migrate = True
-            app().ctx.hub_call_response_migrate_entity(hub_name, entity_id)
         else:
             app().error("unhandle hub on_wait_migrate_entity entity:{}, ".format(entity_id))
             
-    def on_migrate_entity(self, hub_name:str, entity_type:str, entity_id:str, gates:list[str], hubs:list[str], argvs:bytes):
+    def on_migrate_entity(self, hub_name:str, entity_type:str, entity_id:str, main_gate_name:str, main_conn_id:str, gates:list[str], hubs:list[str], argvs:bytes):
         from app import app
-        app().create_migrate_entity(entity_type, entity_id, loads(argvs))
+        app().create_migrate_entity(entity_type, entity_id, main_gate_name, main_conn_id, gates, hubs, loads(argvs))
         
-        
-    def on_migrate_entity_complete(self, hub_name:str, entity_id:str):
-        from app import app
-        _subentity = app().subentity_mgr.get_subentity(entity_id)
-        if _subentity != None:
-            _subentity.do_cache_msg()
-        else:
-            app().error("unhandle hub on_migrate_entity_complete entity:{}, ".format(entity_id))
-            
-    def on_response_migrate_entity(self, svr_name:str, entity_id:str):
+    def on_create_migrate_entity(self, svr_name:str, entity_id:str):
         from app import app
         _player = app().player_mgr.get_player(entity_id)
         if _player != None:
-            asyncio.run(_player.check_migrate_entity_lock(svr_name))
+            _player.migrate_entity_complete()
             return
         _entity = app().entity_mgr.get_entity(entity_id)
         if _entity != None:
-            asyncio.run(_entity.check_migrate_entity_lock(svr_name))
+            _entity.migrate_entity_complete()
             return
         app().error("unhandle on_response_migrate_entity entity:{}, ".format(entity_id))
+        
+    def on_migrate_entity_complete(self, hub_name:str, source_hub_name:str, entity_id:str):
+        from app import app
+        _subentity = app().subentity_mgr.get_subentity(entity_id)
+        if _subentity != None:
+            _subentity.do_cache_msg(source_hub_name)
+        else:
+            app().error("unhandle hub on_migrate_entity_complete entity:{}, ".format(entity_id))
+            

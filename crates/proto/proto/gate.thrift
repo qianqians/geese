@@ -120,7 +120,8 @@ struct hub_call_transfer_entity_complete {
  * hub ntf migrate entity complete
  */
  struct hub_call_migrate_entity_complete {
-	1:string entity_id,
+	1:string hub_name,
+	2:string entity_id,
  }
 
 union gate_hub_service {

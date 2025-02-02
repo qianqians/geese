@@ -81,15 +81,15 @@ class context(object):
     def hub_call_hub_wait_migrate_entity(self, hub_name:str, entity_id:str) -> bool:
         return self.ctx.hub_call_hub_wait_migrate_entity(hub_name, entity_id)
     
-    def hub_call_hub_migrate_entity(self, hub_name:str, service_name:str, entity_type:str, entity_id:str, gates:list[str], hubs:list[str], argvs:bytes) -> bool:
-        return self.ctx.hub_call_hub_migrate_entity(hub_name, service_name, entity_type, entity_id, gates, hubs, argvs)
+    def hub_call_create_migrate_entity(self, hub_name:str, entity_id:str) -> bool:
+        return self.ctx.hub_call_create_migrate_entity(hub_name, entity_id)
+    
+    def hub_call_hub_migrate_entity(self, hub_name:str, service_name:str, entity_type:str, entity_id:str, main_gate_name:str, main_conn_id:str, gates:list[str], hubs:list[str], argvs:bytes) -> bool:
+        return self.ctx.hub_call_hub_migrate_entity(hub_name, service_name, entity_type, entity_id, main_gate_name, main_conn_id, gates, hubs, argvs)
     
     def hub_call_hub_migrate_entity_complete(self, hub_name:str, entity_id:str) -> bool:
         return self.ctx.hub_call_hub_migrate_entity_complete(hub_name, entity_id)
   
-    def hub_call_response_migrate_entity(self, hub_name:str, entity_id:str) -> bool:
-        return self.ctx.hub_call_response_migrate_entity(hub_name, entity_id)
-    
     def hub_call_client_create_remote_entity(self, gate_name:str, is_migrate: bool, conn_id:list[str], main_conn_id:str, entity_id:str, entity_type:str, argvs:bytes) -> bool:
         return self.ctx.hub_call_client_create_remote_entity(gate_name, is_migrate, conn_id, main_conn_id, entity_id, entity_type, argvs)
     

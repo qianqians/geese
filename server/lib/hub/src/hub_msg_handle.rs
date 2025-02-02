@@ -4,7 +4,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use tracing::{trace, error};
 
-use proto::common::{RegServer, ResponseMigrateEntity};
+use proto::common::RegServer;
 
 // hub msg
 use proto::hub::{
@@ -17,6 +17,7 @@ use proto::hub::{
     HubCallHubNtf,
     HubCallHubWaitMigrateEntity,
     HubCallHubMigrateEntity,
+    HubCallHubCreateMigrateEntity,
     HubCallHubMigrateEntityComplete,
 };
 
@@ -152,6 +153,8 @@ impl HubCallbackMsgHandle {
             hub_name,
             ev.entity_type.unwrap(),
             ev.entity_id.unwrap(),
+            ev.main_gate_name.unwrap(),
+            ev.main_conn_id.unwrap(),
             ev.gates.unwrap(),
             ev.hubs.unwrap(),
             PyBytes::new(py, &ev.argvs.unwrap()));
@@ -160,25 +163,27 @@ impl HubCallbackMsgHandle {
         }
     }
 
+    pub fn do_create_migrate_entity(&mut self, py: Python<'_>, py_handle: Py<PyAny>, hub_name: String, ev: HubCallHubCreateMigrateEntity) {
+        trace!("do_create_migrate_entity begin!");
+
+        let argvs = (
+            hub_name,
+            ev.hub_name.unwrap(),
+            ev.entity_id.unwrap());
+        if let Err(e) = py_handle.call_method1(py, "on_create_migrate_entity", argvs) {
+            error!("do_create_migrate_entity python callback error:{}", e)
+        }
+    }
+
     pub fn do_migrate_entity_complete(&mut self, py: Python<'_>, py_handle: Py<PyAny>, hub_name: String, ev: HubCallHubMigrateEntityComplete) {
         trace!("do_migrate_entity_complete begin!");
 
         let argvs = (
             hub_name,
+            ev.hub_name.unwrap(),
             ev.entity_id.unwrap());
         if let Err(e) = py_handle.call_method1(py, "on_migrate_entity_complete", argvs) {
             error!("do_migrate_entity_complete python callback error:{}", e)
-        }
-    }
-
-    pub fn do_response_migrate_entity(&mut self, py: Python<'_>, py_handle: Py<PyAny>, svr_name: String, ev: ResponseMigrateEntity) {
-        trace!("do_response_migrate_entity begin!");
-
-        let argvs = (
-            svr_name,
-            ev.entity_id.unwrap());
-        if let Err(e) = py_handle.call_method1(py, "on_response_migrate_entity", argvs) {
-            error!("do_response_migrate_entity python callback error:{}", e)
         }
     }
     

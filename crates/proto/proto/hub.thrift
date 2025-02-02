@@ -170,16 +170,27 @@ struct hub_call_hub_migrate_entity {
 	1:string service_name,
 	2:string entity_id,
 	3:string entity_type,
-	4:list<string> gates,
-	5:list<string> hubs,
-	6:binary argvs
+	4:string main_gate_name,
+	5:string main_conn_id,
+	6:list<string> gates,
+	7:list<string> hubs,
+	8:binary argvs
+}
+
+/*
+ * hub ntf hub create migrate entity.
+ */
+struct hub_call_hub_create_migrate_entity {
+	1:string hub_name,
+	2:string entity_id,
 }
 
 /*
  * hub ntf hub migrate entity complete.
  */
 struct hub_call_hub_migrate_entity_complete {
-	1:string entity_id,
+	1:string hub_name,
+	2:string entity_id,
 }
 
 union hub_service {
@@ -205,8 +216,8 @@ union hub_service {
 	20:hub_call_hub_ntf hub_call_ntf,
 	21:hub_call_hub_wait_migrate_entity wait_migrate_entity,
 	22:hub_call_hub_migrate_entity migrate_entity,
-	23:hub_call_hub_migrate_entity_complete migrate_entity_complete,
-	24:common.response_migrate_entity response_migrate_entity,
+	23:hub_call_hub_create_migrate_entity create_migrate_entity,
+	24:hub_call_hub_migrate_entity_complete migrate_entity_complete,
 }
 
 struct ack_get_guid {
