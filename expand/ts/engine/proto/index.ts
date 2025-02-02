@@ -10,7 +10,6 @@ export * from "./rpc_err";
 export * from "./redis_msg";
 export * from "./reg_server";
 export * from "./reg_server_callback";
-export * from "./response_migrate_entity";
 export * from "./create_remote_entity";
 export * from "./delete_remote_entity";
 export * from "./refresh_entity";

@@ -51,9 +51,9 @@ class player(ABC, base_entity):
     def client_info(self) -> dict:
         pass
     
-    @abstractmethod
-    def on_migrate_to_other_hub(self, migrate_hub:str):
-        pass
+    def on_migrate_to_other_hub(self):
+        from app import app
+        app().player_mgr.del_player(self.entity_id)
     
     def try_migrate_entity(self):
         if not self.is_dynamic:
@@ -64,44 +64,30 @@ class player(ABC, base_entity):
             import random
             if random.random() < 0.2:
                 self.start_migrate_entity()
-                __faildback_timer__ = Timer(app().ctx.migrate_time_interval(), lambda : asyncio.run(self.try_migrate_entity_faildback))
-                __faildback_timer__.start()
                 return
         self.__migrate_timer__ = Timer(app().ctx.migrate_time_interval(), self.try_migrate_entity)
         self.__migrate_timer__.start()
 
-    async def try_migrate_entity_faildback(self):
-        if len(self.wait_lock_migrate_svr) > 0:
-            from app import app
-            migrate_hub = await app().ctx.entry_hub_service(self.service_name)
-            app().ctx.hub_call_hub_migrate_entity(migrate_hub, self.service_name, self.entity_type, self.entity_id, self.conn_client_gate, self.conn_hub_server, self.full_info())
-            app().player_mgr.del_player(self.entity_id)
-            self.on_migrate_to_other_hub(migrate_hub)
-        
-    def start_migrate_entity(self):
+    async def start_migrate_entity(self):
+        from app import app
+        migrate_hub = await app().ctx.entry_hub_service(self.service_name)
+        if migrate_hub != "":
+            app().ctx.hub_call_hub_migrate_entity(migrate_hub, self.service_name, self.entity_type, self.entity_id, "", "", self.conn_client_gate, self.conn_hub_server, self.full_info())
+
+            for hub in self.conn_hub_server:
+                app().ctx.hub_call_hub_wait_migrate_entity(hub, self.entity_id)
+            for gate in self.conn_client_gate:
+                app().ctx.hub_call_gate_wait_migrate_entity(gate, self.entity_id)
+            self.is_migrate = True
+            
+    async def migrate_entity_complete(self):
         from app import app
         for hub in self.conn_hub_server:
-            app().ctx.hub_call_hub_wait_migrate_entity(hub, self.entity_id)
-            self.wait_lock_migrate_svr.append(hub)
+            app().ctx.hub_call_hub_migrate_entity_complete(hub, self.entity_id)
         for gate in self.conn_client_gate:
-            app().ctx.hub_call_gate_wait_migrate_entity(gate, self.entity_id)
-            self.wait_lock_migrate_svr.append(gate)
-        if self.client_gate_name not in self.wait_lock_migrate_svr:
-            app().ctx.hub_call_gate_wait_migrate_entity(self.client_gate_name, self.entity_id)
-            self.wait_lock_migrate_svr.append(self.client_gate_name)
-        self.is_migrate = True
-        
-    async def check_migrate_entity_lock(self, svr:str):
-        if svr not in self.wait_lock_migrate_svr:
-            return
-        self.wait_lock_migrate_svr.remove(svr)
-        if len(self.wait_lock_migrate_svr) <= 0:
-            from app import app
-            migrate_hub = await app().ctx.entry_hub_service(self.service_name)
-            app().ctx.hub_call_hub_migrate_entity(migrate_hub, self.service_name, self.entity_type, self.entity_id, self.conn_client_gate, self.conn_hub_server, self.full_info())
-            app().player_mgr.del_player(self.entity_id)
-            self.on_migrate_to_other_hub(migrate_hub)
-            
+            app().ctx.hub_call_gate_migrate_entity_complete(gate, self.entity_id)
+        self.on_migrate_to_other_hub()
+
     def create_main_remote_entity(self):
         from app import app
         app().ctx.hub_call_client_create_remote_entity(self.client_gate_name, self.is_migrate, [], self.client_conn_id, self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))

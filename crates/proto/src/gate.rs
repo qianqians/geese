@@ -1071,12 +1071,14 @@ impl TSerializable for HubCallWaitMigrateEntity {
 
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HubCallMigrateEntityComplete {
+  pub hub_name: Option<String>,
   pub entity_id: Option<String>,
 }
 
 impl HubCallMigrateEntityComplete {
-  pub fn new<F1>(entity_id: F1) -> HubCallMigrateEntityComplete where F1: Into<Option<String>> {
+  pub fn new<F1, F2>(hub_name: F1, entity_id: F2) -> HubCallMigrateEntityComplete where F1: Into<Option<String>>, F2: Into<Option<String>> {
     HubCallMigrateEntityComplete {
+      hub_name: hub_name.into(),
       entity_id: entity_id.into(),
     }
   }
@@ -1086,6 +1088,7 @@ impl TSerializable for HubCallMigrateEntityComplete {
   fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<HubCallMigrateEntityComplete> {
     i_prot.read_struct_begin()?;
     let mut f_1: Option<String> = Some("".to_owned());
+    let mut f_2: Option<String> = Some("".to_owned());
     loop {
       let field_ident = i_prot.read_field_begin()?;
       if field_ident.field_type == TType::Stop {
@@ -1097,6 +1100,10 @@ impl TSerializable for HubCallMigrateEntityComplete {
           let val = i_prot.read_string()?;
           f_1 = Some(val);
         },
+        2 => {
+          let val = i_prot.read_string()?;
+          f_2 = Some(val);
+        },
         _ => {
           i_prot.skip(field_ident.field_type)?;
         },
@@ -1105,15 +1112,21 @@ impl TSerializable for HubCallMigrateEntityComplete {
     }
     i_prot.read_struct_end()?;
     let ret = HubCallMigrateEntityComplete {
-      entity_id: f_1,
+      hub_name: f_1,
+      entity_id: f_2,
     };
     Ok(ret)
   }
   fn write_to_out_protocol(&self, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {
     let struct_ident = TStructIdentifier::new("hub_call_migrate_entity_complete");
     o_prot.write_struct_begin(&struct_ident)?;
+    if let Some(ref fld_var) = self.hub_name {
+      o_prot.write_field_begin(&TFieldIdentifier::new("hub_name", TType::String, 1))?;
+      o_prot.write_string(fld_var)?;
+      o_prot.write_field_end()?
+    }
     if let Some(ref fld_var) = self.entity_id {
-      o_prot.write_field_begin(&TFieldIdentifier::new("entity_id", TType::String, 1))?;
+      o_prot.write_field_begin(&TFieldIdentifier::new("entity_id", TType::String, 2))?;
       o_prot.write_string(fld_var)?;
       o_prot.write_field_end()?
     }

@@ -74,13 +74,13 @@ impl Entity {
         self.cache_migrate_msg.push(msg)
     }
 
-    pub async fn do_cache_msg(&mut self) {
+    pub async fn do_cache_msg(&mut self, hub_name: String) {
         for msg in &self.cache_migrate_msg {
             let mut delete_hub_name: Option<String> = None; 
             {
                 let mut _conn_mgr = msg.conn_mgr.as_ref().lock().await;
-                let hub_name = self.get_hub_name();
-                if let Some(_hub_arc) = _conn_mgr.get_hub_proxy(hub_name) {
+                self.hub_name = hub_name.clone();
+                if let Some(_hub_arc) = _conn_mgr.get_hub_proxy(&hub_name) {
                     let mut _hub = _hub_arc.as_ref().lock().await;
                     if !_hub.send_hub_msg(msg.msg.clone()).await {
                         delete_hub_name = Some(hub_name.clone());

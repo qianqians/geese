@@ -26,8 +26,8 @@ struct redis_msg {
  * register server to other server.
  */
 struct reg_server {
-	1:string name
-	2:string type;
+	1:string name,
+	2:string type
 }
 
 /*
@@ -36,10 +36,3 @@ struct reg_server {
 struct reg_server_callback {
 	1:string name
 }
-
-/*
- * response migrate entity
- */
- struct response_migrate_entity {
-	1:string entity_id
- }

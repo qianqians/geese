@@ -8,7 +8,7 @@ use thrift::transport::TBufferChannel;
 
 use redis_service::redis_service::create_lock_key;
 
-use proto::common::{RegServer, RegServerCallback, ResponseMigrateEntity};
+use proto::common::{RegServer, RegServerCallback};
 
 use proto::gate::{
     GateHubService, 
@@ -809,7 +809,6 @@ impl GateHubMsgHandle {
             let _entity_id = ev.entity_id.unwrap();
             if let Some(_entity) = _conn_mgr.get_entity_mut(&_entity_id) {
                 _entity.set_is_migrate(true);
-                _p.send_hub_msg(HubService::ResponseMigrateEntity(ResponseMigrateEntity::new(_entity_id.clone()))).await;
             }
         }
         else {
@@ -829,7 +828,7 @@ impl GateHubMsgHandle {
 
             let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
             if let Some(_entity) = _conn_mgr.get_entity_mut(&ev.entity_id.unwrap()) {
-                _entity.do_cache_msg().await;
+                _entity.do_cache_msg(ev.hub_name.unwrap()).await;
             }
         }
         else {
