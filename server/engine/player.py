@@ -86,6 +86,8 @@ class player(ABC, base_entity):
             app().ctx.hub_call_hub_migrate_entity_complete(hub, self.entity_id)
         for gate in self.conn_client_gate:
             app().ctx.hub_call_gate_migrate_entity_complete(gate, self.entity_id)
+        if self.client_gate_name not in self.conn_client_gate:
+            app().ctx.hub_call_gate_migrate_entity_complete(self.client_gate_name, self.entity_id)
         self.on_migrate_to_other_hub()
 
     def create_main_remote_entity(self):
