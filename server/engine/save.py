@@ -22,6 +22,9 @@ class save(ABC, base_dbproxy_handle):
         self.__is_dirty__ = False
         self.__save_timer__ = None
 
+        from app import app
+        app().save_mgr.add_save_entity(self)
+
     def set_dirty(self):
         self.__is_dirty__ = True
         if self.__save_timer__ == None:
