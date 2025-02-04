@@ -55,9 +55,10 @@ class entity(ABC, base_entity):
             import random
             if random.random() < 0.2:
                 self.start_migrate_entity()
-                return
-        self.__migrate_timer__ = Timer(app().ctx.migrate_time_interval(), self.try_migrate_entity)
-        self.__migrate_timer__.start()
+            else:
+                self.__migrate_timer__ = Timer(app().ctx.migrate_time_interval(), self.try_migrate_entity)
+                self.__migrate_timer__.start()
+
 
     async def start_migrate_entity(self):
         from app import app
@@ -70,6 +71,8 @@ class entity(ABC, base_entity):
             for gate in self.conn_client_gate:
                 app().ctx.hub_call_gate_wait_migrate_entity(gate, self.entity_id)
             self.is_migrate = True
+            
+            self.__migrate_timer__.cancel()
             
     async def migrate_entity_complete(self):
         from app import app
@@ -84,16 +87,12 @@ class entity(ABC, base_entity):
             self.conn_client_gate.append(gate_name)
         from app import app
         app().ctx.hub_call_client_create_remote_entity(gate_name, self.is_migrate, conn_id, "", self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))
-        if self.is_migrate and gate_name not in self.wait_lock_migrate_svr:
-            self.wait_lock_migrate_svr.append(gate_name)
 
     def create_remote_hub_entity(self, hub_name:str):
         if hub_name not in self.conn_hub_server:
             self.conn_hub_server.append(hub_name)
         from app import app
         app().ctx.create_service_entity(hub_name, self.is_migrate, self.service_name, self.entity_id, self.entity_type, msgpack.dumps(self.hub_info()))
-        if self.is_migrate and hub_name not in self.wait_lock_migrate_svr:
-            self.wait_lock_migrate_svr.append(hub_name)
 
     def handle_hub_request(self, source_hub:str, method:str, msg_cb_id:int, argvs:bytes):
         _call_handle = self.hub_request_callback[method]
