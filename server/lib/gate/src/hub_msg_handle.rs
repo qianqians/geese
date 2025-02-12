@@ -758,7 +758,7 @@ impl GateHubMsgHandle {
                                 if entity.get_hub_name().eq(&_hub_name) {
                                     let is_main = entity.get_main_conn_id().unwrap_or_default() == conn_id;
                                     _hub.send_hub_msg(HubService::TransferEntityControl(TransferEntityControl::new(
-                                        _entity_id.clone(), is_main, ev.is_replace.unwrap(), new_gate_name.clone(), new_conn_id.clone()))).await;
+                                        _entity_id.clone(), is_main, ev.is_reconnect.unwrap(), new_gate_name.clone(), new_conn_id.clone()))).await;
                                     
                                     let mut _client_tmp = _client_arc.as_ref().lock().await;
                                     _client_tmp.set_wait_transfer_entity(_entity_id.clone());
