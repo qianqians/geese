@@ -12,9 +12,9 @@ class conn_msg_handle(object):
         from app import app
         app().run_coroutine_async(app().login_handle.reconnect(gate_name, conn_id, entity_id, token))
     
-    def on_transfer_entity_control(self, entity_id:str, is_main:bool, is_replace:bool, gate_name:str, conn_id:str):
+    def on_transfer_entity_control(self, entity_id:str, is_main:bool, is_reconnect:bool, gate_name:str, conn_id:str):
         from app import app
-        app().login_handle.on_transfer_entity_control(entity_id, is_main, is_replace, gate_name, conn_id)
+        app().login_handle.on_transfer_entity_control(entity_id, is_main, is_reconnect, gate_name, conn_id)
         
     def on_client_disconnnect(self, gate_name:str, conn_id:str):
         from app import app

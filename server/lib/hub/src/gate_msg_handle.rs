@@ -49,7 +49,7 @@ impl GateCallbackMsgHandle {
     pub fn do_transfer_entity_control(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: TransferEntityControl) {
         trace!("do_transfer_entity_control begin!");
 
-        let argvs = (ev.entity_id.unwrap(), ev.is_main.unwrap(), ev.is_replace.unwrap(), ev.gate_name.unwrap(), ev.conn_id.unwrap(),);
+        let argvs = (ev.entity_id.unwrap(), ev.is_main.unwrap(), ev.is_reconnect.unwrap(), ev.gate_name.unwrap(), ev.conn_id.unwrap(),);
         if let Err(e) = py_handle.call_method1(py, "on_transfer_entity_control", argvs) {
             error!("do_transfer_entity_control python callback error:{}", e)
         }

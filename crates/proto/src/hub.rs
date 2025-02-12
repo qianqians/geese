@@ -420,17 +420,17 @@ impl TSerializable for TransferMsgEnd {
 pub struct TransferEntityControl {
   pub entity_id: Option<String>,
   pub is_main: Option<bool>,
-  pub is_replace: Option<bool>,
+  pub is_reconnect: Option<bool>,
   pub gate_name: Option<String>,
   pub conn_id: Option<String>,
 }
 
 impl TransferEntityControl {
-  pub fn new<F1, F2, F3, F4, F5>(entity_id: F1, is_main: F2, is_replace: F3, gate_name: F4, conn_id: F5) -> TransferEntityControl where F1: Into<Option<String>>, F2: Into<Option<bool>>, F3: Into<Option<bool>>, F4: Into<Option<String>>, F5: Into<Option<String>> {
+  pub fn new<F1, F2, F3, F4, F5>(entity_id: F1, is_main: F2, is_reconnect: F3, gate_name: F4, conn_id: F5) -> TransferEntityControl where F1: Into<Option<String>>, F2: Into<Option<bool>>, F3: Into<Option<bool>>, F4: Into<Option<String>>, F5: Into<Option<String>> {
     TransferEntityControl {
       entity_id: entity_id.into(),
       is_main: is_main.into(),
-      is_replace: is_replace.into(),
+      is_reconnect: is_reconnect.into(),
       gate_name: gate_name.into(),
       conn_id: conn_id.into(),
     }
@@ -482,7 +482,7 @@ impl TSerializable for TransferEntityControl {
     let ret = TransferEntityControl {
       entity_id: f_1,
       is_main: f_2,
-      is_replace: f_3,
+      is_reconnect: f_3,
       gate_name: f_4,
       conn_id: f_5,
     };
@@ -501,8 +501,8 @@ impl TSerializable for TransferEntityControl {
       o_prot.write_bool(fld_var)?;
       o_prot.write_field_end()?
     }
-    if let Some(fld_var) = self.is_replace {
-      o_prot.write_field_begin(&TFieldIdentifier::new("is_replace", TType::Bool, 3))?;
+    if let Some(fld_var) = self.is_reconnect {
+      o_prot.write_field_begin(&TFieldIdentifier::new("is_reconnect", TType::Bool, 3))?;
       o_prot.write_bool(fld_var)?;
       o_prot.write_field_end()?
     }

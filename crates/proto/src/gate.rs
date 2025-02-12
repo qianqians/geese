@@ -839,17 +839,17 @@ pub struct HubCallTransferClient {
   pub prompt_info: Option<String>,
   pub new_gate: Option<String>,
   pub new_conn_id: Option<String>,
-  pub is_replace: Option<bool>,
+  pub is_reconnect: Option<bool>,
 }
 
 impl HubCallTransferClient {
-  pub fn new<F1, F2, F3, F4, F5>(conn_id: F1, prompt_info: F2, new_gate: F3, new_conn_id: F4, is_replace: F5) -> HubCallTransferClient where F1: Into<Option<String>>, F2: Into<Option<String>>, F3: Into<Option<String>>, F4: Into<Option<String>>, F5: Into<Option<bool>> {
+  pub fn new<F1, F2, F3, F4, F5>(conn_id: F1, prompt_info: F2, new_gate: F3, new_conn_id: F4, is_reconnect: F5) -> HubCallTransferClient where F1: Into<Option<String>>, F2: Into<Option<String>>, F3: Into<Option<String>>, F4: Into<Option<String>>, F5: Into<Option<bool>> {
     HubCallTransferClient {
       conn_id: conn_id.into(),
       prompt_info: prompt_info.into(),
       new_gate: new_gate.into(),
       new_conn_id: new_conn_id.into(),
-      is_replace: is_replace.into(),
+      is_reconnect: is_reconnect.into(),
     }
   }
 }
@@ -901,7 +901,7 @@ impl TSerializable for HubCallTransferClient {
       prompt_info: f_2,
       new_gate: f_3,
       new_conn_id: f_4,
-      is_replace: f_5,
+      is_reconnect: f_5,
     };
     Ok(ret)
   }
@@ -928,8 +928,8 @@ impl TSerializable for HubCallTransferClient {
       o_prot.write_string(fld_var)?;
       o_prot.write_field_end()?
     }
-    if let Some(fld_var) = self.is_replace {
-      o_prot.write_field_begin(&TFieldIdentifier::new("is_replace", TType::Bool, 5))?;
+    if let Some(fld_var) = self.is_reconnect {
+      o_prot.write_field_begin(&TFieldIdentifier::new("is_reconnect", TType::Bool, 5))?;
       o_prot.write_bool(fld_var)?;
       o_prot.write_field_end()?
     }

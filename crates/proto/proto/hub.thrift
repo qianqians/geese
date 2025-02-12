@@ -46,7 +46,7 @@ struct transfer_msg_end {
 struct transfer_entity_control {
 	1:string entity_id,
 	2:bool is_main,
-	3:bool is_replace,
+	3:bool is_reconnect,
 	4:string gate_name,
 	5:string conn_id
 }

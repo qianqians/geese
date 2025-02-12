@@ -98,7 +98,7 @@ struct hub_call_transfer_client {
 	2:string prompt_info,
 	3:string new_gate,
 	4:string new_conn_id,
-	5:bool is_replace,
+	5:bool is_reconnect,
 }
 
 /*
