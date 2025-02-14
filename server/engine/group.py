@@ -23,6 +23,12 @@ class group(object):
             gate_name, conn_id = _c
             if cli_gate_name == gate_name and cli_conn_id == conn_id:
                 self.clients.remove(_c)
+
+                from app import app
+                for _e in self.entities.values():
+                    app().ctx.hub_call_client_remove_remote_entity(cli_gate_name, _e.entity_id, cli_conn_id)
+                for _p in self.players.values():
+                    app().ctx.hub_call_client_remove_remote_entity(cli_gate_name, _p.entity_id, cli_conn_id)
                 break
     
     def create_remote_entity(self, _e:entity):
