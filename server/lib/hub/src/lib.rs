@@ -54,6 +54,7 @@ use proto::gate::{
     GateHubService,
     HubCallClientCreateRemoteEntity,
     HubCallClientDeleteRemoteEntity,
+    HubCallClientRemoveRemoteEntity,
     HubCallClientRefreshEntity,
     HubCallClientRpc,
     HubCallClientRsp,
@@ -599,6 +600,22 @@ impl HubContext {
                 gate_name, 
                 GateHubService::DeleteRemoteEntity(
                     HubCallClientDeleteRemoteEntity::new(entity_id))).await
+        })
+    }
+
+    pub fn hub_call_client_remove_remote_entity(slf: PyRefMut<'_, Self>, gate_name: String, entity_id: String, conn_id: String) -> bool {
+        trace!("hub_call_client_delete_remote_entity begin!");
+
+        let _server = slf.server.clone();
+        let _self_name = slf.hub_name.clone();
+
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.send_gate_msg(
+                gate_name, 
+                GateHubService::ClientRemoveRemoteEntity(
+                    HubCallClientRemoveRemoteEntity::new(entity_id, conn_id))).await
         })
     }
 

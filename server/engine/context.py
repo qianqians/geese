@@ -96,6 +96,9 @@ class context(object):
     def hub_call_client_delete_remote_entity(self, gate_name:str, entity_id:str) -> bool:
         return self.ctx.hub_call_client_delete_remote_entity(gate_name, entity_id)
     
+    def hub_call_client_remove_remote_entity(self, gate_name:str, entity_id:str, conn_id:str) -> bool:
+        return self.ctx.hub_call_client_remove_remote_entity(gate_name, entity_id, conn_id)
+    
     def hub_call_client_refresh_entity(self, gate_name:str, is_migrate: bool, conn_id:str, is_main:bool, entity_id:str, entity_type:str, argvs:bytes):
         return self.ctx.hub_call_client_refresh_entity(gate_name, is_migrate, conn_id, is_main, entity_id, entity_type, argvs)
     
