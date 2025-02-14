@@ -14,6 +14,7 @@ use proto::gate::{
     GateHubService, 
     HubCallClientCreateRemoteEntity, 
     HubCallClientDeleteRemoteEntity,
+    HubCallClientRemoveRemoteEntity,
     HubCallClientRefreshEntity,
     HubCallClientRpc, 
     HubCallClientRsp, 
@@ -126,6 +127,7 @@ impl GateHubMsgHandle {
                 GateHubService::RegServerCallback(ev) => GateHubMsgHandle::do_reg_server_callback(proxy, ev).await,
                 GateHubService::CreateRemoteEntity(ev) => GateHubMsgHandle::do_create_remote_entity(proxy, ev).await,
                 GateHubService::DeleteRemoteEntity(ev) => GateHubMsgHandle::do_delete_remote_entity(proxy, ev).await,
+                GateHubService::ClientRemoveRemoteEntity(ev) => GateHubMsgHandle::do_client_remove_remote_entity(proxy, ev).await,
                 GateHubService::RefreshEntity(ev) => GateHubMsgHandle::do_refresh_entity(proxy, ev).await,
                 GateHubService::CallRpc(ev) => GateHubMsgHandle::do_call_client_rpc(proxy, ev).await,
                 GateHubService::CallRsp(ev) => GateHubMsgHandle::do_call_client_rsp(proxy, ev).await,
@@ -361,6 +363,43 @@ impl GateHubMsgHandle {
         }
 
         trace!("do_hub_event delete_remote_entity end!");
+    }
+
+    pub async fn do_client_remove_remote_entity(_proxy: Weak<Mutex<HubProxy>>, ev: HubCallClientRemoveRemoteEntity) {
+        trace!("do_hub_event delete_remote_entity begin!");
+
+        if let Some(_proxy_handle) = _proxy.upgrade() {
+            let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
+            {
+                let mut _p = _proxy_handle.as_ref().lock().await;
+                _conn_mgr_arc = _p.get_conn_mgr();
+            }
+            let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
+
+            let entity_id = ev.entity_id.unwrap();
+            let conn_id = ev.conn_id.unwrap();
+            let mut send_ret = false;
+            {
+                let conn_mut_ref = &mut *_conn_mgr;
+                if let Some(_client_arc) = conn_mut_ref.get_client_proxy(&conn_id) {
+                    let mut _client = _client_arc.as_ref().lock().await;
+                    if _client.send_client_msg(ClientService::DeleteRemoteEntity(DeleteRemoteEntity::new(entity_id.clone()))).await {
+                        send_ret = true;
+                    }
+                    _client.entities.remove(&entity_id);
+                }
+            }
+            if !send_ret {
+                let conn_mut_ref = &mut *_conn_mgr;
+                conn_mut_ref.delete_client_proxy(&conn_id);
+                
+                info!("do_client_remove_remote_entity get_conn_ids delete_client_proxy!");
+            }
+                
+            if let Some(_entity) = _conn_mgr.get_entity_mut(&entity_id) {
+                _entity.delete_conn_id(&conn_id);
+            }
+        }
     }
 
     pub async fn do_refresh_entity(_proxy: Weak<Mutex<HubProxy>>, ev: HubCallClientRefreshEntity) {

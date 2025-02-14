@@ -22,6 +22,14 @@ struct hub_call_client_delete_remote_entity {
 }
 
 /*
+ * hub command client remove entity
+ */
+struct hub_call_client_remove_remote_entity {
+	1:string entity_id,
+	2:string conn_id
+}
+
+/*
  * gate forward hub msg to client.
  * refresh remote entity in client.
  */
@@ -141,6 +149,7 @@ union gate_hub_service {
 	14:hub_call_transfer_entity_complete transfer_complete,
 	15:hub_call_wait_migrate_entity wait_migrate_entity,
 	16:hub_call_migrate_entity_complete migrate_entity_complete,
+	17:hub_call_client_remove_remote_entity client_remove_remote_entity,
 }
 
 /*

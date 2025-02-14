@@ -218,6 +218,76 @@ impl TSerializable for HubCallClientDeleteRemoteEntity {
 }
 
 //
+// HubCallClientRemoveRemoteEntity
+//
+
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HubCallClientRemoveRemoteEntity {
+  pub entity_id: Option<String>,
+  pub conn_id: Option<String>,
+}
+
+impl HubCallClientRemoveRemoteEntity {
+  pub fn new<F1, F2>(entity_id: F1, conn_id: F2) -> HubCallClientRemoveRemoteEntity where F1: Into<Option<String>>, F2: Into<Option<String>> {
+    HubCallClientRemoveRemoteEntity {
+      entity_id: entity_id.into(),
+      conn_id: conn_id.into(),
+    }
+  }
+}
+
+impl TSerializable for HubCallClientRemoveRemoteEntity {
+  fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<HubCallClientRemoveRemoteEntity> {
+    i_prot.read_struct_begin()?;
+    let mut f_1: Option<String> = Some("".to_owned());
+    let mut f_2: Option<String> = Some("".to_owned());
+    loop {
+      let field_ident = i_prot.read_field_begin()?;
+      if field_ident.field_type == TType::Stop {
+        break;
+      }
+      let field_id = field_id(&field_ident)?;
+      match field_id {
+        1 => {
+          let val = i_prot.read_string()?;
+          f_1 = Some(val);
+        },
+        2 => {
+          let val = i_prot.read_string()?;
+          f_2 = Some(val);
+        },
+        _ => {
+          i_prot.skip(field_ident.field_type)?;
+        },
+      };
+      i_prot.read_field_end()?;
+    }
+    i_prot.read_struct_end()?;
+    let ret = HubCallClientRemoveRemoteEntity {
+      entity_id: f_1,
+      conn_id: f_2,
+    };
+    Ok(ret)
+  }
+  fn write_to_out_protocol(&self, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {
+    let struct_ident = TStructIdentifier::new("hub_call_client_remove_remote_entity");
+    o_prot.write_struct_begin(&struct_ident)?;
+    if let Some(ref fld_var) = self.entity_id {
+      o_prot.write_field_begin(&TFieldIdentifier::new("entity_id", TType::String, 1))?;
+      o_prot.write_string(fld_var)?;
+      o_prot.write_field_end()?
+    }
+    if let Some(ref fld_var) = self.conn_id {
+      o_prot.write_field_begin(&TFieldIdentifier::new("conn_id", TType::String, 2))?;
+      o_prot.write_string(fld_var)?;
+      o_prot.write_field_end()?
+    }
+    o_prot.write_field_stop()?;
+    o_prot.write_struct_end()
+  }
+}
+
+//
 // HubCallClientRefreshEntity
 //
 
@@ -1157,6 +1227,7 @@ pub enum GateHubService {
   TransferComplete(HubCallTransferEntityComplete),
   WaitMigrateEntity(HubCallWaitMigrateEntity),
   MigrateEntityComplete(HubCallMigrateEntityComplete),
+  ClientRemoveRemoteEntity(HubCallClientRemoveRemoteEntity),
 }
 
 impl TSerializable for GateHubService {
@@ -1283,6 +1354,13 @@ impl TSerializable for GateHubService {
           }
           received_field_count += 1;
         },
+        17 => {
+          let val = HubCallClientRemoveRemoteEntity::read_from_in_protocol(i_prot)?;
+          if ret.is_none() {
+            ret = Some(GateHubService::ClientRemoveRemoteEntity(val));
+          }
+          received_field_count += 1;
+        },
         _ => {
           i_prot.skip(field_ident.field_type)?;
           received_field_count += 1;
@@ -1394,6 +1472,11 @@ impl TSerializable for GateHubService {
       },
       GateHubService::MigrateEntityComplete(ref f) => {
         o_prot.write_field_begin(&TFieldIdentifier::new("migrate_entity_complete", TType::Struct, 16))?;
+        f.write_to_out_protocol(o_prot)?;
+        o_prot.write_field_end()?;
+      },
+      GateHubService::ClientRemoveRemoteEntity(ref f) => {
+        o_prot.write_field_begin(&TFieldIdentifier::new("client_remove_remote_entity", TType::Struct, 17))?;
         f.write_to_out_protocol(o_prot)?;
         o_prot.write_field_end()?;
       },
