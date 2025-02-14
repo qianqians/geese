@@ -380,8 +380,7 @@ impl GateHubMsgHandle {
             let conn_id = ev.conn_id.unwrap();
             let mut send_ret = false;
             {
-                let conn_mut_ref = &mut *_conn_mgr;
-                if let Some(_client_arc) = conn_mut_ref.get_client_proxy(&conn_id) {
+                if let Some(_client_arc) = _conn_mgr.get_client_proxy(&conn_id) {
                     let mut _client = _client_arc.as_ref().lock().await;
                     if _client.send_client_msg(ClientService::DeleteRemoteEntity(DeleteRemoteEntity::new(entity_id.clone()))).await {
                         send_ret = true;
@@ -390,9 +389,7 @@ impl GateHubMsgHandle {
                 }
             }
             if !send_ret {
-                let conn_mut_ref = &mut *_conn_mgr;
-                conn_mut_ref.delete_client_proxy(&conn_id);
-                
+                _conn_mgr.delete_client_proxy(&conn_id);
                 info!("do_client_remove_remote_entity get_conn_ids delete_client_proxy!");
             }
                 
