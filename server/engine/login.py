@@ -11,7 +11,7 @@ class login_event_handle(ABC, base_dbproxy_handle):
         self.__db__ = db
         self.__collection__ = collection
         
-        self.kick_off_client_callback:dict[str, Callable[[bool],None]]
+        self.kick_off_client_callback:dict[str, Callable[[bool],None]] = {}
     
     @abstractmethod
     async def on_login(self, new_gate_name:str, new_conn_id:str, sdk_uuid:str, argvs:dict):
@@ -28,9 +28,9 @@ class login_event_handle(ABC, base_dbproxy_handle):
         if (not is_entry_player) and (not is_entry_entity) and is_reconnect:
             app().ctx.hub_call_client_delete_remote_entity(new_gate_name, entity_id)
     
-    def __replace_client__(self, old_gate_name:str, old_conn_id:str, new_gate_name:str, new_conn_id:str, is_replace:bool, prompt_info:str):
+    def __replace_client__(self, old_gate_name:str, old_conn_id:str, new_gate_name:str, new_conn_id:str, sdk_uuid:str, token:str, is_replace:bool, prompt_info:str):
         from app import app
-        app().ctx.hub_call_replace_client(old_gate_name, old_conn_id, new_gate_name, new_conn_id, is_replace, prompt_info)
+        app().ctx.hub_call_replace_client(old_gate_name, old_conn_id, new_gate_name, new_conn_id, sdk_uuid, token, is_replace, prompt_info)
 
 class login_service(object):
     def __init__(self, login_event_handle:login_event_handle) -> None:

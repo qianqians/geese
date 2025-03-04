@@ -582,8 +582,10 @@ impl ConnCallbackMsgHandle {
                     error!("gate client request reconnect conn_proxy is destory!");
                 }
             },
-            HubService::TransferMsgEnd(_) => {
-                // discarded!
+            HubService::TransferMsgEnd(ev) => {
+                let mut _gate_msg_handle_c = _self.gate_msg_handle.as_ref().lock().unwrap();
+                _gate_msg_handle_c.do_transfer_msg_end(py, py_handle, ev);
+
             },
             HubService::TransferEntityControl(ev) => {
                 let conn_id = ev.conn_id.clone();

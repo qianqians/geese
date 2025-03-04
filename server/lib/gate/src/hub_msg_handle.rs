@@ -44,6 +44,7 @@ use proto::client::{
 
 use proto::hub::{
     HubService,
+    TransferMsgEnd,
     TransferEntityControl
 };
 
@@ -803,6 +804,10 @@ impl GateHubMsgHandle {
                         }
                     }
                 }
+            }
+            {
+                let mut _p = _proxy_clone.as_ref().lock().await;
+                _p.send_hub_msg(HubService::TransferMsgEnd(TransferMsgEnd::new(new_conn_id, true))).await;
             }
         }
         else {
