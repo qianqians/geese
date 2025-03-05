@@ -1,11 +1,20 @@
 # -*- coding: UTF-8 -*-
 from threading import Timer
+from collections.abc import Callable
 from .pyhub import HubContext
+
+def transfer_timeout(new_gate_name:str, new_conn_id:str, sdk_uuid:str, token:str):
+    from app import app
+    _t = app().ctx.transfer_timeout[new_conn_id]
+    if _t!= None:
+        app().ctx.transfer_timeout.pop(new_conn_id)
+        app().login_handle.reconnect(new_gate_name, new_conn_id, sdk_uuid, token)
 
 class context(object):
     def __init__(self, cfg_file:str) -> None:
         self.ctx = HubContext(cfg_file)
         self.flush_hub_host_cache()
+        self.transfer_timeout:dict[str, Timer] = {}
 
     def hub_name(self) -> str:
         return self.ctx.hub_name()
@@ -96,6 +105,9 @@ class context(object):
     def hub_call_client_delete_remote_entity(self, gate_name:str, entity_id:str) -> bool:
         return self.ctx.hub_call_client_delete_remote_entity(gate_name, entity_id)
     
+    def hub_call_client_remove_remote_entity(self, gate_name:str, entity_id:str, conn_id:str) -> bool:
+        return self.ctx.hub_call_client_remove_remote_entity(gate_name, entity_id, conn_id)
+    
     def hub_call_client_refresh_entity(self, gate_name:str, is_migrate: bool, conn_id:str, is_main:bool, entity_id:str, entity_type:str, argvs:bytes):
         return self.ctx.hub_call_client_refresh_entity(gate_name, is_migrate, conn_id, is_main, entity_id, entity_type, argvs)
     
@@ -120,7 +132,9 @@ class context(object):
     def hub_call_kick_off_client_complete(self, gate_name:str, conn_id:str) -> bool:
         return self.ctx.hub_call_kick_off_client_complete(gate_name, conn_id)
 
-    def hub_call_replace_client(self, old_gate_name:str, old_conn_id:str, new_gate_name:str, new_conn_id:str, is_replace:bool, prompt_info:str) -> bool:
+    def hub_call_replace_client(self, old_gate_name:str, old_conn_id:str, new_gate_name:str, new_conn_id:str, sdk_uuid:str, token:str, is_replace:bool, prompt_info:str) -> bool:
+        from app import app
+        self.transfer_timeout[new_conn_id] = Timer(1000, lambda : transfer_timeout(new_gate_name, new_conn_id, sdk_uuid, token))
         return self.ctx.hub_call_transfer_client(old_gate_name, old_conn_id, new_gate_name, new_conn_id, is_replace, prompt_info)
     
     def hub_call_gate_wait_migrate_entity(self, gate_name:str, entity_id:str) -> bool:
