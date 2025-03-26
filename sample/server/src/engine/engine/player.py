@@ -53,7 +53,8 @@ class player(ABC, base_entity):
     
     def on_migrate_to_other_hub(self):
         from app import app
-        app().player_mgr.del_player(self.entity_id)
+        app().entity_mgr.del_entity(self.entity_id)
+        app().save_mgr.del_save_entity(self.entity_id)
     
     def try_migrate_entity(self):
         if not self.is_dynamic:
