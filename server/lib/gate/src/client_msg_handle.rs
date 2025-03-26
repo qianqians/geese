@@ -158,7 +158,7 @@ impl GateClientMsgHandle {
             return;
         }
 
-        if ev.token.is_none() {
+        if ev.argvs.is_none() {
             warn!("do_client_request_hub_reconnect wrong argvs ev.token.is_none");
             return;
         }
@@ -178,7 +178,7 @@ impl GateClientMsgHandle {
                 let _gate_name = _conn_mgr_handle.get_gate_name();
                 let _gate_host = _conn_mgr_handle.get_gate_host();
 
-                if !request_reconnect(_hub.clone(), _gate_name, _gate_host, _conn_id, ev.account_id.unwrap(), ev.token.unwrap()).await {
+                if !request_reconnect(_hub.clone(), _gate_name, _gate_host, _conn_id, ev.account_id.unwrap(), ev.argvs.unwrap()).await {
                     let _hub_handle = _hub.as_ref().lock().await;
                     _conn_mgr_handle.delete_hub_proxy(&_hub_handle.get_hub_name());
                 }

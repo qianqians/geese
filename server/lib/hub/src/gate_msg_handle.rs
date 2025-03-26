@@ -41,7 +41,7 @@ impl GateCallbackMsgHandle {
     pub fn do_client_request_reconnect(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: ClientRequestReconnect) {
         trace!("do_client_request_reconnect begin!");
 
-        let argvs = (ev.gate_name.unwrap(), ev.conn_id.unwrap(), ev.account_id.unwrap(), ev.token.unwrap());
+        let argvs = (ev.gate_name.unwrap(), ev.conn_id.unwrap(), ev.account_id.unwrap(), ev.argvs.unwrap());
         if let Err(e) = py_handle.call_method1(py, "on_client_request_reconnect", argvs) {
             error!("do_client_request_reconnect python callback error:{}", e)
         }    

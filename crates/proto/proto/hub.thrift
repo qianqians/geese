@@ -19,7 +19,7 @@ struct client_request_reconnect {
 	2:string gate_host,
 	3:string conn_id,
 	4:string account_id,
-	5:string token
+	5:binary argvs,
 }
 
 /*

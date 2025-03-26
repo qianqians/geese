@@ -165,7 +165,7 @@ struct client_request_hub_login {
  */
 struct client_request_hub_reconnect {
 	1:string account_id,
-	2:string token
+	2:binary argvs
 }
 
 /*

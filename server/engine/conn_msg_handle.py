@@ -8,9 +8,9 @@ class conn_msg_handle(object):
         from app import app
         app().run_coroutine_async(app().login_handle.login(gate_name, conn_id, sdk_uuid, loads(argvs)))
 
-    def on_client_request_reconnect(self, gate_name:str, conn_id:str, entity_id:str, token:str):
+    def on_client_request_reconnect(self, gate_name:str, conn_id:str, entity_id:str, argvs:bytes):
         from app import app
-        app().run_coroutine_async(app().login_handle.reconnect(gate_name, conn_id, entity_id, token))
+        app().run_coroutine_async(app().login_handle.reconnect(gate_name, conn_id, entity_id, loads(argvs)))
     
     def do_transfer_msg_end(self, conn_id:str, is_kick_off:bool):
         from app import app
