@@ -1091,15 +1091,17 @@ pub struct HubForwardClientRequestService {
   pub gate_name: Option<String>,
   pub gate_host: Option<String>,
   pub conn_id: Option<String>,
+  pub player_id: Option<String>,
 }
 
 impl HubForwardClientRequestService {
-  pub fn new<F1, F2, F3, F4>(service_name: F1, gate_name: F2, gate_host: F3, conn_id: F4) -> HubForwardClientRequestService where F1: Into<Option<String>>, F2: Into<Option<String>>, F3: Into<Option<String>>, F4: Into<Option<String>> {
+  pub fn new<F1, F2, F3, F4, F5>(service_name: F1, gate_name: F2, gate_host: F3, conn_id: F4, player_id: F5) -> HubForwardClientRequestService where F1: Into<Option<String>>, F2: Into<Option<String>>, F3: Into<Option<String>>, F4: Into<Option<String>>, F5: Into<Option<String>> {
     HubForwardClientRequestService {
       service_name: service_name.into(),
       gate_name: gate_name.into(),
       gate_host: gate_host.into(),
       conn_id: conn_id.into(),
+      player_id: player_id.into(),
     }
   }
 }
@@ -1111,6 +1113,7 @@ impl TSerializable for HubForwardClientRequestService {
     let mut f_2: Option<String> = Some("".to_owned());
     let mut f_3: Option<String> = Some("".to_owned());
     let mut f_4: Option<String> = Some("".to_owned());
+    let mut f_5: Option<String> = Some("".to_owned());
     loop {
       let field_ident = i_prot.read_field_begin()?;
       if field_ident.field_type == TType::Stop {
@@ -1134,6 +1137,10 @@ impl TSerializable for HubForwardClientRequestService {
           let val = i_prot.read_string()?;
           f_4 = Some(val);
         },
+        5 => {
+          let val = i_prot.read_string()?;
+          f_5 = Some(val);
+        },
         _ => {
           i_prot.skip(field_ident.field_type)?;
         },
@@ -1146,6 +1153,7 @@ impl TSerializable for HubForwardClientRequestService {
       gate_name: f_2,
       gate_host: f_3,
       conn_id: f_4,
+      player_id: f_5,
     };
     Ok(ret)
   }
@@ -1169,6 +1177,11 @@ impl TSerializable for HubForwardClientRequestService {
     }
     if let Some(ref fld_var) = self.conn_id {
       o_prot.write_field_begin(&TFieldIdentifier::new("conn_id", TType::String, 4))?;
+      o_prot.write_string(fld_var)?;
+      o_prot.write_field_end()?
+    }
+    if let Some(ref fld_var) = self.player_id {
+      o_prot.write_field_begin(&TFieldIdentifier::new("player_id", TType::String, 5))?;
       o_prot.write_string(fld_var)?;
       o_prot.write_field_end()?
     }

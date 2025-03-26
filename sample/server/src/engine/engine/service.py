@@ -23,7 +23,7 @@ class service(ABC):
         pass
     
     @abstractmethod
-    def client_query_service_entity(self, queryer_gate_name:str, queryer_client_conn_id:str):
+    def client_query_service_entity(self, queryer_gate_name:str, queryer_client_conn_id:str, queryer_client_player_id:str):
         pass
     
 class service_manager(object):
