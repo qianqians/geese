@@ -72,8 +72,8 @@ class context(object):
     def create_service_entity(self, is_migrate: bool, hub_name:str, service_name:str, entity_id:str, entity_type:str, argvs:bytes) -> bool:
         return self.ctx.create_service_entity(is_migrate, hub_name, service_name, entity_id, entity_type, argvs)
     
-    def forward_client_request_service(self, hub_name:str, service_name:str, gate_name:str, gate_host:str, conn_id:str) -> bool:
-        return self.ctx.forward_client_request_service(hub_name, service_name, gate_name, gate_host, conn_id)
+    def forward_client_request_service(self, hub_name:str, service_name:str, gate_name:str, gate_host:str, conn_id:str, player_id:str) -> bool:
+        return self.ctx.forward_client_request_service(hub_name, service_name, gate_name, gate_host, conn_id, player_id)
     
     def hub_call_hub_rpc(self, hub_name:str, entity_id:str, msg_cb_id:int, method:str, argvs:bytes) -> bool:
         return self.ctx.hub_call_hub_rpc(hub_name, entity_id, msg_cb_id, method, argvs)
