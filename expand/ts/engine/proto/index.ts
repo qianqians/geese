@@ -24,6 +24,7 @@ export * from "./call_global";
 export * from "./gate_call_heartbeats";
 export * from "./hub_call_client_create_remote_entity";
 export * from "./hub_call_client_delete_remote_entity";
+export * from "./hub_call_client_remove_remote_entity";
 export * from "./hub_call_client_refresh_entity";
 export * from "./hub_call_client_rpc";
 export * from "./hub_call_client_rsp";

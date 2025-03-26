@@ -10,14 +10,14 @@ export interface Ihub_call_transfer_clientArgs {
     prompt_info?: string;
     new_gate?: string;
     new_conn_id?: string;
-    is_replace?: boolean;
+    is_reconnect?: boolean;
 }
 export class hub_call_transfer_client {
     public conn_id?: string;
     public prompt_info?: string;
     public new_gate?: string;
     public new_conn_id?: string;
-    public is_replace?: boolean;
+    public is_reconnect?: boolean;
     constructor(args?: Ihub_call_transfer_clientArgs) {
         if (args != null && args.conn_id != null) {
             this.conn_id = args.conn_id;
@@ -31,8 +31,8 @@ export class hub_call_transfer_client {
         if (args != null && args.new_conn_id != null) {
             this.new_conn_id = args.new_conn_id;
         }
-        if (args != null && args.is_replace != null) {
-            this.is_replace = args.is_replace;
+        if (args != null && args.is_reconnect != null) {
+            this.is_reconnect = args.is_reconnect;
         }
     }
     public write(output: thrift.TProtocol): void {
@@ -57,9 +57,9 @@ export class hub_call_transfer_client {
             output.writeString(this.new_conn_id);
             output.writeFieldEnd();
         }
-        if (this.is_replace != null) {
-            output.writeFieldBegin("is_replace", thrift.Thrift.Type.BOOL, 5);
-            output.writeBool(this.is_replace);
+        if (this.is_reconnect != null) {
+            output.writeFieldBegin("is_reconnect", thrift.Thrift.Type.BOOL, 5);
+            output.writeBool(this.is_reconnect);
             output.writeFieldEnd();
         }
         output.writeFieldStop();
@@ -116,7 +116,7 @@ export class hub_call_transfer_client {
                 case 5:
                     if (fieldType === thrift.Thrift.Type.BOOL) {
                         const value_5: boolean = input.readBool();
-                        _args.is_replace = value_5;
+                        _args.is_reconnect = value_5;
                     }
                     else {
                         input.skip(fieldType);

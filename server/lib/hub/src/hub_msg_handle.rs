@@ -72,7 +72,8 @@ impl HubCallbackMsgHandle {
             hub_name,
             ev.service_name.unwrap(), 
             ev.gate_name.unwrap(), 
-            ev.conn_id.unwrap());
+            ev.conn_id.unwrap(),
+            ev.player_id.unwrap());
         if let Err(e) = py_handle.call_method1(py, "on_forward_client_request_service", argvs) {
             error!("do_forward_client_request_service python callback error:{}", e)
         }

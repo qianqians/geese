@@ -20,6 +20,7 @@ import * as hub_call_transfer_client from "./hub_call_transfer_client";
 import * as hub_call_transfer_entity_complete from "./hub_call_transfer_entity_complete";
 import * as hub_call_wait_migrate_entity from "./hub_call_wait_migrate_entity";
 import * as hub_call_migrate_entity_complete from "./hub_call_migrate_entity_complete";
+import * as hub_call_client_remove_remote_entity from "./hub_call_client_remove_remote_entity";
 export interface Igate_hub_serviceArgs {
     reg_server?: __ROOT_NAMESPACE__.reg_server;
     reg_server_callback?: __ROOT_NAMESPACE__.reg_server_callback;
@@ -37,6 +38,7 @@ export interface Igate_hub_serviceArgs {
     transfer_complete?: hub_call_transfer_entity_complete.hub_call_transfer_entity_complete;
     wait_migrate_entity?: hub_call_wait_migrate_entity.hub_call_wait_migrate_entity;
     migrate_entity_complete?: hub_call_migrate_entity_complete.hub_call_migrate_entity_complete;
+    client_remove_remote_entity?: hub_call_client_remove_remote_entity.hub_call_client_remove_remote_entity;
 }
 export class gate_hub_service {
     public reg_server?: __ROOT_NAMESPACE__.reg_server;
@@ -55,6 +57,7 @@ export class gate_hub_service {
     public transfer_complete?: hub_call_transfer_entity_complete.hub_call_transfer_entity_complete;
     public wait_migrate_entity?: hub_call_wait_migrate_entity.hub_call_wait_migrate_entity;
     public migrate_entity_complete?: hub_call_migrate_entity_complete.hub_call_migrate_entity_complete;
+    public client_remove_remote_entity?: hub_call_client_remove_remote_entity.hub_call_client_remove_remote_entity;
     constructor(args?: Igate_hub_serviceArgs) {
         let _fieldsSet: number = 0;
         if (args != null) {
@@ -122,6 +125,10 @@ export class gate_hub_service {
                 _fieldsSet++;
                 this.migrate_entity_complete = args.migrate_entity_complete;
             }
+            if (args.client_remove_remote_entity != null) {
+                _fieldsSet++;
+                this.client_remove_remote_entity = args.client_remove_remote_entity;
+            }
             if (_fieldsSet > 1) {
                 throw new thrift.Thrift.TProtocolException(thrift.Thrift.TProtocolExceptionType.INVALID_DATA, "Cannot read a TUnion with more than one set value!");
             }
@@ -177,6 +184,9 @@ export class gate_hub_service {
     }
     public static fromMigrate_entity_complete(migrate_entity_complete: hub_call_migrate_entity_complete.hub_call_migrate_entity_complete): gate_hub_service {
         return new gate_hub_service({ migrate_entity_complete });
+    }
+    public static fromClient_remove_remote_entity(client_remove_remote_entity: hub_call_client_remove_remote_entity.hub_call_client_remove_remote_entity): gate_hub_service {
+        return new gate_hub_service({ client_remove_remote_entity });
     }
     public write(output: thrift.TProtocol): void {
         output.writeStructBegin("gate_hub_service");
@@ -258,6 +268,11 @@ export class gate_hub_service {
         if (this.migrate_entity_complete != null) {
             output.writeFieldBegin("migrate_entity_complete", thrift.Thrift.Type.STRUCT, 16);
             this.migrate_entity_complete.write(output);
+            output.writeFieldEnd();
+        }
+        if (this.client_remove_remote_entity != null) {
+            output.writeFieldBegin("client_remove_remote_entity", thrift.Thrift.Type.STRUCT, 17);
+            this.client_remove_remote_entity.write(output);
             output.writeFieldEnd();
         }
         output.writeFieldStop();
@@ -431,6 +446,16 @@ export class gate_hub_service {
                         _fieldsSet++;
                         const value_16: hub_call_migrate_entity_complete.hub_call_migrate_entity_complete = hub_call_migrate_entity_complete.hub_call_migrate_entity_complete.read(input);
                         _returnValue = gate_hub_service.fromMigrate_entity_complete(value_16);
+                    }
+                    else {
+                        input.skip(fieldType);
+                    }
+                    break;
+                case 17:
+                    if (fieldType === thrift.Thrift.Type.STRUCT) {
+                        _fieldsSet++;
+                        const value_17: hub_call_client_remove_remote_entity.hub_call_client_remove_remote_entity = hub_call_client_remove_remote_entity.hub_call_client_remove_remote_entity.read(input);
+                        _returnValue = gate_hub_service.fromClient_remove_remote_entity(value_17);
                     }
                     else {
                         input.skip(fieldType);

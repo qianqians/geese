@@ -12,6 +12,13 @@ class conn_msg_handle(object):
         from app import app
         app().run_coroutine_async(app().login_handle.reconnect(gate_name, conn_id, entity_id, token))
     
+    def do_transfer_msg_end(self, conn_id:str, is_kick_off:bool):
+        from app import app
+        _t = app().ctx.transfer_timeout[conn_id]
+        if _t!= None:
+            _t.cancel()
+            app().ctx.transfer_timeout.pop(conn_id)
+
     def on_transfer_entity_control(self, entity_id:str, is_main:bool, is_reconnect:bool, gate_name:str, conn_id:str):
         from app import app
         app().login_handle.on_transfer_entity_control(entity_id, is_main, is_reconnect, gate_name, conn_id)
@@ -83,10 +90,10 @@ class conn_msg_handle(object):
         from app import app
         app().create_entity(is_migrate, entity_type, source_hub_name, entity_id, loads(argvs))
 
-    def on_forward_client_request_service(self, hub_name:str, service_name:str, gate_name:str, conn_id:str):
+    def on_forward_client_request_service(self, hub_name:str, service_name:str, gate_name:str, conn_id:str, player_id:str):
         from app import app
         _service = app().service_mgr.get_service(service_name)
-        _service.client_query_service_entity(gate_name, conn_id)
+        _service.client_query_service_entity(gate_name, conn_id, player_id)
 
     def on_call_hub_rpc(self, source_hub_name:str, entity_id:str, msg_cb_id:int, method:str, argvs:bytes):
         from app import app
