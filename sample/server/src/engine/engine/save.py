@@ -60,7 +60,7 @@ class save(ABC, base_dbproxy_handle):
                 self.__random_new_dbproxy__()
                 self.__creator_entity_callback__(result)
 
-    async def load_or_create_entity(query:dict, callback:Callable[[dict|None], None]):
+    async def load_or_create_entity(query:dict, callback:Callable[[dict], None]):
         while True:
             try:
                 _new_obj = save()
@@ -86,7 +86,7 @@ class save(ABC, base_dbproxy_handle):
 
     @staticmethod
     @abstractmethod
-    def load(self, data:dict):
+    def load(self, data:dict) -> save:
         pass
 
     @abstractmethod
