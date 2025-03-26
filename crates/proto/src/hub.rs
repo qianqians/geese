@@ -147,17 +147,17 @@ pub struct ClientRequestReconnect {
   pub gate_host: Option<String>,
   pub conn_id: Option<String>,
   pub account_id: Option<String>,
-  pub token: Option<String>,
+  pub argvs: Option<Vec<u8>>,
 }
 
 impl ClientRequestReconnect {
-  pub fn new<F1, F2, F3, F4, F5>(gate_name: F1, gate_host: F2, conn_id: F3, account_id: F4, token: F5) -> ClientRequestReconnect where F1: Into<Option<String>>, F2: Into<Option<String>>, F3: Into<Option<String>>, F4: Into<Option<String>>, F5: Into<Option<String>> {
+  pub fn new<F1, F2, F3, F4, F5>(gate_name: F1, gate_host: F2, conn_id: F3, account_id: F4, argvs: F5) -> ClientRequestReconnect where F1: Into<Option<String>>, F2: Into<Option<String>>, F3: Into<Option<String>>, F4: Into<Option<String>>, F5: Into<Option<Vec<u8>>> {
     ClientRequestReconnect {
       gate_name: gate_name.into(),
       gate_host: gate_host.into(),
       conn_id: conn_id.into(),
       account_id: account_id.into(),
-      token: token.into(),
+      argvs: argvs.into(),
     }
   }
 }
@@ -169,7 +169,7 @@ impl TSerializable for ClientRequestReconnect {
     let mut f_2: Option<String> = Some("".to_owned());
     let mut f_3: Option<String> = Some("".to_owned());
     let mut f_4: Option<String> = Some("".to_owned());
-    let mut f_5: Option<String> = Some("".to_owned());
+    let mut f_5: Option<Vec<u8>> = Some(Vec::new());
     loop {
       let field_ident = i_prot.read_field_begin()?;
       if field_ident.field_type == TType::Stop {
@@ -194,7 +194,7 @@ impl TSerializable for ClientRequestReconnect {
           f_4 = Some(val);
         },
         5 => {
-          let val = i_prot.read_string()?;
+          let val = i_prot.read_bytes()?;
           f_5 = Some(val);
         },
         _ => {
@@ -209,7 +209,7 @@ impl TSerializable for ClientRequestReconnect {
       gate_host: f_2,
       conn_id: f_3,
       account_id: f_4,
-      token: f_5,
+      argvs: f_5,
     };
     Ok(ret)
   }
@@ -236,9 +236,9 @@ impl TSerializable for ClientRequestReconnect {
       o_prot.write_string(fld_var)?;
       o_prot.write_field_end()?
     }
-    if let Some(ref fld_var) = self.token {
-      o_prot.write_field_begin(&TFieldIdentifier::new("token", TType::String, 5))?;
-      o_prot.write_string(fld_var)?;
+    if let Some(ref fld_var) = self.argvs {
+      o_prot.write_field_begin(&TFieldIdentifier::new("argvs", TType::String, 5))?;
+      o_prot.write_bytes(fld_var)?;
       o_prot.write_field_end()?
     }
     o_prot.write_field_stop()?;

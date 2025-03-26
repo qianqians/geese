@@ -61,11 +61,11 @@ pub async fn request_reconnect(
     _gate_host: String,
     _conn_id: String,
     _account_id: String,
-    _token: String) -> bool
+    _argvs: Vec<u8>) -> bool
 {
     let mut _hub = _hubproxy.as_ref().lock().await;
     _hub.send_hub_msg(HubService::ClientRequestReconnect(
-        ClientRequestReconnect::new(_gate_name, _gate_host, _conn_id, _account_id, _token))).await
+        ClientRequestReconnect::new(_gate_name, _gate_host, _conn_id, _account_id, _argvs))).await
 }
 
 pub async fn entry_hub_service(_conn_mgr: Arc<Mutex<ConnManager>>, _service_name:String) -> Option<Arc<Mutex<HubProxy>>>

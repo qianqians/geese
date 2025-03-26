@@ -1563,14 +1563,14 @@ impl TSerializable for ClientRequestHubLogin {
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ClientRequestHubReconnect {
   pub account_id: Option<String>,
-  pub token: Option<String>,
+  pub argvs: Option<Vec<u8>>,
 }
 
 impl ClientRequestHubReconnect {
-  pub fn new<F1, F2>(account_id: F1, token: F2) -> ClientRequestHubReconnect where F1: Into<Option<String>>, F2: Into<Option<String>> {
+  pub fn new<F1, F2>(account_id: F1, argvs: F2) -> ClientRequestHubReconnect where F1: Into<Option<String>>, F2: Into<Option<Vec<u8>>> {
     ClientRequestHubReconnect {
       account_id: account_id.into(),
-      token: token.into(),
+      argvs: argvs.into(),
     }
   }
 }
@@ -1579,7 +1579,7 @@ impl TSerializable for ClientRequestHubReconnect {
   fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<ClientRequestHubReconnect> {
     i_prot.read_struct_begin()?;
     let mut f_1: Option<String> = Some("".to_owned());
-    let mut f_2: Option<String> = Some("".to_owned());
+    let mut f_2: Option<Vec<u8>> = Some(Vec::new());
     loop {
       let field_ident = i_prot.read_field_begin()?;
       if field_ident.field_type == TType::Stop {
@@ -1592,7 +1592,7 @@ impl TSerializable for ClientRequestHubReconnect {
           f_1 = Some(val);
         },
         2 => {
-          let val = i_prot.read_string()?;
+          let val = i_prot.read_bytes()?;
           f_2 = Some(val);
         },
         _ => {
@@ -1604,7 +1604,7 @@ impl TSerializable for ClientRequestHubReconnect {
     i_prot.read_struct_end()?;
     let ret = ClientRequestHubReconnect {
       account_id: f_1,
-      token: f_2,
+      argvs: f_2,
     };
     Ok(ret)
   }
@@ -1616,9 +1616,9 @@ impl TSerializable for ClientRequestHubReconnect {
       o_prot.write_string(fld_var)?;
       o_prot.write_field_end()?
     }
-    if let Some(ref fld_var) = self.token {
-      o_prot.write_field_begin(&TFieldIdentifier::new("token", TType::String, 2))?;
-      o_prot.write_string(fld_var)?;
+    if let Some(ref fld_var) = self.argvs {
+      o_prot.write_field_begin(&TFieldIdentifier::new("argvs", TType::String, 2))?;
+      o_prot.write_bytes(fld_var)?;
       o_prot.write_field_end()?
     }
     o_prot.write_field_stop()?;
