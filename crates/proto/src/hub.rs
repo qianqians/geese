@@ -1204,6 +1204,182 @@ impl TSerializable for HubForwardClientRequestService {
 }
 
 //
+// ForwardClientRequestInfo
+//
+
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ForwardClientRequestInfo {
+  pub gate_name: Option<String>,
+  pub gate_host: Option<String>,
+  pub conn_id: Option<String>,
+  pub argvs: Option<Vec<u8>>,
+}
+
+impl ForwardClientRequestInfo {
+  pub fn new<F1, F2, F3, F4>(gate_name: F1, gate_host: F2, conn_id: F3, argvs: F4) -> ForwardClientRequestInfo where F1: Into<Option<String>>, F2: Into<Option<String>>, F3: Into<Option<String>>, F4: Into<Option<Vec<u8>>> {
+    ForwardClientRequestInfo {
+      gate_name: gate_name.into(),
+      gate_host: gate_host.into(),
+      conn_id: conn_id.into(),
+      argvs: argvs.into(),
+    }
+  }
+}
+
+impl TSerializable for ForwardClientRequestInfo {
+  fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<ForwardClientRequestInfo> {
+    i_prot.read_struct_begin()?;
+    let mut f_1: Option<String> = Some("".to_owned());
+    let mut f_2: Option<String> = Some("".to_owned());
+    let mut f_3: Option<String> = Some("".to_owned());
+    let mut f_4: Option<Vec<u8>> = Some(Vec::new());
+    loop {
+      let field_ident = i_prot.read_field_begin()?;
+      if field_ident.field_type == TType::Stop {
+        break;
+      }
+      let field_id = field_id(&field_ident)?;
+      match field_id {
+        1 => {
+          let val = i_prot.read_string()?;
+          f_1 = Some(val);
+        },
+        2 => {
+          let val = i_prot.read_string()?;
+          f_2 = Some(val);
+        },
+        3 => {
+          let val = i_prot.read_string()?;
+          f_3 = Some(val);
+        },
+        4 => {
+          let val = i_prot.read_bytes()?;
+          f_4 = Some(val);
+        },
+        _ => {
+          i_prot.skip(field_ident.field_type)?;
+        },
+      };
+      i_prot.read_field_end()?;
+    }
+    i_prot.read_struct_end()?;
+    let ret = ForwardClientRequestInfo {
+      gate_name: f_1,
+      gate_host: f_2,
+      conn_id: f_3,
+      argvs: f_4,
+    };
+    Ok(ret)
+  }
+  fn write_to_out_protocol(&self, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {
+    let struct_ident = TStructIdentifier::new("forward_client_request_info");
+    o_prot.write_struct_begin(&struct_ident)?;
+    if let Some(ref fld_var) = self.gate_name {
+      o_prot.write_field_begin(&TFieldIdentifier::new("gate_name", TType::String, 1))?;
+      o_prot.write_string(fld_var)?;
+      o_prot.write_field_end()?
+    }
+    if let Some(ref fld_var) = self.gate_host {
+      o_prot.write_field_begin(&TFieldIdentifier::new("gate_host", TType::String, 2))?;
+      o_prot.write_string(fld_var)?;
+      o_prot.write_field_end()?
+    }
+    if let Some(ref fld_var) = self.conn_id {
+      o_prot.write_field_begin(&TFieldIdentifier::new("conn_id", TType::String, 3))?;
+      o_prot.write_string(fld_var)?;
+      o_prot.write_field_end()?
+    }
+    if let Some(ref fld_var) = self.argvs {
+      o_prot.write_field_begin(&TFieldIdentifier::new("argvs", TType::String, 4))?;
+      o_prot.write_bytes(fld_var)?;
+      o_prot.write_field_end()?
+    }
+    o_prot.write_field_stop()?;
+    o_prot.write_struct_end()
+  }
+}
+
+//
+// HubForwardClientRequestServiceExt
+//
+
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HubForwardClientRequestServiceExt {
+  pub service_name: Option<String>,
+  pub request_infos: Option<Vec<ForwardClientRequestInfo>>,
+}
+
+impl HubForwardClientRequestServiceExt {
+  pub fn new<F1, F2>(service_name: F1, request_infos: F2) -> HubForwardClientRequestServiceExt where F1: Into<Option<String>>, F2: Into<Option<Vec<ForwardClientRequestInfo>>> {
+    HubForwardClientRequestServiceExt {
+      service_name: service_name.into(),
+      request_infos: request_infos.into(),
+    }
+  }
+}
+
+impl TSerializable for HubForwardClientRequestServiceExt {
+  fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<HubForwardClientRequestServiceExt> {
+    i_prot.read_struct_begin()?;
+    let mut f_1: Option<String> = Some("".to_owned());
+    let mut f_2: Option<Vec<ForwardClientRequestInfo>> = Some(Vec::new());
+    loop {
+      let field_ident = i_prot.read_field_begin()?;
+      if field_ident.field_type == TType::Stop {
+        break;
+      }
+      let field_id = field_id(&field_ident)?;
+      match field_id {
+        1 => {
+          let val = i_prot.read_string()?;
+          f_1 = Some(val);
+        },
+        2 => {
+          let list_ident = i_prot.read_list_begin()?;
+          let mut val: Vec<ForwardClientRequestInfo> = Vec::with_capacity(list_ident.size as usize);
+          for _ in 0..list_ident.size {
+            let list_elem_0 = ForwardClientRequestInfo::read_from_in_protocol(i_prot)?;
+            val.push(list_elem_0);
+          }
+          i_prot.read_list_end()?;
+          f_2 = Some(val);
+        },
+        _ => {
+          i_prot.skip(field_ident.field_type)?;
+        },
+      };
+      i_prot.read_field_end()?;
+    }
+    i_prot.read_struct_end()?;
+    let ret = HubForwardClientRequestServiceExt {
+      service_name: f_1,
+      request_infos: f_2,
+    };
+    Ok(ret)
+  }
+  fn write_to_out_protocol(&self, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {
+    let struct_ident = TStructIdentifier::new("hub_forward_client_request_service_ext");
+    o_prot.write_struct_begin(&struct_ident)?;
+    if let Some(ref fld_var) = self.service_name {
+      o_prot.write_field_begin(&TFieldIdentifier::new("service_name", TType::String, 1))?;
+      o_prot.write_string(fld_var)?;
+      o_prot.write_field_end()?
+    }
+    if let Some(ref fld_var) = self.request_infos {
+      o_prot.write_field_begin(&TFieldIdentifier::new("request_infos", TType::List, 2))?;
+      o_prot.write_list_begin(&TListIdentifier::new(TType::Struct, fld_var.len() as i32))?;
+      for e in fld_var {
+        e.write_to_out_protocol(o_prot)?;
+      }
+      o_prot.write_list_end()?;
+      o_prot.write_field_end()?
+    }
+    o_prot.write_field_stop()?;
+    o_prot.write_struct_end()
+  }
+}
+
+//
 // HubCallHubRpc
 //
 
@@ -1600,8 +1776,8 @@ impl TSerializable for HubCallHubMigrateEntity {
           let list_ident = i_prot.read_list_begin()?;
           let mut val: Vec<String> = Vec::with_capacity(list_ident.size as usize);
           for _ in 0..list_ident.size {
-            let list_elem_0 = i_prot.read_string()?;
-            val.push(list_elem_0);
+            let list_elem_1 = i_prot.read_string()?;
+            val.push(list_elem_1);
           }
           i_prot.read_list_end()?;
           f_6 = Some(val);
@@ -1610,8 +1786,8 @@ impl TSerializable for HubCallHubMigrateEntity {
           let list_ident = i_prot.read_list_begin()?;
           let mut val: Vec<String> = Vec::with_capacity(list_ident.size as usize);
           for _ in 0..list_ident.size {
-            let list_elem_1 = i_prot.read_string()?;
-            val.push(list_elem_1);
+            let list_elem_2 = i_prot.read_string()?;
+            val.push(list_elem_2);
           }
           i_prot.read_list_end()?;
           f_7 = Some(val);
@@ -1865,6 +2041,7 @@ pub enum HubService {
   MigrateEntity(HubCallHubMigrateEntity),
   CreateMigrateEntity(HubCallHubCreateMigrateEntity),
   MigrateEntityComplete(HubCallHubMigrateEntityComplete),
+  HubForwardClientRequestServiceExt(HubForwardClientRequestServiceExt),
 }
 
 impl TSerializable for HubService {
@@ -2047,6 +2224,13 @@ impl TSerializable for HubService {
           }
           received_field_count += 1;
         },
+        25 => {
+          let val = HubForwardClientRequestServiceExt::read_from_in_protocol(i_prot)?;
+          if ret.is_none() {
+            ret = Some(HubService::HubForwardClientRequestServiceExt(val));
+          }
+          received_field_count += 1;
+        },
         _ => {
           i_prot.skip(field_ident.field_type)?;
           received_field_count += 1;
@@ -2198,6 +2382,11 @@ impl TSerializable for HubService {
       },
       HubService::MigrateEntityComplete(ref f) => {
         o_prot.write_field_begin(&TFieldIdentifier::new("migrate_entity_complete", TType::Struct, 24))?;
+        f.write_to_out_protocol(o_prot)?;
+        o_prot.write_field_end()?;
+      },
+      HubService::HubForwardClientRequestServiceExt(ref f) => {
+        o_prot.write_field_begin(&TFieldIdentifier::new("hub_forward_client_request_service_ext", TType::Struct, 25))?;
         f.write_to_out_protocol(o_prot)?;
         o_prot.write_field_end()?;
       },

@@ -75,6 +75,9 @@ class context(object):
     def forward_client_request_service(self, hub_name:str, service_name:str, gate_name:str, gate_host:str, conn_id:str, argvs:bytes) -> bool:
         return self.ctx.forward_client_request_service(hub_name, service_name, gate_name, gate_host, conn_id, argvs)
     
+    def forward_client_request_service_ext(self, hub_name:str, service_name:str, info: list[(str, str, str, bytes)]) -> bool:
+        return self.ctx.forward_client_request_service_ext(hub_name, service_name, info)
+    
     def hub_call_hub_rpc(self, hub_name:str, entity_id:str, msg_cb_id:int, method:str, argvs:bytes) -> bool:
         return self.ctx.hub_call_hub_rpc(hub_name, entity_id, msg_cb_id, method, argvs)
     

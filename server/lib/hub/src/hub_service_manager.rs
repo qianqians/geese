@@ -306,6 +306,74 @@ impl ConnCallbackMsgHandle {
                     error!("hub forward client request service conn_proxy is destory!");
                 }
             },
+            HubService::HubForwardClientRequestServiceExt(ev) => {
+                if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
+                    let mut _hub_msg_handle_c = _self.hub_msg_handle.clone();
+                    let ev_tmp = ev.clone();
+                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+                    let hub_name = rt.block_on(async move {
+                        let mut hub_name: String = "".to_string();
+                        {
+                            let mut _conn_proxy = conn_proxy.as_ref().lock().await;
+
+                            if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
+                                let _proxy_tmp = _hub_proxy.as_ref().lock().await;
+                                hub_name = _proxy_tmp.hub_name.clone().unwrap();
+                                
+                                for info in ev.request_infos.unwrap() {
+                                    let _gate_name = info.gate_name.clone().unwrap();
+                                    let _gate_host = info.gate_host.clone().unwrap(); 
+
+                                    let mut _conn_mgr = _self.conn_mgr.as_ref().lock().await;
+                                    let _redis_service = _self.redis_service.clone().unwrap();
+                                    let mut _service = _redis_service.as_ref().lock().await;
+                                    let _lock_key = create_lock_key(_gate_name.clone(), _conn_mgr.get_hub_name());
+
+                                    let _close = _self.close.clone();
+
+                                    let value = _service.acquire_lock(_lock_key.clone(), 3).await;
+                                    if _conn_mgr.get_gate_proxy(&_gate_name).is_none() {
+                                        _conn_mgr.add_lock(_lock_key, value);
+
+                                        if let Some(_wr_arc) = _conn_mgr.direct_connect_server(
+                                            _gate_name.clone(), 
+                                            _gate_host.clone(), 
+                                            _handle_clone.clone(), 
+                                            _close).await
+                                        {
+                                            let _wr_arc_clone = _wr_arc.clone();
+                                            
+                                            let _gate_name_tmp = _gate_name.clone();
+                                            let mut _gate_tmp = GateProxy::new(_wr_arc_clone);
+                                            _gate_tmp.send_gate_msg(GateHubService::RegServer(RegServer::new(_conn_mgr.get_hub_name(), "hub".to_string()))).await;
+                                        
+                                            _gate_tmp.gate_name = Some(_gate_name);
+                                            _gate_tmp.gate_host = Some(_gate_host);
+
+                                            let _gateproxy = Arc::new(Mutex::new(_gate_tmp));
+                                            _conn_mgr.add_gate_proxy(_gate_name_tmp, _gateproxy.clone()).await;
+                                            _conn_proxy.gateproxy = Some(_gateproxy.clone());
+                                        }
+                                    }
+                                    else {
+                                        let _ = _service.release_lock(_lock_key, value).await;
+                                    }
+                                }
+                            }
+                            else {
+                                error!("HubService::HubForwardClientRequestService! wrong msg handle!");
+                            }
+                        }
+                        return hub_name;
+                    });
+
+                    let mut _hub_msg_handle = _hub_msg_handle_c.as_ref().lock().unwrap();
+                    _hub_msg_handle.do_forward_client_request_service_ext(py, py_handle, hub_name, ev_tmp);
+                }
+                else {
+                    error!("hub forward client request service conn_proxy is destory!");
+                }
+            },
             HubService::HubCallRpc(ev) => {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();

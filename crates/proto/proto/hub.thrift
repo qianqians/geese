@@ -128,6 +128,24 @@ struct hub_forward_client_request_service {
 }
 
 /*
+ * forward_client_request_info
+ */
+struct forward_client_request_info {
+	1:string gate_name, 
+	2:string gate_host,
+	3:string conn_id,
+	4:binary argvs
+}
+
+/*
+ * hub forward ntf_client_request_service_ext.
+ */
+struct hub_forward_client_request_service_ext {
+	1:string service_name,
+	2:list<forward_client_request_info> request_infos,
+}
+
+/*
  * hub call rpc to hub.
  */
 struct hub_call_hub_rpc {
@@ -220,6 +238,7 @@ union hub_service {
 	22:hub_call_hub_migrate_entity migrate_entity,
 	23:hub_call_hub_create_migrate_entity create_migrate_entity,
 	24:hub_call_hub_migrate_entity_complete migrate_entity_complete,
+	25:hub_forward_client_request_service_ext hub_forward_client_request_service_ext,
 }
 
 struct ack_get_guid {

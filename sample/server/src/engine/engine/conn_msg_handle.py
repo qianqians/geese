@@ -95,6 +95,16 @@ class conn_msg_handle(object):
         _service = app().service_mgr.get_service(service_name)
         _service.client_query_service_entity(gate_name, conn_id, loads(argvs))
 
+    def on_forward_client_request_service_ext(self, hub_name:str, service_name:str, info:list[(str, str, bytes)]):
+        info_ext = []
+        for _info in info:
+            gate_name, conn_id, argvs = _info
+            info_ext.append((gate_name, conn_id, loads(argvs)))
+            
+        from app import app
+        _service = app().service_mgr.get_service(service_name)
+        _service.client_query_service_entity_ext(info_ext)
+
     def on_call_hub_rpc(self, source_hub_name:str, entity_id:str, msg_cb_id:int, method:str, argvs:bytes):
         from app import app
         _player = app().player_mgr.get_player(entity_id)

@@ -8,17 +8,7 @@ use proto::common::RegServer;
 
 // hub msg
 use proto::hub::{
-    QueryServiceEntity,
-    CreateServiceEntity,
-    HubForwardClientRequestService,
-    HubCallHubRpc,
-    HubCallHubRsp,
-    HubCallHubErr,
-    HubCallHubNtf,
-    HubCallHubWaitMigrateEntity,
-    HubCallHubMigrateEntity,
-    HubCallHubCreateMigrateEntity,
-    HubCallHubMigrateEntityComplete,
+    CreateServiceEntity, HubCallHubCreateMigrateEntity, HubCallHubErr, HubCallHubMigrateEntity, HubCallHubMigrateEntityComplete, HubCallHubNtf, HubCallHubRpc, HubCallHubRsp, HubCallHubWaitMigrateEntity, HubForwardClientRequestService, HubForwardClientRequestServiceExt, QueryServiceEntity
 };
 
 use crate::hub_service_manager::StdMutex;
@@ -75,6 +65,23 @@ impl HubCallbackMsgHandle {
             ev.conn_id.unwrap(),
             ev.argvs.unwrap());
         if let Err(e) = py_handle.call_method1(py, "on_forward_client_request_service", argvs) {
+            error!("do_forward_client_request_service python callback error:{}", e)
+        }
+    }
+
+    pub fn do_forward_client_request_service_ext(&mut self, py: Python<'_>, py_handle: Py<PyAny>, hub_name: String, ev: HubForwardClientRequestServiceExt) {
+        trace!("do_forward_client_request_service begin!");
+
+        let mut request_infos: Vec<(String, String, Vec<u8>)> = Vec::new();
+        for info in ev.request_infos.unwrap() {
+            request_infos.push((info.gate_name.unwrap(), info.conn_id.unwrap(), info.argvs.unwrap()));
+        }
+
+        let argvs = (
+            hub_name,
+            ev.service_name.unwrap(), 
+            request_infos);
+        if let Err(e) = py_handle.call_method1(py, "on_forward_client_request_service_ext", argvs) {
             error!("do_forward_client_request_service python callback error:{}", e)
         }
     }
