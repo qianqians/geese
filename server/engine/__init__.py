@@ -8,5 +8,6 @@ from .entity import *
 from .subentity import *
 from .receiver import *
 from .save import *
+from .group import *
 from .global_ import *
 from .msgpack import *
