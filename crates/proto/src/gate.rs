@@ -1633,12 +1633,14 @@ impl TSerializable for ClientRequestHubReconnect {
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ClientRequestHubService {
   pub service_name: Option<String>,
+  pub argvs: Option<Vec<u8>>,
 }
 
 impl ClientRequestHubService {
-  pub fn new<F1>(service_name: F1) -> ClientRequestHubService where F1: Into<Option<String>> {
+  pub fn new<F1, F2>(service_name: F1, argvs: F2) -> ClientRequestHubService where F1: Into<Option<String>>, F2: Into<Option<Vec<u8>>> {
     ClientRequestHubService {
       service_name: service_name.into(),
+      argvs: argvs.into(),
     }
   }
 }
@@ -1647,6 +1649,7 @@ impl TSerializable for ClientRequestHubService {
   fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<ClientRequestHubService> {
     i_prot.read_struct_begin()?;
     let mut f_1: Option<String> = Some("".to_owned());
+    let mut f_2: Option<Vec<u8>> = Some(Vec::new());
     loop {
       let field_ident = i_prot.read_field_begin()?;
       if field_ident.field_type == TType::Stop {
@@ -1658,6 +1661,10 @@ impl TSerializable for ClientRequestHubService {
           let val = i_prot.read_string()?;
           f_1 = Some(val);
         },
+        2 => {
+          let val = i_prot.read_bytes()?;
+          f_2 = Some(val);
+        },
         _ => {
           i_prot.skip(field_ident.field_type)?;
         },
@@ -1667,6 +1674,7 @@ impl TSerializable for ClientRequestHubService {
     i_prot.read_struct_end()?;
     let ret = ClientRequestHubService {
       service_name: f_1,
+      argvs: f_2,
     };
     Ok(ret)
   }
@@ -1676,6 +1684,11 @@ impl TSerializable for ClientRequestHubService {
     if let Some(ref fld_var) = self.service_name {
       o_prot.write_field_begin(&TFieldIdentifier::new("service_name", TType::String, 1))?;
       o_prot.write_string(fld_var)?;
+      o_prot.write_field_end()?
+    }
+    if let Some(ref fld_var) = self.argvs {
+      o_prot.write_field_begin(&TFieldIdentifier::new("argvs", TType::String, 2))?;
+      o_prot.write_bytes(fld_var)?;
       o_prot.write_field_end()?
     }
     o_prot.write_field_stop()?;

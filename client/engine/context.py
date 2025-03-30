@@ -14,11 +14,11 @@ class context(object):
     def login(self, sdk_uuid:str, argvs:bytes) -> bool:
         return self.ctx.login(sdk_uuid, argvs)
     
-    def reconnect(self, account_id:str, token:str) -> bool:
-        return self.ctx.reconnect(account_id, token)
+    def reconnect(self, account_id:str, argvs:bytes) -> bool:
+        return self.ctx.reconnect(account_id, argvs)
     
-    def request_hub_service(self, service_name:str) -> bool:
-        return self.ctx.request_hub_service(service_name)
+    def request_hub_service(self, service_name:str, argvs:bytes) -> bool:
+        return self.ctx.request_hub_service(service_name, argvs)
         
     def heartbeats(self) -> bool:
         return self.ctx.heartbeats()

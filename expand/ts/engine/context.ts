@@ -105,10 +105,10 @@ export abstract class context {
         return true;
     }
 
-    public reconnect(account_id:string, token:string) : boolean {
+    public reconnect(account_id:string, argvs:Uint8Array) : boolean {
         let recData = new proto.client_request_hub_reconnect();
         recData.account_id = account_id;
-        recData.token = token;
+        recData.argvs = Buffer.from(argvs);
         let reqData = proto.gate_client_service.fromReconnect(recData);
 
         this.send(reqData);
@@ -116,9 +116,10 @@ export abstract class context {
         return true;
     }
 
-    public request_hub_service(service_name:string) : boolean {
+    public request_hub_service(service_name:string, argvs:Uint8Array) : boolean {
         let svcData = new proto.client_request_hub_service();
         svcData.service_name = service_name;
+        svcData.argvs = Buffer.from(argvs);
         let reqData = proto.gate_client_service.fromRequest_hub_service(svcData);
 
         this.send(reqData);

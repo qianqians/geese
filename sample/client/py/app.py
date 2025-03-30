@@ -46,7 +46,7 @@ class SamplePlayer(player):
             lambda success: print(f"SamplePlayer login success:{success}"),
             lambda _err: print(f"SamplePlayer login _err:{_err}")).timeout(
             1000, lambda: print(f"SamplePlayer login timeout!"))
-        app().request_hub_service("Rank")
+        app().request_hub_service("Rank", {})
         return playerImpl
             
     def update_player(self, argvs: dict):

@@ -29,7 +29,8 @@ struct client_request_service {
 	1:string service_name,
 	2:string gate_name, 
 	3:string gate_host,
-	4:string conn_id
+	4:string conn_id,
+	5:binary argvs
 }
 
 /*
@@ -123,7 +124,7 @@ struct hub_forward_client_request_service {
 	2:string gate_name, 
 	3:string gate_host,
 	4:string conn_id,
-	5:string player_id,
+	5:binary argvs
 }
 
 /*

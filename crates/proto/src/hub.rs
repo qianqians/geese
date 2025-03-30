@@ -256,15 +256,17 @@ pub struct ClientRequestService {
   pub gate_name: Option<String>,
   pub gate_host: Option<String>,
   pub conn_id: Option<String>,
+  pub argvs: Option<Vec<u8>>,
 }
 
 impl ClientRequestService {
-  pub fn new<F1, F2, F3, F4>(service_name: F1, gate_name: F2, gate_host: F3, conn_id: F4) -> ClientRequestService where F1: Into<Option<String>>, F2: Into<Option<String>>, F3: Into<Option<String>>, F4: Into<Option<String>> {
+  pub fn new<F1, F2, F3, F4, F5>(service_name: F1, gate_name: F2, gate_host: F3, conn_id: F4, argvs: F5) -> ClientRequestService where F1: Into<Option<String>>, F2: Into<Option<String>>, F3: Into<Option<String>>, F4: Into<Option<String>>, F5: Into<Option<Vec<u8>>> {
     ClientRequestService {
       service_name: service_name.into(),
       gate_name: gate_name.into(),
       gate_host: gate_host.into(),
       conn_id: conn_id.into(),
+      argvs: argvs.into(),
     }
   }
 }
@@ -276,6 +278,7 @@ impl TSerializable for ClientRequestService {
     let mut f_2: Option<String> = Some("".to_owned());
     let mut f_3: Option<String> = Some("".to_owned());
     let mut f_4: Option<String> = Some("".to_owned());
+    let mut f_5: Option<Vec<u8>> = Some(Vec::new());
     loop {
       let field_ident = i_prot.read_field_begin()?;
       if field_ident.field_type == TType::Stop {
@@ -299,6 +302,10 @@ impl TSerializable for ClientRequestService {
           let val = i_prot.read_string()?;
           f_4 = Some(val);
         },
+        5 => {
+          let val = i_prot.read_bytes()?;
+          f_5 = Some(val);
+        },
         _ => {
           i_prot.skip(field_ident.field_type)?;
         },
@@ -311,6 +318,7 @@ impl TSerializable for ClientRequestService {
       gate_name: f_2,
       gate_host: f_3,
       conn_id: f_4,
+      argvs: f_5,
     };
     Ok(ret)
   }
@@ -335,6 +343,11 @@ impl TSerializable for ClientRequestService {
     if let Some(ref fld_var) = self.conn_id {
       o_prot.write_field_begin(&TFieldIdentifier::new("conn_id", TType::String, 4))?;
       o_prot.write_string(fld_var)?;
+      o_prot.write_field_end()?
+    }
+    if let Some(ref fld_var) = self.argvs {
+      o_prot.write_field_begin(&TFieldIdentifier::new("argvs", TType::String, 5))?;
+      o_prot.write_bytes(fld_var)?;
       o_prot.write_field_end()?
     }
     o_prot.write_field_stop()?;
@@ -1091,17 +1104,17 @@ pub struct HubForwardClientRequestService {
   pub gate_name: Option<String>,
   pub gate_host: Option<String>,
   pub conn_id: Option<String>,
-  pub player_id: Option<String>,
+  pub argvs: Option<Vec<u8>>,
 }
 
 impl HubForwardClientRequestService {
-  pub fn new<F1, F2, F3, F4, F5>(service_name: F1, gate_name: F2, gate_host: F3, conn_id: F4, player_id: F5) -> HubForwardClientRequestService where F1: Into<Option<String>>, F2: Into<Option<String>>, F3: Into<Option<String>>, F4: Into<Option<String>>, F5: Into<Option<String>> {
+  pub fn new<F1, F2, F3, F4, F5>(service_name: F1, gate_name: F2, gate_host: F3, conn_id: F4, argvs: F5) -> HubForwardClientRequestService where F1: Into<Option<String>>, F2: Into<Option<String>>, F3: Into<Option<String>>, F4: Into<Option<String>>, F5: Into<Option<Vec<u8>>> {
     HubForwardClientRequestService {
       service_name: service_name.into(),
       gate_name: gate_name.into(),
       gate_host: gate_host.into(),
       conn_id: conn_id.into(),
-      player_id: player_id.into(),
+      argvs: argvs.into(),
     }
   }
 }
@@ -1113,7 +1126,7 @@ impl TSerializable for HubForwardClientRequestService {
     let mut f_2: Option<String> = Some("".to_owned());
     let mut f_3: Option<String> = Some("".to_owned());
     let mut f_4: Option<String> = Some("".to_owned());
-    let mut f_5: Option<String> = Some("".to_owned());
+    let mut f_5: Option<Vec<u8>> = Some(Vec::new());
     loop {
       let field_ident = i_prot.read_field_begin()?;
       if field_ident.field_type == TType::Stop {
@@ -1138,7 +1151,7 @@ impl TSerializable for HubForwardClientRequestService {
           f_4 = Some(val);
         },
         5 => {
-          let val = i_prot.read_string()?;
+          let val = i_prot.read_bytes()?;
           f_5 = Some(val);
         },
         _ => {
@@ -1153,7 +1166,7 @@ impl TSerializable for HubForwardClientRequestService {
       gate_name: f_2,
       gate_host: f_3,
       conn_id: f_4,
-      player_id: f_5,
+      argvs: f_5,
     };
     Ok(ret)
   }
@@ -1180,9 +1193,9 @@ impl TSerializable for HubForwardClientRequestService {
       o_prot.write_string(fld_var)?;
       o_prot.write_field_end()?
     }
-    if let Some(ref fld_var) = self.player_id {
-      o_prot.write_field_begin(&TFieldIdentifier::new("player_id", TType::String, 5))?;
-      o_prot.write_string(fld_var)?;
+    if let Some(ref fld_var) = self.argvs {
+      o_prot.write_field_begin(&TFieldIdentifier::new("argvs", TType::String, 5))?;
+      o_prot.write_bytes(fld_var)?;
       o_prot.write_field_end()?
     }
     o_prot.write_field_stop()?;

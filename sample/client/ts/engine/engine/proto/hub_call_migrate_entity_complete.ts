@@ -6,19 +6,29 @@
 */
 import * as thrift from "thrift";
 export interface Ihub_call_migrate_entity_completeArgs {
+    hub_name?: string;
     entity_id?: string;
 }
 export class hub_call_migrate_entity_complete {
+    public hub_name?: string;
     public entity_id?: string;
     constructor(args?: Ihub_call_migrate_entity_completeArgs) {
+        if (args != null && args.hub_name != null) {
+            this.hub_name = args.hub_name;
+        }
         if (args != null && args.entity_id != null) {
             this.entity_id = args.entity_id;
         }
     }
     public write(output: thrift.TProtocol): void {
         output.writeStructBegin("hub_call_migrate_entity_complete");
+        if (this.hub_name != null) {
+            output.writeFieldBegin("hub_name", thrift.Thrift.Type.STRING, 1);
+            output.writeString(this.hub_name);
+            output.writeFieldEnd();
+        }
         if (this.entity_id != null) {
-            output.writeFieldBegin("entity_id", thrift.Thrift.Type.STRING, 1);
+            output.writeFieldBegin("entity_id", thrift.Thrift.Type.STRING, 2);
             output.writeString(this.entity_id);
             output.writeFieldEnd();
         }
@@ -40,7 +50,16 @@ export class hub_call_migrate_entity_complete {
                 case 1:
                     if (fieldType === thrift.Thrift.Type.STRING) {
                         const value_1: string = input.readString();
-                        _args.entity_id = value_1;
+                        _args.hub_name = value_1;
+                    }
+                    else {
+                        input.skip(fieldType);
+                    }
+                    break;
+                case 2:
+                    if (fieldType === thrift.Thrift.Type.STRING) {
+                        const value_2: string = input.readString();
+                        _args.entity_id = value_2;
                     }
                     else {
                         input.skip(fieldType);
