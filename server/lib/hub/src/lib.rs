@@ -48,6 +48,8 @@ use proto::hub::{
     HubCallHubMigrateEntity,
     HubCallHubCreateMigrateEntity,
     HubCallHubMigrateEntityComplete,
+    ForwardClientRequestInfo,
+    HubForwardClientRequestServiceExt,
 };
 
 use proto::gate::{
@@ -402,8 +404,30 @@ impl HubContext {
         let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             let mut _server_handle = _server.as_ref().lock().await;
-        _server_handle.send_hub_msg(hub_name, 
-            HubService::HubForwardClientRequestService(HubForwardClientRequestService::new(service_name, gate_name, gate_host, conn_id, argvs))).await
+            _server_handle.send_hub_msg(hub_name, 
+                HubService::HubForwardClientRequestService(HubForwardClientRequestService::new(service_name, gate_name, gate_host, conn_id, argvs))).await
+        })
+    }
+
+    pub fn forward_client_request_service_ext(
+        slf: PyRefMut<'_, Self>, 
+        hub_name: String, 
+        service_name: String, 
+        info: Vec<(String, String, String, Vec<u8>)>) -> bool 
+    {
+        trace!("forward_client_request_service_ext begin!");
+
+        let mut request_infos: Vec<ForwardClientRequestInfo> = Vec::new();
+        for (gate_name, gate_host, conn_id, argvs) in info {
+            request_infos.push(ForwardClientRequestInfo::new(gate_name, gate_host, conn_id, argvs));
+        }
+
+        let _server = slf.server.clone();
+        let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let mut _server_handle = _server.as_ref().lock().await;
+            _server_handle.send_hub_msg(hub_name, 
+                HubService::HubForwardClientRequestServiceExt(HubForwardClientRequestServiceExt::new(service_name, request_infos))).await
         })
     }
 

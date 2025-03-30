@@ -52,6 +52,9 @@ class RankService(service):
     
     def client_query_service_entity(self, queryer_gate_name:str, queryer_client_conn_id:str, queryer_client_info:dict):
         self.rankImpl.create_remote_entity(queryer_gate_name, [queryer_client_conn_id])
+
+    def client_query_service_entity_ext(self, info):
+        pass
     
 class PlayerEventHandle(player_event_handle):
     def player_offline(self, _player:player) -> dict:
