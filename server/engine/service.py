@@ -4,12 +4,6 @@ from abc import ABC, abstractmethod
 from .player import *
 from .entity import *
 
-def ServiceDescribe(service_name:str):
-    def wrapper(cls):
-        cls.service_name = service_name
-        return cls
-    return wrapper
-
 class service(ABC):
     def __init__(self, service_name:str) -> None:
         self.service_name = service_name
@@ -23,7 +17,7 @@ class service(ABC):
         pass
     
     @abstractmethod
-    def client_query_service_entity(self, queryer_gate_name:str, queryer_client_conn_id:str, queryer_client_player_id:str):
+    def client_query_service_entity(self, queryer_gate_name:str, queryer_client_conn_id:str, queryer_client_info:dict):
         pass
     
 class service_manager(object):

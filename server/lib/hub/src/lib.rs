@@ -394,7 +394,7 @@ impl HubContext {
         gate_name: String, 
         gate_host: String, 
         conn_id: String,
-        player_id: String) -> bool 
+        argvs: Vec<u8>) -> bool 
     {
         trace!("forward_client_request_service begin!");
 
@@ -403,7 +403,7 @@ impl HubContext {
         rt.block_on(async move {
             let mut _server_handle = _server.as_ref().lock().await;
         _server_handle.send_hub_msg(hub_name, 
-            HubService::HubForwardClientRequestService(HubForwardClientRequestService::new(service_name, gate_name, gate_host, conn_id, player_id))).await
+            HubService::HubForwardClientRequestService(HubForwardClientRequestService::new(service_name, gate_name, gate_host, conn_id, argvs))).await
         })
     }
 

@@ -32,10 +32,10 @@ class conn_msg_handle(object):
         app().player_mgr.player_offline(conn_id)
         app().ctx.hub_call_kick_off_client_complete(gate_name, conn_id)
         
-    def on_client_request_service(self, service_name:str, gate_name:str, conn_id:str):
+    def on_client_request_service(self, service_name:str, gate_name:str, conn_id:str, argvs:bytes):
         from app import app
         _service = app().service_mgr.get_service(service_name)
-        _service.client_query_service_entity(gate_name, conn_id)
+        _service.client_query_service_entity(gate_name, conn_id, loads(argvs))
         
     def on_client_call_rpc(self, gate_name:str, conn_id:str, entity_id:str, msg_cb_id:int, method:str, argvs:bytes):
         from app import app
@@ -90,10 +90,10 @@ class conn_msg_handle(object):
         from app import app
         app().create_entity(is_migrate, entity_type, source_hub_name, entity_id, loads(argvs))
 
-    def on_forward_client_request_service(self, hub_name:str, service_name:str, gate_name:str, conn_id:str, player_id:str):
+    def on_forward_client_request_service(self, hub_name:str, service_name:str, gate_name:str, conn_id:str, argvs:bytes):
         from app import app
         _service = app().service_mgr.get_service(service_name)
-        _service.client_query_service_entity(gate_name, conn_id, player_id)
+        _service.client_query_service_entity(gate_name, conn_id, loads(argvs))
 
     def on_call_hub_rpc(self, source_hub_name:str, entity_id:str, msg_cb_id:int, method:str, argvs:bytes):
         from app import app

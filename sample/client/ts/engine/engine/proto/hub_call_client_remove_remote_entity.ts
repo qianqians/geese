@@ -5,38 +5,38 @@
  * DO NOT EDIT UNLESS YOU ARE SURE THAT YOU KNOW WHAT YOU ARE DOING
 */
 import * as thrift from "thrift";
-export interface Iclient_request_hub_serviceArgs {
-    service_name?: string;
-    argvs?: Buffer;
+export interface Ihub_call_client_remove_remote_entityArgs {
+    entity_id?: string;
+    conn_id?: string;
 }
-export class client_request_hub_service {
-    public service_name?: string;
-    public argvs?: Buffer;
-    constructor(args?: Iclient_request_hub_serviceArgs) {
-        if (args != null && args.service_name != null) {
-            this.service_name = args.service_name;
+export class hub_call_client_remove_remote_entity {
+    public entity_id?: string;
+    public conn_id?: string;
+    constructor(args?: Ihub_call_client_remove_remote_entityArgs) {
+        if (args != null && args.entity_id != null) {
+            this.entity_id = args.entity_id;
         }
-        if (args != null && args.argvs != null) {
-            this.argvs = args.argvs;
+        if (args != null && args.conn_id != null) {
+            this.conn_id = args.conn_id;
         }
     }
     public write(output: thrift.TProtocol): void {
-        output.writeStructBegin("client_request_hub_service");
-        if (this.service_name != null) {
-            output.writeFieldBegin("service_name", thrift.Thrift.Type.STRING, 1);
-            output.writeString(this.service_name);
+        output.writeStructBegin("hub_call_client_remove_remote_entity");
+        if (this.entity_id != null) {
+            output.writeFieldBegin("entity_id", thrift.Thrift.Type.STRING, 1);
+            output.writeString(this.entity_id);
             output.writeFieldEnd();
         }
-        if (this.argvs != null) {
-            output.writeFieldBegin("argvs", thrift.Thrift.Type.STRING, 2);
-            output.writeBinary(this.argvs);
+        if (this.conn_id != null) {
+            output.writeFieldBegin("conn_id", thrift.Thrift.Type.STRING, 2);
+            output.writeString(this.conn_id);
             output.writeFieldEnd();
         }
         output.writeFieldStop();
         output.writeStructEnd();
         return;
     }
-    public static read(input: thrift.TProtocol): client_request_hub_service {
+    public static read(input: thrift.TProtocol): hub_call_client_remove_remote_entity {
         input.readStructBegin();
         let _args: any = {};
         while (true) {
@@ -50,7 +50,7 @@ export class client_request_hub_service {
                 case 1:
                     if (fieldType === thrift.Thrift.Type.STRING) {
                         const value_1: string = input.readString();
-                        _args.service_name = value_1;
+                        _args.entity_id = value_1;
                     }
                     else {
                         input.skip(fieldType);
@@ -58,8 +58,8 @@ export class client_request_hub_service {
                     break;
                 case 2:
                     if (fieldType === thrift.Thrift.Type.STRING) {
-                        const value_2: Buffer = input.readBinary();
-                        _args.argvs = value_2;
+                        const value_2: string = input.readString();
+                        _args.conn_id = value_2;
                     }
                     else {
                         input.skip(fieldType);
@@ -72,6 +72,6 @@ export class client_request_hub_service {
             input.readFieldEnd();
         }
         input.readStructEnd();
-        return new client_request_hub_service(_args);
+        return new hub_call_client_remove_remote_entity(_args);
     }
 }

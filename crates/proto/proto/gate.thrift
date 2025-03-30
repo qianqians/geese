@@ -172,7 +172,8 @@ struct client_request_hub_reconnect {
  * ntf_client_request_hub_service.
  */
 struct client_request_hub_service {
-	1:string service_name
+	1:string service_name,
+	2:binary argvs
 }
 
 /*

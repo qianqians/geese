@@ -7,17 +7,17 @@
 import * as thrift from "thrift";
 export interface Iclient_request_hub_reconnectArgs {
     account_id?: string;
-    token?: string;
+    argvs?: Buffer;
 }
 export class client_request_hub_reconnect {
     public account_id?: string;
-    public token?: string;
+    public argvs?: Buffer;
     constructor(args?: Iclient_request_hub_reconnectArgs) {
         if (args != null && args.account_id != null) {
             this.account_id = args.account_id;
         }
-        if (args != null && args.token != null) {
-            this.token = args.token;
+        if (args != null && args.argvs != null) {
+            this.argvs = args.argvs;
         }
     }
     public write(output: thrift.TProtocol): void {
@@ -27,9 +27,9 @@ export class client_request_hub_reconnect {
             output.writeString(this.account_id);
             output.writeFieldEnd();
         }
-        if (this.token != null) {
-            output.writeFieldBegin("token", thrift.Thrift.Type.STRING, 2);
-            output.writeString(this.token);
+        if (this.argvs != null) {
+            output.writeFieldBegin("argvs", thrift.Thrift.Type.STRING, 2);
+            output.writeBinary(this.argvs);
             output.writeFieldEnd();
         }
         output.writeFieldStop();
@@ -58,8 +58,8 @@ export class client_request_hub_reconnect {
                     break;
                 case 2:
                     if (fieldType === thrift.Thrift.Type.STRING) {
-                        const value_2: string = input.readString();
-                        _args.token = value_2;
+                        const value_2: Buffer = input.readBinary();
+                        _args.argvs = value_2;
                     }
                     else {
                         input.skip(fieldType);

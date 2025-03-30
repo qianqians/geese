@@ -53,14 +53,14 @@ impl ClientContext {
         _ctx_handle.send_msg(GateClientService::Login(ClientRequestHubLogin::new(sdk_uuid, argvs)))
     }
 
-    pub fn reconnect(slf: PyRefMut<'_, Self>, account_id: String, token: String) -> bool {
+    pub fn reconnect(slf: PyRefMut<'_, Self>, account_id: String, argvs:Vec<u8>) -> bool {
         let mut _ctx_handle = slf.ctx.as_ref().lock().unwrap();
-        _ctx_handle.send_msg(GateClientService::Reconnect(ClientRequestHubReconnect::new(account_id, token)))
+        _ctx_handle.send_msg(GateClientService::Reconnect(ClientRequestHubReconnect::new(account_id, argvs)))
     }
 
-    pub fn request_hub_service(slf: PyRefMut<'_, Self>, service_name: String) -> bool {
+    pub fn request_hub_service(slf: PyRefMut<'_, Self>, service_name: String, argvs:Vec<u8>) -> bool {
         let mut _ctx_handle = slf.ctx.as_ref().lock().unwrap();
-        _ctx_handle.send_msg(GateClientService::RequestHubService(ClientRequestHubService::new(service_name)))
+        _ctx_handle.send_msg(GateClientService::RequestHubService(ClientRequestHubService::new(service_name, argvs)))
     }
 
     pub fn call_rpc(slf: PyRefMut<'_, Self>, entity_id:String, msg_cb_id:i64, method:String, argvs:Vec<u8>) -> bool {

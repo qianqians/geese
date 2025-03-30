@@ -102,16 +102,16 @@ export class app {
         return false;
     }
 
-    public reconnect(account_id:string, token:string) : boolean {
+    public reconnect(account_id:string, argvs:object) : boolean {
         if (this.ctx) {
-            return this.ctx.reconnect(account_id, token);
+            return this.ctx.reconnect(account_id, encode(argvs));
         }
         return false;
     }
 
-    public request_hub_service(service_name:string) : boolean {
+    public request_hub_service(service_name:string, argvs:object) : boolean {
         if (this.ctx) {
-            return this.ctx.request_hub_service(service_name);
+            return this.ctx.request_hub_service(service_name, encode(argvs));
         }
         return false;
     }

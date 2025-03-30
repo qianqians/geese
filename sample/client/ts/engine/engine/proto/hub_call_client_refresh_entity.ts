@@ -6,6 +6,7 @@
 */
 import * as thrift from "thrift";
 export interface Ihub_call_client_refresh_entityArgs {
+    is_migrate?: boolean;
     conn_id?: string;
     is_main?: boolean;
     entity_id?: string;
@@ -13,12 +14,16 @@ export interface Ihub_call_client_refresh_entityArgs {
     argvs?: Buffer;
 }
 export class hub_call_client_refresh_entity {
+    public is_migrate?: boolean;
     public conn_id?: string;
     public is_main?: boolean;
     public entity_id?: string;
     public entity_type?: string;
     public argvs?: Buffer;
     constructor(args?: Ihub_call_client_refresh_entityArgs) {
+        if (args != null && args.is_migrate != null) {
+            this.is_migrate = args.is_migrate;
+        }
         if (args != null && args.conn_id != null) {
             this.conn_id = args.conn_id;
         }
@@ -37,28 +42,33 @@ export class hub_call_client_refresh_entity {
     }
     public write(output: thrift.TProtocol): void {
         output.writeStructBegin("hub_call_client_refresh_entity");
+        if (this.is_migrate != null) {
+            output.writeFieldBegin("is_migrate", thrift.Thrift.Type.BOOL, 1);
+            output.writeBool(this.is_migrate);
+            output.writeFieldEnd();
+        }
         if (this.conn_id != null) {
-            output.writeFieldBegin("conn_id", thrift.Thrift.Type.STRING, 1);
+            output.writeFieldBegin("conn_id", thrift.Thrift.Type.STRING, 2);
             output.writeString(this.conn_id);
             output.writeFieldEnd();
         }
         if (this.is_main != null) {
-            output.writeFieldBegin("is_main", thrift.Thrift.Type.BOOL, 2);
+            output.writeFieldBegin("is_main", thrift.Thrift.Type.BOOL, 3);
             output.writeBool(this.is_main);
             output.writeFieldEnd();
         }
         if (this.entity_id != null) {
-            output.writeFieldBegin("entity_id", thrift.Thrift.Type.STRING, 3);
+            output.writeFieldBegin("entity_id", thrift.Thrift.Type.STRING, 4);
             output.writeString(this.entity_id);
             output.writeFieldEnd();
         }
         if (this.entity_type != null) {
-            output.writeFieldBegin("entity_type", thrift.Thrift.Type.STRING, 4);
+            output.writeFieldBegin("entity_type", thrift.Thrift.Type.STRING, 5);
             output.writeString(this.entity_type);
             output.writeFieldEnd();
         }
         if (this.argvs != null) {
-            output.writeFieldBegin("argvs", thrift.Thrift.Type.STRING, 5);
+            output.writeFieldBegin("argvs", thrift.Thrift.Type.STRING, 6);
             output.writeBinary(this.argvs);
             output.writeFieldEnd();
         }
@@ -78,27 +88,27 @@ export class hub_call_client_refresh_entity {
             }
             switch (fieldId) {
                 case 1:
-                    if (fieldType === thrift.Thrift.Type.STRING) {
-                        const value_1: string = input.readString();
-                        _args.conn_id = value_1;
+                    if (fieldType === thrift.Thrift.Type.BOOL) {
+                        const value_1: boolean = input.readBool();
+                        _args.is_migrate = value_1;
                     }
                     else {
                         input.skip(fieldType);
                     }
                     break;
                 case 2:
-                    if (fieldType === thrift.Thrift.Type.BOOL) {
-                        const value_2: boolean = input.readBool();
-                        _args.is_main = value_2;
+                    if (fieldType === thrift.Thrift.Type.STRING) {
+                        const value_2: string = input.readString();
+                        _args.conn_id = value_2;
                     }
                     else {
                         input.skip(fieldType);
                     }
                     break;
                 case 3:
-                    if (fieldType === thrift.Thrift.Type.STRING) {
-                        const value_3: string = input.readString();
-                        _args.entity_id = value_3;
+                    if (fieldType === thrift.Thrift.Type.BOOL) {
+                        const value_3: boolean = input.readBool();
+                        _args.is_main = value_3;
                     }
                     else {
                         input.skip(fieldType);
@@ -107,7 +117,7 @@ export class hub_call_client_refresh_entity {
                 case 4:
                     if (fieldType === thrift.Thrift.Type.STRING) {
                         const value_4: string = input.readString();
-                        _args.entity_type = value_4;
+                        _args.entity_id = value_4;
                     }
                     else {
                         input.skip(fieldType);
@@ -115,8 +125,17 @@ export class hub_call_client_refresh_entity {
                     break;
                 case 5:
                     if (fieldType === thrift.Thrift.Type.STRING) {
-                        const value_5: Buffer = input.readBinary();
-                        _args.argvs = value_5;
+                        const value_5: string = input.readString();
+                        _args.entity_type = value_5;
+                    }
+                    else {
+                        input.skip(fieldType);
+                    }
+                    break;
+                case 6:
+                    if (fieldType === thrift.Thrift.Type.STRING) {
+                        const value_6: Buffer = input.readBinary();
+                        _args.argvs = value_6;
                     }
                     else {
                         input.skip(fieldType);

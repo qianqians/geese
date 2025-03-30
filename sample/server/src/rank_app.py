@@ -37,7 +37,6 @@ class RankImpl(entity):
         rankInfo.role_name = "test"
         rsp.rsp(rankInfo)
 
-@ServiceDescribe("Rank")
 class RankService(service):
     def __init__(self, _app:app):
         super().__init__("Rank")
@@ -51,7 +50,7 @@ class RankService(service):
     def hub_query_service_entity(self, queryer_hub_name:str):
         self.rankImpl.create_remote_hub_entity(queryer_hub_name)
     
-    def client_query_service_entity(self, queryer_gate_name:str, queryer_client_conn_id:str):
+    def client_query_service_entity(self, queryer_gate_name:str, queryer_client_conn_id:str, queryer_client_info:dict):
         self.rankImpl.create_remote_entity(queryer_gate_name, [queryer_client_conn_id])
     
 class PlayerEventHandle(player_event_handle):

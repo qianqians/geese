@@ -104,11 +104,11 @@ class app(object):
     def login(self, sdk_uuid:str, argvs:dict) -> bool:
         return self.ctx.login(sdk_uuid, dumps(argvs))
     
-    def reconnect(self, account_id:str, token:str) -> bool:
-        return self.ctx.reconnect(account_id, token)
+    def reconnect(self, account_id:str, argvs:dict) -> bool:
+        return self.ctx.reconnect(account_id, dumps(argvs))
     
-    def request_hub_service(self, service_name:str) -> bool:
-        return self.ctx.request_hub_service(service_name)
+    def request_hub_service(self, service_name:str, argvs:dict) -> bool:
+        return self.ctx.request_hub_service(service_name, dumps(argvs))
 
     def register(self, entity_type:str, creator:Callable[[str, dict]]):
         self.__entity_create_method__[entity_type] = creator

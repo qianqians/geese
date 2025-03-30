@@ -7,12 +7,17 @@
 import * as thrift from "thrift";
 export interface Iclient_request_hub_serviceArgs {
     service_name?: string;
+    argvs?: Buffer;
 }
 export class client_request_hub_service {
     public service_name?: string;
+    public argvs?: Buffer;
     constructor(args?: Iclient_request_hub_serviceArgs) {
         if (args != null && args.service_name != null) {
             this.service_name = args.service_name;
+        }
+        if (args != null && args.argvs != null) {
+            this.argvs = args.argvs;
         }
     }
     public write(output: thrift.TProtocol): void {
@@ -20,6 +25,11 @@ export class client_request_hub_service {
         if (this.service_name != null) {
             output.writeFieldBegin("service_name", thrift.Thrift.Type.STRING, 1);
             output.writeString(this.service_name);
+            output.writeFieldEnd();
+        }
+        if (this.argvs != null) {
+            output.writeFieldBegin("argvs", thrift.Thrift.Type.STRING, 2);
+            output.writeBinary(this.argvs);
             output.writeFieldEnd();
         }
         output.writeFieldStop();
@@ -41,6 +51,15 @@ export class client_request_hub_service {
                     if (fieldType === thrift.Thrift.Type.STRING) {
                         const value_1: string = input.readString();
                         _args.service_name = value_1;
+                    }
+                    else {
+                        input.skip(fieldType);
+                    }
+                    break;
+                case 2:
+                    if (fieldType === thrift.Thrift.Type.STRING) {
+                        const value_2: Buffer = input.readBinary();
+                        _args.argvs = value_2;
                     }
                     else {
                         input.skip(fieldType);

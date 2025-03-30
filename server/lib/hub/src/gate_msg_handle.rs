@@ -86,7 +86,7 @@ impl GateCallbackMsgHandle {
     pub fn do_client_request_service(&mut self, py: Python<'_>, py_handle: Py<PyAny>, gate_name: String, ev:ClientRequestService) {
         trace!("do_client_request_service begin!");
 
-        let argvs = (ev.service_name.unwrap(), gate_name, ev.conn_id.unwrap(), );
+        let argvs = (ev.service_name.unwrap(), gate_name, ev.conn_id.unwrap(), ev.argvs.unwrap(), );
         if let Err(e) = py_handle.call_method1(py, "on_client_request_service", argvs) {
             error!("do_client_request_service python callback error:{}", e)
         }

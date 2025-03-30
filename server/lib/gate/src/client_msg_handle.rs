@@ -214,7 +214,7 @@ impl GateClientMsgHandle {
 
                 let mut _hub_handle = _hub.as_ref().lock().await;
                 if !_hub_handle.send_hub_msg(HubService::ClientRequestService(
-                    ClientRequestService::new(ev.service_name.unwrap(), _gate_name, _gate_host, _conn_id))).await
+                    ClientRequestService::new(ev.service_name.unwrap(), _gate_name, _gate_host, _conn_id, ev.argvs.unwrap()))).await
                 {
                     _conn_mgr_handle.delete_hub_proxy(&_hub_handle.get_hub_name());
                 }
