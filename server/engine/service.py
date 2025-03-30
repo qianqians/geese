@@ -1,5 +1,6 @@
 # -*- coding: UTF-8 -*-
 from abc import ABC, abstractmethod
+from .msgpack import *
 
 from .player import *
 from .entity import *
@@ -46,21 +47,29 @@ async def query_service(service_name:str):
     else:
         app().ctx.query_service(hub_name, service_name)
         
-async def forward_client_query_service(service_name:str, gate_name:str, gate_host:str, conn_id:str, player_id:str):
+async def forward_client_query_service(service_name:str, gate_name:str, gate_host:str, conn_id:str, argvs:dict):
     from app import app
     hub_name = await app().ctx.entry_hub_service(service_name)
     if app().ctx.hub_name() == hub_name:
         await app().ctx.entry_gate_service(gate_name, gate_host)
         _service = app().service_mgr.get_service(service_name)
-        _service.client_query_service_entity(gate_name, conn_id, player_id)
+        _service.client_query_service_entity(gate_name, conn_id, argvs)
     else:
-        app().ctx.forward_client_request_service(hub_name, service_name, gate_name, gate_host, conn_id, player_id)
+        app().ctx.forward_client_request_service(hub_name, service_name, gate_name, gate_host, conn_id, dumps(argvs))
 
-async def forward_client_query_service_ext(service_name:str, info:list[(str, str, dict)]):
+async def forward_client_query_service_ext(service_name:str, info:list[(str, str, str, dict)]):
     from app import app
     hub_name = await app().ctx.entry_hub_service(service_name)
     if app().ctx.hub_name() == hub_name:
         _service = app().service_mgr.get_service(service_name)
-        _service.client_query_service_entity_ext(info)
+        info_ext = []
+        for _info in info:
+            gate_name, gate_host, conn_id, argvs = _info
+            info_ext.append((gate_name, conn_id, argvs))
+        _service.client_query_service_entity_ext(info_ext)
     else:
-        app().ctx.forward_client_request_service_ext(hub_name, service_name, info)
+        info_ext = []
+        for _info in info:
+            gate_name, gate_host, conn_id, argvs = _info
+            info_ext.append((gate_name, gate_host, conn_id, dumps(argvs)))
+        app().ctx.forward_client_request_service_ext(hub_name, service_name, info_ext)
