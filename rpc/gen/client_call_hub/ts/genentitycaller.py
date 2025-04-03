@@ -32,7 +32,7 @@ def gen_entity_caller(module_name, funcs, dependent_struct, dependent_enum, enum
                     code += ", "
             code += ") {\n"
             _argv_uuid = '_'.join(str(uuid.uuid3(uuid.NAMESPACE_DNS, func_name)).split('-'))
-            code += "        _argv_" + _argv_uuid + " = []\n"
+            code += "        let _argv_" + _argv_uuid + " = []\n"
             for _type, _name, _parameter in i[2]:
                 type_ = check_type(_type, dependent_struct, dependent_enum)
                 code += gen_type_code_type_to_protcol(

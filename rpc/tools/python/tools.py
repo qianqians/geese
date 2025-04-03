@@ -143,6 +143,8 @@ def get_type_default(typestr, dependent_struct, dependent_enum):
         return "False"
     elif check_in_dependent(typestr, dependent_enum):
         return "0"
+    elif check_in_dependent(typestr, dependent_struct):
+        return "None"
     elif typestr == 'bin':
         return "b''"
     elif check_type(typestr, dependent_struct, dependent_enum) == TypeType.List:
@@ -196,9 +198,11 @@ def convert_type(typestr, dependent_struct, dependent_enum):
         array_type = convert_type(array_type, dependent_struct, dependent_enum)
         return 'list[' + array_type + ']'
     elif check_type(typestr, dependent_struct, dependent_enum) == TypeType.Dict:
-        array_type = typestr[4:-1]
-        array_type = convert_type(array_type, dependent_struct, dependent_enum)
-        return 'dict[' + array_type + ']'
+        array_type:str = typestr[4:-1]
+        key_type, value_type = array_type.split(',')
+        key_type = convert_type(key_type, dependent_struct, dependent_enum)
+        value_type = convert_type(value_type, dependent_struct, dependent_enum)
+        return 'dict[' + key_type + ',' + value_type + ']'
 
     raise Exception("non exist type:%s" % typestr)
     

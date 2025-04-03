@@ -31,7 +31,7 @@ def gen_python_import_h(_import):
     return code
 
 def gen_ts_import(_import):
-    code = "import * as engine from \"./engine\";\n"
+    code = "import * as engine from \"./engine/index\";\n"
     code += "import { encode, decode } from \"@msgpack/msgpack\";\n"
     for _i in _import:
         code += "import * as " + _i + " from \"./" + _i + "_cli\";\n"
@@ -41,9 +41,9 @@ def gen(lang, inputdir, commondir, clioutputdir, svroutputdir):
     print("inputdir", inputdir)
     print("commondir", commondir)
 
-    if clioutputdir != None and not os.path.isdir(clioutputdir):
+    if clioutputdir != None and len(clioutputdir) > 0 and not os.path.isdir(clioutputdir):
         os.mkdir(clioutputdir)
-    if svroutputdir != None and not os.path.isdir(svroutputdir):
+    if svroutputdir != None and len(svroutputdir) > 0 and not os.path.isdir(svroutputdir):
         os.mkdir(svroutputdir)
 
     pretreatmentdata = jparser.batch(inputdir, commondir)
