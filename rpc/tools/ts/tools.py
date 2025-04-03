@@ -203,8 +203,10 @@ def convert_type(typestr, dependent_struct, dependent_enum):
         return 'Array<' + array_type +'>'
     elif typestr[0:3] == 'map' and typestr[3] == '<' and typestr[-1] == '>':
         array_type = typestr[4:-1]
-        array_type = convert_type(array_type, dependent_struct, dependent_enum)
-        return 'Map<' + array_type + '>'
+        key_type, value_type = array_type.split(',')
+        key_type = convert_type(key_type, dependent_struct, dependent_enum)
+        value_type = convert_type(value_type, dependent_struct, dependent_enum)
+        return 'Map<' + key_type + ',' + value_type + '>'
     
     raise Exception("non exist type:%s" % typestr)
     

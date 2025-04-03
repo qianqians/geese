@@ -23,6 +23,8 @@ def genmainstruct(struct_name, elems, dependent_struct, dependent_enum, enum):
 
 def genstructprotocol(struct_name, elems, dependent_struct, dependent_enum):
     code = "def " + struct_name + "_to_protcol(_struct:" + struct_name + "):\n"
+    code += "    if _struct is None:\n"
+    code += "        return None\n"
     code += "    _protocol = {}\n"
     for key, value, parameter in elems:
         type_ = check_type(key, dependent_struct, dependent_enum)
