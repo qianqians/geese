@@ -6,7 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = "0.15.0"
 thrift = "0.17.0"
 async-trait = "0.1.68"
 tokio = { version = "1.41.1", features = ["full"] }
