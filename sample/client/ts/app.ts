@@ -66,7 +66,7 @@ class SamplePlayer extends engine.player {
             (success) => { console.log(`SamplePlayer login success:${success}`) },
             (_err) => { console.log(`SamplePlayer login _err:${_err}`) } ).timeout(
             1000, () => { console.log(`SamplePlayer login timeout!`) } );
-        engine.app.instance.request_hub_service("Rank");
+        engine.app.instance.request_hub_service("Rank", {});
         return playerImpl
     }
 }
