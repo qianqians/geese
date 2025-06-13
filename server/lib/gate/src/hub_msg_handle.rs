@@ -824,8 +824,6 @@ impl GateHubMsgHandle {
             let mut _p = _proxy_handle.as_ref().lock().await;
             let _conn_mgr_arc = _p.get_conn_mgr();
             let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
-
-            let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
             if let Some(_client_arc) = _conn_mgr.get_client_proxy(&ev.conn_id.unwrap()) {
                 let mut _client = _client_arc.as_ref().lock().await;
                 _client.check_hub_transfer(ev.entity_id.unwrap()).await;
@@ -845,8 +843,6 @@ impl GateHubMsgHandle {
             let mut _p = _proxy_handle.as_ref().lock().await;
             let _conn_mgr_arc = _p.get_conn_mgr();
             let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
-
-            let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
             let _entity_id = ev.entity_id.unwrap();
             if let Some(_entity) = _conn_mgr.get_entity_mut(&_entity_id) {
                 _entity.set_is_migrate(true);
@@ -865,8 +861,6 @@ impl GateHubMsgHandle {
         if let Some(_proxy_handle) = _proxy.upgrade() {
             let mut _p = _proxy_handle.as_ref().lock().await;
             let _conn_mgr_arc = _p.get_conn_mgr();
-            let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
-
             let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
             if let Some(_entity) = _conn_mgr.get_entity_mut(&ev.entity_id.unwrap()) {
                 _entity.do_cache_msg(ev.hub_name.unwrap()).await;
