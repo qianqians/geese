@@ -14,6 +14,7 @@ use tokio_tungstenite::{accept_async, WebSocketStream, MaybeTlsStream};
 use tokio_tungstenite::tungstenite::Result;
 use async_trait::async_trait;
 
+use close_handle::CloseHandle;
 use crate::wss_socket::{WSSReader, WSSWriter};
 
 pub struct WSSServer{
@@ -29,6 +30,7 @@ impl WSSServer {
     pub async fn listen_wss(
         host:String, 
         pfx:String, 
+        close: Arc<Mutex<CloseHandle>>,
         f:Arc<Mutex<Box<dyn WSSListenCallback + Send + 'static>>>) -> Result<WSSServer, Box<dyn std::error::Error>>
     {
         trace!("wss accept start:{}!", host);
@@ -45,8 +47,24 @@ impl WSSServer {
         let _f_clone = f.clone();
 
         let _join = tokio::spawn(async move {
-            while let Ok((_s, _)) = _listener.accept().await {
-                trace!("wss accept client ip:{:?}", _s.peer_addr());
+            loop {
+                {
+                    let _c_ref = close.as_ref().lock().await;
+                    if _c_ref.is_closed() {
+                        break;
+                    }
+                }
+
+                let _s_listen = _listener.accept().await;
+                let (_s, addr) = match _s_listen {
+                    Err(e) => {
+                        error!("TcpServer listener loop err:{}!", e);
+                        continue;
+                    },
+                    Ok(_s) => _s
+                };
+
+                trace!("wss accept client ip:{:?}", addr);
 
                 let _acc_s = match _tokio_acceptor.accept(_s).await {
                     Err(e) => {
@@ -79,6 +97,7 @@ impl WSSServer {
 
     pub async fn listen_ws(
         host:String, 
+        close: Arc<Mutex<CloseHandle>>,
         f:Arc<Mutex<Box<dyn WSSListenCallback + Send + 'static>>>) -> Result<WSSServer, Box<dyn std::error::Error>> 
     {
         trace!("ws accept start:{}!", host);
@@ -87,6 +106,13 @@ impl WSSServer {
 
         let _join = tokio::spawn(async move {
             loop {   
+                {
+                    let _c_ref = close.as_ref().lock().await;
+                    if _c_ref.is_closed() {
+                        break;
+                    }
+                }
+
                 let stream = _listener.accept().await;
                 let (_s, addr) = match stream {
                     Err(e) => {
@@ -119,5 +145,4 @@ impl WSSServer {
     pub async fn join(self) {
         let _ = self.join.await;
     }
-
 }

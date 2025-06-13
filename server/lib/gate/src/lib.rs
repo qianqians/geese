@@ -96,16 +96,16 @@ impl GateServer {
             _conn_mgr_handle.set_redis_service(_redis_service.clone());
         }
 
-        let _tcp_s = TcpServer::listen(gate_hub_host.clone(), 
+        let _tcp_s = TcpServer::listen(gate_hub_host.clone(), _close.clone(),
             HubProxyManager::new(_conn_mgr_clone.clone())).await?;
         let _client_s = match client_tcp_host {
             None => None,
-            Some(_host) => Some(TcpServer::listen(_host, 
+            Some(_host) => Some(TcpServer::listen(_host, _close.clone(),
                 TcpClientProxyManager::new(_conn_mgr_clone.clone())).await?)
         };
         let _ws_s = match client_ws_host {
             None => None,
-            Some(_host) => Some(WSSServer::listen_ws(_host, 
+            Some(_host) => Some(WSSServer::listen_ws(_host, _close.clone(),
                 WSSClientProxyManager::new(_conn_mgr_clone.clone())).await?)
         };
         let _wss_s = match client_wss_cfg {
@@ -115,6 +115,7 @@ impl GateServer {
                 Some(WSSServer::listen_wss(
                     client_wss_host, 
                     _cfg.client_wss_pfx, 
+                    _close.clone(),
                     WSSClientProxyManager::new(_conn_mgr_clone.clone())).await?)
             }
         };
@@ -207,7 +208,8 @@ impl GateServer {
         info!("await work done!");
 
         let _ = self.run().await;
-        let _ = self.tcp_server.join().await;
+
+        self.tcp_server.join().await;
         if let Some(client_server) = self.client_server {
             let _ = client_server.join().await;
         }
