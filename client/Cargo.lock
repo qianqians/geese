@@ -1067,6 +1067,7 @@ name = "tcp"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "close_handle",
  "net",
  "queue",
  "tokio",
@@ -1411,6 +1412,7 @@ name = "wss"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "close_handle",
  "futures-util",
  "native-tls",
  "net",

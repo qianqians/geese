@@ -126,6 +126,7 @@ impl DBProxyServer {
         let _s = RedisService::listen(
             redis_url, 
             create_channel_key(name), 
+            _close.clone(),
             HubProxyManager::new(_handle.clone())).await?;
         Ok(DBProxyServer {
             handle: _handle,

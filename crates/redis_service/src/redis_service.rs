@@ -12,6 +12,7 @@ use tracing::{trace, error};
 
 use net::NetWriter;
 use proto::common::RedisMsg;
+use close_handle::CloseHandle;
 
 use crate::redis_mq_channel::{RedisMQReader, RedisMQWriter};
 
@@ -36,8 +37,8 @@ pub struct RedisService{
     lname: String,
     client: Arc<Mutex<Client>>,
     conn: Arc<Mutex<Connection>>,
-    rds: Arc<Mutex<BTreeMap<String, (Arc<Mutex<RedisMQReader>>, Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>)>>>,
-    join: Option<JoinHandle<()>>
+    join: Option<JoinHandle<()>>,
+    rds: Arc<Mutex<BTreeMap<String, (Arc<Mutex<RedisMQReader>>, Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>)>>>
 }
 
 #[async_trait]
@@ -56,14 +57,15 @@ impl RedisService {
             lname: lname,
             client: Arc::new(Mutex::new(client)),
             conn: conn,
+            join: None,
             rds: rds,
-            join: None
         })
     }
 
     pub async fn listen(
         host:String, 
         lname:String,
+        close: Arc<Mutex<CloseHandle>>,
         f:Arc<Mutex<Box<dyn RedisMQListenCallback + Send + 'static>>>) -> Result<RedisService, Box<dyn std::error::Error>> 
     {
         trace!("redis mq listen:{}", lname);
@@ -81,6 +83,13 @@ impl RedisService {
 
         let _join = tokio::spawn(async move {
             loop {
+                {
+                    let _c_ref = close.as_ref().lock().await;
+                    if _c_ref.is_closed() {
+                        break;
+                    }
+                }
+
                 let vec_data: Vec<Vec<u8>>;
                 {
                     let pop_lname = lname.clone();
@@ -140,9 +149,15 @@ impl RedisService {
             lname: service_lname,
             client: Arc::new(Mutex::new(client)),
             conn: service_conn,
-            rds: service_rds,
-            join: Some(_join)
+            join: Some(_join),
+            rds: service_rds
         })
+    }
+
+    pub async fn join(self) {
+        if let Some(_join) = self.join {
+            let _ = _join.await;
+        }
     }
 
     pub async fn connect(&mut self, rname: String) -> Result<(Arc<Mutex<RedisMQReader>>, Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>), Box<dyn std::error::Error>> {
@@ -286,11 +301,4 @@ impl RedisService {
         }
         Ok(())
     }
-
-    pub async fn join(self) {
-        if let Some(join) = self.join {
-            let _ = join.await;
-        }
-    }
-
 }
