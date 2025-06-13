@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
+use tokio::time::interval;
 use tracing::info;
 
 use tcp::tcp_server::TcpServer;
@@ -42,6 +43,15 @@ impl WSSCfg {
             client_wss_port: _port,
             client_wss_pfx: _pfx
         }
+    }
+}
+
+async fn start_conn_heartbeats_poll(conn_mgr: Arc<Mutex<ConnManager>>) {
+    let mut interval = interval(Duration::from_secs(10));
+    loop {
+        interval.tick().await;
+        let mut conn_mgr = conn_mgr.lock().await;
+        conn_mgr.poll().await;
     }
 }
 
@@ -115,6 +125,11 @@ impl GateServer {
             let _ = _r.set(create_host_cache_key(gate_name.clone()), gate_hub_host.clone(), 10);
         }
 
+        let conn_mgr_clone_for_poll = _conn_mgr_clone.clone();
+        tokio::spawn(async move {
+            start_conn_heartbeats_poll(conn_mgr_clone_for_poll).await;
+        });
+
         Ok(GateServer {
             gate_name: gate_name,
             tcp_server: _tcp_s,
@@ -143,7 +158,6 @@ impl GateServer {
             let client_msg_handle: Option<Arc<Mutex<GateClientMsgHandle>>>;
             {
                 let mut _h = self.conn_mgr.as_ref().lock().await;
-                let _ = _h.poll().await;
 
                 hub_msg_handle = Some(_h.get_hub_msg_handle());
                 client_msg_handle = Some(_h.get_client_msg_handle());
