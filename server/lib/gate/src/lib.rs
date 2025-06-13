@@ -3,6 +3,7 @@ use std::thread;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use tokio::task::JoinHandle;
 use tokio::sync::Mutex;
 use tokio::time::interval;
 use tracing::info;
@@ -65,6 +66,7 @@ pub struct GateServer {
     redis: Arc<Mutex<RedisService>>,
     health: Arc<Mutex<HealthHandle>>,
     offset_time: Arc<Mutex<OffsetTime>>,
+    heartbeats_join: JoinHandle<()>,
     close: Arc<Mutex<CloseHandle>>
 }
 
@@ -127,7 +129,7 @@ impl GateServer {
         }
 
         let conn_mgr_clone_for_poll = _conn_mgr_clone.clone();
-        tokio::spawn(async move {
+        let _join = tokio::spawn(async move {
             start_conn_heartbeats_poll(conn_mgr_clone_for_poll).await;
         });
 
@@ -141,6 +143,7 @@ impl GateServer {
             health: health_handle,
             offset_time: offset_time,
             redis: _redis_service,
+            heartbeats_join: _join,
             close: _close
         })
     }
@@ -159,7 +162,6 @@ impl GateServer {
             let client_msg_handle: Option<Arc<Mutex<GateClientMsgHandle>>>;
             {
                 let mut _h = self.conn_mgr.as_ref().lock().await;
-
                 hub_msg_handle = Some(_h.get_hub_msg_handle());
                 client_msg_handle = Some(_h.get_client_msg_handle());
             }
@@ -207,7 +209,7 @@ impl GateServer {
     pub async fn join(mut self) {
         info!("await work done!");
 
-        let _ = self.run().await;
+        self.run().await;
 
         self.tcp_server.join().await;
         if let Some(client_server) = self.client_server {
@@ -219,6 +221,8 @@ impl GateServer {
         if let Some(wss_server) = self.wss_server {
             let _ = wss_server.join().await;
         }
+
+        let _ = self.heartbeats_join.await;
 
         info!("work done!");
     }
