@@ -41,7 +41,7 @@ def gen_global_caller(module_name, funcs, dependent_struct, dependent_enum, enum
                     func_name, 
                     dependent_struct, 
                     dependent_enum)
-            code += "        global_entity.instance().call_client(\"" + func_name + "\", dumps(_argv_" + _argv_uuid + "))\n\n"
+            code += "        global_entity().call_client(\"" + func_name + "\", dumps(_argv_" + _argv_uuid + "))\n\n"
 
         else:
             raise Exception("func:" + func_name + " wrong rpc type:" + str(i[1]) + ", must ntf")
