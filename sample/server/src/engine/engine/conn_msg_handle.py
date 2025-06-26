@@ -21,8 +21,11 @@ class conn_msg_handle(object):
 
     def on_transfer_entity_control(self, entity_id:str, is_main:bool, is_reconnect:bool, gate_name:str, conn_id:str):
         from app import app
-        app().login_handle.on_transfer_entity_control(entity_id, is_main, is_reconnect, gate_name, conn_id)
-        
+        is_entry_player = app().player_mgr.update_player_conn(entity_id, is_main, is_reconnect, gate_name, conn_id) 
+        is_entry_entity = app().entity_mgr.update_entity_conn(entity_id, is_reconnect, gate_name, conn_id)
+        if (not is_entry_player) and (not is_entry_entity) and is_reconnect:
+            app().ctx.hub_call_client_delete_remote_entity(gate_name, entity_id)
+
     def on_client_disconnnect(self, gate_name:str, conn_id:str):
         from app import app
         app().player_mgr.player_offline(conn_id)
