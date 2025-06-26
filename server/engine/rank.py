@@ -31,7 +31,7 @@ class Rank(object):
         self.del_rank([item.key])
         self.__add_rank__(item)
         
-    def get_rank(self, itemKey:str) -> (int, RankItem):
+    def get_rank(self, itemKey:str) -> tuple[int, RankItem]:
         from .app import app
         rank = app().redis_proxy.zrevrank(self.rankName, itemKey)
         info = loads(app().redis_proxy.get(itemKey))
