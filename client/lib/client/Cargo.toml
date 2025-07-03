@@ -9,7 +9,7 @@ edition = "2021"
 thrift = "0.17.0"
 async-trait = "0.1.68"
 tokio = { version = "1.41.1", features = ["full"] }
-pyo3 = { version = "0.23.3", features = ["extension-module"] }
+pyo3 = { version = "0.25.1", features = ["extension-module"] }
 net = { path = "../../../crates/net", version = "0.1.0" }
 wss = { path = "../../../crates/wss", version = "0.1.0" }
 tcp = { path = "../../../crates/tcp", version = "0.1.0" }

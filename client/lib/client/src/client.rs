@@ -148,7 +148,10 @@ impl GateMsgHandle {
                     _p_handle.conn_id = conn_id.clone();
                 }
 
-                let argvs = (conn_id.clone(), );
+                let argvs = (
+                    conn_id.clone(), 
+                );
+
                 if let Err(e) = py_handle.call_method1(py, "on_conn_id", argvs) {
                     println!("on_conn_id python callback error:{}", e)
                 }
@@ -156,31 +159,48 @@ impl GateMsgHandle {
             ClientService::CreateRemoteEntity(ev) => {
                 println!("GateMsgHandle ClientService CreateRemoteEntity begin!");
                 
-                let argvs = (ev.entity_type.unwrap(), ev.entity_id.unwrap(), PyBytes::new(py, &ev.argvs.unwrap()));
+                let argvs = (
+                    ev.entity_type.unwrap(), 
+                    ev.entity_id.unwrap(), 
+                    PyBytes::new(py, &ev.argvs.unwrap())
+                );
+
                 if let Err(e) = py_handle.call_method1(py, "on_create_remote_entity", argvs) {
                     println!("on_create_remote_entity python callback error:{}", e)
                 }
             },
             ClientService::DeleteRemoteEntity(ev) => {
-                let argvs = (ev.entity_id.unwrap(),);
+                let argvs = (
+                    ev.entity_id.unwrap(),
+                );
+
                 if let Err(e) = py_handle.call_method1(py, "on_delete_remote_entity", argvs) {
                         println!("on_delete_remote_entity python callback error:{}", e)
                 }
             },
             ClientService::RefreshEntity(ev) => {
-                let argvs = (ev.entity_type.unwrap(), ev.entity_id.unwrap(), PyBytes::new(py, &ev.argvs.unwrap()));
+                let argvs = (
+                    ev.entity_type.unwrap(), 
+                    ev.entity_id.unwrap(), 
+                    PyBytes::new(py, &ev.argvs.unwrap())
+                );
+
                 if let Err(e) = py_handle.call_method1(py, "on_refresh_entity", argvs) {
                     println!("on_create_remote_entity python callback error:{}", e)
                 }
             },
             ClientService::KickOff(ev) => {
-                let argvs = (ev.prompt_info.unwrap(),);
+                let argvs = (
+                    ev.prompt_info.unwrap(),
+                );
+
                 if let Err(e) = py_handle.call_method1(py, "on_kick_off", argvs) {
                     println!("on_kick_off python callback error:{}", e)
                 }
             },
             ClientService::TransferComplete(_) => {
                 let argvs = ();
+
                 if let Err(e) = py_handle.call_method1(py, "on_transfer_complete", argvs) {
                     println!("on_transfer_complete python callback error:{}", e)
                 }
@@ -192,7 +212,8 @@ impl GateMsgHandle {
                         ev.entity_id.unwrap(),
                         ev.msg_cb_id.unwrap(),
                         msg.method.unwrap(),
-                        PyBytes::new(py, &msg.argvs.unwrap()));
+                        PyBytes::new(py, &msg.argvs.unwrap())
+                    );
 
                 if let Err(e) = py_handle.call_method1(py, "on_call_rpc", argvs) {
                     println!("on_call_rpc python callback error:{}", e)
@@ -203,7 +224,8 @@ impl GateMsgHandle {
                 let argvs = (
                     rsp.entity_id.unwrap(),
                     rsp.msg_cb_id.unwrap(),
-                    PyBytes::new(py, &rsp.argvs.unwrap()));
+                    PyBytes::new(py, &rsp.argvs.unwrap())
+                );
 
                 if let Err(e) = py_handle.call_method1(py, "on_call_rsp", argvs) {
                     println!("on_call_rsp python callback error:{}", e)
@@ -214,7 +236,8 @@ impl GateMsgHandle {
                 let argvs = (
                     err.entity_id.unwrap(),
                     err.msg_cb_id.unwrap(),
-                    PyBytes::new(py, &err.argvs.unwrap()));
+                    PyBytes::new(py, &err.argvs.unwrap())
+                );
 
                 if let Err(e) = py_handle.call_method1(py, "on_call_err", argvs) {
                     println!("on_call_err python callback error:{}", e)
@@ -226,7 +249,8 @@ impl GateMsgHandle {
                     ev.hub_name.unwrap(),
                     ev.entity_id.unwrap(),
                     msg.method.unwrap(),
-                    PyBytes::new(py, &msg.argvs.unwrap()));
+                    PyBytes::new(py, &msg.argvs.unwrap())
+                );
 
                 if let Err(e) = py_handle.call_method1(py, "on_call_ntf", argvs) {
                     println!("on_call_ntf python callback error:{}", e)
@@ -236,7 +260,8 @@ impl GateMsgHandle {
                 let msg = ev.message.unwrap();
                 let argvs = (
                     msg.method.unwrap(),
-                    PyBytes::new(py, &msg.argvs.unwrap()));
+                    PyBytes::new(py, &msg.argvs.unwrap())
+                );
 
                 if let Err(e) = py_handle.call_method1(py, "on_call_global", argvs) {
                     println!("on_call_global python callback error:{}", e)

@@ -95,7 +95,11 @@ impl DBCallbackMsgHandle {
     pub fn do_ack_get_guid(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: AckGetGuid) {
         trace!("do_ack_get_guid begin!");
 
-        let args = (ev.callback_id.unwrap(), ev.guid.unwrap());
+        let args = (
+            ev.callback_id.unwrap(), 
+            ev.guid.unwrap()
+        );
+        
         if let Err(e) = py_handle.call_method1(py, "on_ack_get_guid", args) {
             error!("do_ack_create_object python callback error:{}", e)
         }
@@ -104,7 +108,11 @@ impl DBCallbackMsgHandle {
     pub fn do_ack_create_object(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: AckCreateObject) {
         trace!("do_ack_create_object begin!");
 
-        let args = (ev.callback_id.unwrap(), ev.result.unwrap());
+        let args = (
+            ev.callback_id.unwrap(), 
+            ev.result.unwrap()
+        );
+
         if let Err(e) = py_handle.call_method1(py, "on_ack_create_object", args) {
             error!("do_ack_create_object python callback error:{}", e)
         }
@@ -113,7 +121,11 @@ impl DBCallbackMsgHandle {
     pub fn do_ack_updata_object(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: AckUpdataObject) {
         trace!("do_ack_updata_object begin!");
 
-        let args = (ev.callback_id.unwrap(), ev.result.unwrap());
+        let args = (
+            ev.callback_id.unwrap(), 
+            ev.result.unwrap()
+        );
+
         if let Err(e) = py_handle.call_method1(py, "on_ack_updata_object", args) {
             error!("do_ack_updata_object python callback error:{}", e)
         }
@@ -122,7 +134,11 @@ impl DBCallbackMsgHandle {
     pub fn do_ack_find_and_modify(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: AckFindAndModify) {
         trace!("do_ack_find_and_modify begin!");
 
-        let args = (ev.callback_id.unwrap(), PyBytes::new(py, &ev.object_info.unwrap()));
+        let args = (
+            ev.callback_id.unwrap(), 
+            PyBytes::new(py, &ev.object_info.unwrap())
+        );
+
         if let Err(e) = py_handle.call_method1(py, "on_ack_find_and_modify", args) {
             error!("do_ack_find_and_modify python callback error:{}", e)
         }
@@ -131,7 +147,11 @@ impl DBCallbackMsgHandle {
     pub fn do_ack_remove_object(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: AckRemoveObject) {
         trace!("do_ack_remove_object begin!");
 
-        let args = (ev.callback_id.unwrap(), ev.result.unwrap());
+        let args = (
+            ev.callback_id.unwrap(), 
+            ev.result.unwrap()
+        );
+
         if let Err(e) = py_handle.call_method1(py, "on_ack_remove_object", args) {
             error!("do_ack_remove_object python callback error:{}", e)
         }
@@ -140,7 +160,11 @@ impl DBCallbackMsgHandle {
     pub fn do_ack_get_object_count(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: AckGetObjectCount) {
         trace!("do_ack_get_object_count begin!");
 
-        let args = (ev.callback_id.unwrap(), ev.count.unwrap());
+        let args = (
+            ev.callback_id.unwrap(), 
+            ev.count.unwrap()
+        );
+
         if let Err(e) = py_handle.call_method1(py, "on_ack_get_object_count", args) {
             error!("do_ack_get_object_count python callback error:{}", e)
         }
@@ -152,7 +176,11 @@ impl DBCallbackMsgHandle {
         let callback_id = ev.callback_id.unwrap();
         let data = ev.object_info.unwrap();
 
-        let args = (callback_id.clone(), PyBytes::new(py, &data));
+        let args = (
+            callback_id.clone(), 
+            PyBytes::new(py, &data)
+        );
+
         if let Err(e) = py_handle.call_method1(py, "on_ack_get_object_info", args) {
             error!("do_ack_get_object_info python callback error:{}", e)
         }
@@ -163,7 +191,10 @@ impl DBCallbackMsgHandle {
 
         let callback_id = ev.callback_id.unwrap();
 
-        let args = (callback_id.clone(), );
+        let args = (
+            callback_id.clone(), 
+        );
+        
         if let Err(e) = py_handle.call_method1(py, "on_ack_get_object_info_end", args) {
             error!("do_ack_get_object_info_end python callback error:{}", e)
         }
