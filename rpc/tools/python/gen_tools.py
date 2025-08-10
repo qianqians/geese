@@ -42,8 +42,6 @@ def gen_list_type_code_type_to_protcol(
 
     if c_type == "list":
         code += space + container + ".append(_list_" + _argv_uuid + ")\n"
-    elif c_type == "dict":
-        code += space + container + "[\"" + _key + "\"] = _list_" + _argv_uuid + "\n"
 
     return code
 
@@ -83,8 +81,6 @@ def gen_dict_type_code_type_to_protcol(
 
     if c_type == "list":
         code += space + container + ".append(_dict_" + _argv_uuid + ")\n"
-    elif c_type == "dict":
-        code += space + container + "[\"" + _key + "\"] = _dict_" + _argv_uuid + "\n"
 
     return code
 
@@ -111,17 +107,6 @@ def gen_type_code_type_to_protcol(
             func_name, 
             dependent_struct, 
             dependent_enum)
-    elif _type_enum == TypeType.Dict:
-        return gen_dict_type_code_type_to_protcol(
-            depth, 
-            container, 
-            c_type, 
-            _type, 
-            _key, 
-            _name, 
-            func_name, 
-            dependent_struct, 
-            dependent_enum)
     
     space = ""
     for i in range(depth):
@@ -131,9 +116,6 @@ def gen_type_code_type_to_protcol(
             return space + container + ".append(" + _name + ")\n"
         elif _type_enum == TypeType.Custom:
             return space + container + ".append(" + _type + "_to_protcol(" + _name + "))\n"
-    elif c_type == "dict":
-        if check_type_original(_type_enum):  
-            return space + container + "[\"" + _key + "\"] = " + _name + ")\n"
         elif _type_enum == TypeType.Custom:
             return space + container + "[\"" + _key + "\"] = " + _type + "_to_protcol(" + _name + "))\n"
     
@@ -175,8 +157,6 @@ def gen_list_type_code_protcol_to_type(
 
     if c_type == "list":
         code += space + container + ".append(_list_" + _argv_uuid + ")\n"
-    elif c_type == "dict":
-        code += space + container + "[\"" + _key + "\"] = _list_" + _argv_uuid + "\n"
 
     return code
 
@@ -216,8 +196,6 @@ def gen_dict_type_code_protcol_to_type(
 
     if c_type == "list":
         code += space + container + ".append(_dict_" + _argv_uuid + ")\n"
-    elif c_type == "dict":
-        code += space + container + "[\"" + _key + "\"] = _dict_" + _argv_uuid + "\n"
 
     return code
 
@@ -244,17 +222,6 @@ def gen_type_code_protcol_to_type(
             func_name, 
             dependent_struct, 
             dependent_enum)
-    elif _type_enum == TypeType.Dict:
-        return gen_dict_type_code_protcol_to_type(
-            depth, 
-            container, 
-            c_type, 
-            _type, 
-            _key, 
-            _name, 
-            func_name, 
-            dependent_struct, 
-            dependent_enum)
     
     space = ""
     for i in range(depth):
@@ -264,11 +231,6 @@ def gen_type_code_protcol_to_type(
             return space + container + ".append(" + _name + ")\n"
         elif _type_enum == TypeType.Custom:
             return space + container + ".append(" + _type + "_to_protcol(" + _name + "))\n"
-    elif c_type == "dict":
-        if check_type_original(_type_enum):    
-            return space + container + "[\"" + _key + "\"] = " + _name + "\n"
-        elif _type_enum == TypeType.Custom:
-            return space + container + "[\"" + _key + "\"] = protcol_to_" + _type + "(" + _name + "))\n"
     
     raise Exception("not support type:%s in func:%s" % (_type, func_name))
 
@@ -305,25 +267,6 @@ def gen_type_code_module(
             dependent_struct, 
             dependent_enum)
         return code
-    elif _type_enum == TypeType.Dict:
-        _child_type = _type[4:-1]
-        _child_type_ = check_type(_child_type, dependent_struct, dependent_enum)
-
-        code = space + "_"  + _name + " = {}\n"
-        _v_uuid = '_'.join(str(uuid.uuid5(uuid.NAMESPACE_X500, _name)).split('-'))
-        code += space + "for k_" + _v_uuid + ", v_" + _v_uuid + " in " + _name + ".items():\n"
-        code += gen_type_code_protcol_to_type(
-            depth + 1, 
-            "_" + _name, 
-            "dict", 
-            _child_type, 
-            _child_type_,
-            "k_" + _v_uuid, 
-            "v_" + _v_uuid, 
-            func_name, 
-            dependent_struct, 
-            dependent_enum)
-        return code
     
     if check_type_original(_type_enum):
         return space + "_"  + _name + " = inArray[" + str(_count) + "]\n"
@@ -345,31 +288,13 @@ def gen_struct_container_protocol(depth:int, container:str, c_type:str, array_ty
         code += gen_struct_container_protocol(depth + 1, "_array_" + _v_uuid, "list", _child_type, "", "v_" + _v_uuid, dependent_struct, dependent_enum)
         if c_type == "list":
             code += space + container + ".append(_array_" + _v_uuid + ")\n"
-        elif c_type == "dict":
-            space + container + "[\"" + _key + "\"] = _array_" + _v_uuid + "\n"
         return code
-    elif _array_type_ == TypeType.Dict:
-        _v_uuid = '_'.join(str(uuid.uuid5(uuid.NAMESPACE_X500, value_name)).split('-'))
-        code = space + "_dict_" + _v_uuid + " = {}\n"
-        code += space + "for k_" + _v_uuid + ", v_" + _v_uuid + " in " + value_name + ".items():\n"
-        _child_type = array_type[4:-1]
-        code += gen_struct_container_protocol(depth + 1, "_dict_" + _v_uuid, "dict", _child_type, "k_" + _v_uuid, "v_" + _v_uuid, dependent_struct, dependent_enum)
-        if c_type == "list":
-            code += space + container + ".append(_dict_" + _v_uuid + ")\n"
-        elif c_type == "dict":
-            space + container + "[\"" + _key + "\"] = _dict_" + _v_uuid + "\n"
-        return code
-    
+
     if c_type == "list":
         if check_type_original(_array_type_):
             return space + container + ".append(" + value_name + ")\n"
         elif _array_type_ == TypeType.Custom:
             return space + container + ".append(" + array_type + "_to_protcol(" + value_name + "))\n"
-    elif c_type == "dict":
-        if check_type_original(_array_type_):
-            return space + container + "[\"" + _key + "\"] = " + value_name + "\n"
-        elif _array_type_ == TypeType.Custom:
-            return space + container + "[\"" + _key + "\"] = " + array_type + "_to_protcol(" + value_name + "))\n"
 
 def gen_struct_protocol_container(depth:int, container:str, c_type:str, array_type:str, _key:str, value_name:str, dependent_struct, dependent_enum):
     space = ""
@@ -385,19 +310,6 @@ def gen_struct_protocol_container(depth:int, container:str, c_type:str, array_ty
         code += gen_struct_protocol_container(depth + 1, "_array_" + _v_uuid, "list", _child_type, "", "v_" + _v_uuid, dependent_struct, dependent_enum)
         if c_type == "list":
             code += space + container + ".append(_array_" + _v_uuid + ")\n"
-        elif c_type == "dict":
-            space + container + "[\"" + _key + "\"] = _array_" + _v_uuid + "\n"
-        return code
-    elif _array_type_ == TypeType.Dict:
-        _v_uuid = '_'.join(str(uuid.uuid5(uuid.NAMESPACE_X500, value_name)).split('-'))
-        code = space + "_dict_" + _v_uuid + " = {}\n"
-        code += space + "for k_" + _v_uuid + ", v_" + _v_uuid + " in " + value_name + ".items():\n"
-        _child_type = array_type[4:-1]
-        code += gen_struct_protocol_container(depth + 1, "_dict_" + _v_uuid, "dict", _child_type, "k_" + _v_uuid, "v_" + _v_uuid, dependent_struct, dependent_enum)
-        if c_type == "list":
-            code += space + container + ".append(_dict_" + _v_uuid + ")\n"
-        elif c_type == "dict":
-            space + container + "[\"" + _key + "\"] = _dict_" + _v_uuid + "\n"
         return code
     
     if c_type == "list":
@@ -405,8 +317,3 @@ def gen_struct_protocol_container(depth:int, container:str, c_type:str, array_ty
             return space + container + ".append(" + value_name + ")\n"
         elif _array_type_ == TypeType.Custom:
             return space + container + ".append(" + array_type + "_to_protcol(" + value_name + "))\n"
-    elif c_type == "dict":
-        if check_type_original(_array_type_):
-            return space + container + "[\"" + _key + "\"] = " + value_name + "\n"
-        elif _array_type_ == TypeType.Custom:
-            return space + container + "[\"" + _key + "\"] = protcol_to_" + array_type + "(" + value_name + "))\n"

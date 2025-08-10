@@ -31,8 +31,8 @@ def gen_python_import_h(_import):
     return code
 
 def gen_ts_import(_import):
-    code = "import * as engine from \"./engine/index\";\n"
-    code += "import { encode, decode } from \"@msgpack/msgpack\";\n"
+    code = "import * as engine from \"./engine\";\n"
+    code += "import { encode, decode } from \"./engine/@msgpack/msgpack\";\n"
     for _i in _import:
         code += "import * as " + _i + " from \"./" + _i + "_cli\";\n"
     return code
