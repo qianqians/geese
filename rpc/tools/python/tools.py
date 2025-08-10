@@ -22,7 +22,6 @@ class TypeType():
     Bool = 13
     Bin = 14
     List = 15
-    Dict = 16
 
 def check_in_dependent(typestr, dependent):
     for _type, _import in dependent:
@@ -69,8 +68,6 @@ def check_type(typestr, dependent_struct, dependent_enum):
         return TypeType.Enum
     elif typestr[0:4] == 'list' and typestr[4] == '<' and typestr[-1] == '>':
         return TypeType.List
-    elif typestr[0:3] == 'map' and typestr[3] == '<' and typestr[-1] == '>':
-        return TypeType.Dict
     
     raise Exception("non exist type:%s" % typestr)
 
@@ -149,8 +146,6 @@ def get_type_default(typestr, dependent_struct, dependent_enum):
         return "b''"
     elif check_type(typestr, dependent_struct, dependent_enum) == TypeType.List:
         return "[]"
-    elif check_type(typestr, dependent_struct, dependent_enum) == TypeType.Dict:
-        return "{}"
 
 def convert_type(typestr, dependent_struct, dependent_enum):
     if typestr == 'int8':
@@ -197,12 +192,6 @@ def convert_type(typestr, dependent_struct, dependent_enum):
         array_type = typestr[5:-1]
         array_type = convert_type(array_type, dependent_struct, dependent_enum)
         return 'list[' + array_type + ']'
-    elif check_type(typestr, dependent_struct, dependent_enum) == TypeType.Dict:
-        array_type:str = typestr[4:-1]
-        key_type, value_type = array_type.split(',')
-        key_type = convert_type(key_type, dependent_struct, dependent_enum)
-        value_type = convert_type(value_type, dependent_struct, dependent_enum)
-        return 'dict[' + key_type + ',' + value_type + ']'
 
     raise Exception("non exist type:%s" % typestr)
     

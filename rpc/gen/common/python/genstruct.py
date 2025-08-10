@@ -32,20 +32,13 @@ def genstructprotocol(struct_name, elems, dependent_struct, dependent_enum):
             code += "    _protocol[\"" + value + "\"] = _struct." + value + "\n"
         elif type_ == TypeType.Custom:
             code += "    _protocol[\"" + value + "\"] = " + key + "_to_protcol(_struct." + value + ")\n"
-        elif type_ == TypeType.Array:
+        elif type_ == TypeType.List:
             code += "    if _struct." + value + ":\n"
             code += "        _array_" + value + " = []\n"
             code += "        for v_ in _struct." + value + ":\n"
             array_type = key[5:-1]
             code += gen_struct_container_protocol(3, "_array_" + value, "list", array_type, "", "v_", dependent_struct, dependent_enum)
             code += "        _protocol[\"" + value + "\"] = _array_" + value + "\n"
-        elif type_ == TypeType.Dict:
-            code += "    if _struct." + value + ":\n"
-            code += "        _dict_" + value + " = {}\n"
-            code += "        for k_, v_ in _struct." + value + ".items():\n"
-            dict_type = key[4:-1]
-            code += gen_struct_container_protocol(3, "_dict_" + value, "dict", dict_type, "k_", "v_", dependent_struct, dependent_enum)
-            code += "        _protocol[\"" + value + "\"] = _dict_" + value + "\n"
     code += "    return _protocol\n\n"
     return code
 
@@ -65,16 +58,11 @@ def genprotocolstruct(struct_name, elems, dependent_struct, dependent_enum):
             code += "            _struct." + value + " = val\n"
         elif type_ == TypeType.Custom:
             code += "            _struct." + value + " = protcol_to_" + key + "(val)\n"
-        elif type_ == TypeType.Array:
+        elif type_ == TypeType.List:
             code += "            _struct." + value + " = []\n"
             code += "            for v_ in val:\n"
             array_type = key[5:-1]
             code += gen_struct_protocol_container(4, "_struct." + value, "list", array_type, "", "v_", dependent_struct, dependent_enum)
-        elif type_ == TypeType.Dict:
-            code += "            _struct." + value + " = {}\n"
-            code += "            for k_, v_ in val:\n"
-            dict_type = key[4:-1]
-            code += gen_struct_protocol_container(4, "_struct." + value, "dict", dict_type, "k_", "v_", dependent_struct, dependent_enum)
         count = count + 1
     code += "    return _struct\n\n"
     return code
