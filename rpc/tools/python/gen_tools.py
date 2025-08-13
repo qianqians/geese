@@ -23,7 +23,7 @@ def gen_list_type_code_type_to_protcol(
     _argv_uuid = '_'.join(str(uuid.uuid3(uuid.NAMESPACE_DNS, _name)).split('-'))
     code = space + "_list_" + _argv_uuid + " = []\n"
 
-    _child_type = _type[5:-1]
+    _child_type = _type[0:-2]
     _child_type_ = check_type(_child_type, dependent_struct, dependent_enum)
 
     _v_uuid = '_'.join(str(uuid.uuid5(uuid.NAMESPACE_X500, _name)).split('-'))
@@ -249,7 +249,7 @@ def gen_type_code_module(
         space += "    "
 
     if _type_enum == TypeType.List:
-        _child_type = _type[5:-1]
+        _child_type = _type[0:-2]
         _child_type_ = check_type(_child_type, dependent_struct, dependent_enum)
 
         code = space + "_" + _name + " = []\n"

@@ -36,6 +36,7 @@ def get_import(typestr, dependent):
     return ""
 
 def check_type(typestr, dependent_struct, dependent_enum):
+    print("type:%s" % typestr)
     if typestr == 'int8':
         return TypeType.Int8
     elif typestr == 'int16':
@@ -66,7 +67,7 @@ def check_type(typestr, dependent_struct, dependent_enum):
         return TypeType.Custom
     elif check_in_dependent(typestr, dependent_enum):
         return TypeType.Enum
-    elif typestr[0:4] == 'list' and typestr[4] == '<' and typestr[-1] == '>':
+    elif typestr[-2] == '[' and typestr[-1] == ']':
         return TypeType.List
     
     raise Exception("non exist type:%s" % typestr)
@@ -189,7 +190,7 @@ def convert_type(typestr, dependent_struct, dependent_enum):
             return typestr
             #return _import + "." + typestr
     elif check_type(typestr, dependent_struct, dependent_enum) == TypeType.List:
-        array_type = typestr[5:-1]
+        array_type = typestr[0:-2]
         array_type = convert_type(array_type, dependent_struct, dependent_enum)
         return 'list[' + array_type + ']'
 

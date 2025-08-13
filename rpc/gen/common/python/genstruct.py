@@ -36,7 +36,7 @@ def genstructprotocol(struct_name, elems, dependent_struct, dependent_enum):
             code += "    if _struct." + value + ":\n"
             code += "        _array_" + value + " = []\n"
             code += "        for v_ in _struct." + value + ":\n"
-            array_type = key[5:-1]
+            array_type = key[:-2]
             code += gen_struct_container_protocol(3, "_array_" + value, "list", array_type, "", "v_", dependent_struct, dependent_enum)
             code += "        _protocol[\"" + value + "\"] = _array_" + value + "\n"
     code += "    return _protocol\n\n"
@@ -61,7 +61,7 @@ def genprotocolstruct(struct_name, elems, dependent_struct, dependent_enum):
         elif type_ == TypeType.List:
             code += "            _struct." + value + " = []\n"
             code += "            for v_ in val:\n"
-            array_type = key[5:-1]
+            array_type = key[:-2]
             code += gen_struct_protocol_container(4, "_struct." + value, "list", array_type, "", "v_", dependent_struct, dependent_enum)
         count = count + 1
     code += "    return _struct\n\n"
