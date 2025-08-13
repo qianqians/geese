@@ -64,7 +64,7 @@ def check_type(typestr, dependent_struct, dependent_enum):
         return TypeType.Custom
     elif check_in_dependent(typestr, dependent_enum):
         return TypeType.Enum
-    elif typestr[0:4] == 'list' and typestr[4] == '<' and typestr[-1] == '>':
+    elif typestr[-2] == '[' and typestr[-1] == ']':
         return TypeType.List
 
     raise Exception("non exist type:%s" % typestr)
@@ -192,8 +192,8 @@ def convert_type(typestr, dependent_struct, dependent_enum):
             return typestr
         else:
             return _import + "." + typestr
-    elif typestr[0:4] == 'list' and typestr[4] == '<' and typestr[-1] == '>':
-        array_type = typestr[5:-1]
+    elif typestr[-2] == '[' and typestr[-1] == ']':
+        array_type = typestr[0:-2]
         array_type = convert_type(array_type, dependent_struct, dependent_enum)
         return 'Array<' + array_type +'>'
     

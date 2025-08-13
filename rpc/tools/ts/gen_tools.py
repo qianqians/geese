@@ -258,7 +258,7 @@ def gen_type_code_module(
         space += "    "
 
     if _type_enum == TypeType.List:
-        _child_type = _type[5:-1]
+        _child_type = _type[0:-2]
         _child_type_ = check_type(_child_type, dependent_struct, dependent_enum)
 
         _import = get_import(_child_type, dependent_struct)
@@ -300,7 +300,7 @@ def gen_struct_container_protocol(depth:int, container:str, c_type:str, array_ty
         _v_uuid = '_'.join(str(uuid.uuid5(uuid.NAMESPACE_X500, value_name)).split('-'))
         code = space + "_array_" + _v_uuid + " = [];\n"
         code += space + "for (let v_" + _v_uuid + " of " + value_name + ") {\n"
-        _child_type = array_type[5:-1]
+        _child_type = array_type[0:-2]
         code += gen_struct_container_protocol(depth + 1, "_array_" + _v_uuid, "list", _child_type, "", "v_" + _v_uuid, dependent_struct, dependent_enum)
         code += space + "}\n"
         if c_type == "list":
@@ -326,7 +326,7 @@ def gen_struct_protocol_container(depth:int, container:str, c_type:str, array_ty
         _v_uuid = '_'.join(str(uuid.uuid5(uuid.NAMESPACE_X500, value_name)).split('-'))
         code = space + "_array_" + _v_uuid + " = [];\n"
         code += space + "for (let v_" + _v_uuid + " of " + value_name + ") {\n"
-        _child_type = array_type[5:-1]
+        _child_type = array_type[0:-2]
         code += gen_struct_protocol_container(depth + 1, "_array_" + _v_uuid, "list", _child_type, "", "v_" + _v_uuid, dependent_struct, dependent_enum)
         code += space + "}\n"
         if c_type == "list":
