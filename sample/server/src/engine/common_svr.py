@@ -19,6 +19,8 @@ class role_rank_info(object):
 
 
 def role_rank_info_to_protcol(_struct:role_rank_info):
+    if _struct is None:
+        return None
     _protocol = {}
     _protocol["role_name"] = _struct.role_name
     _protocol["entity_id"] = _struct.entity_id
@@ -43,6 +45,8 @@ class client_time_info(object):
 
 
 def client_time_info_to_protcol(_struct:client_time_info):
+    if _struct is None:
+        return None
     _protocol = {}
     _protocol["entity_id"] = _struct.entity_id
     _protocol["timetmp"] = _struct.timetmp

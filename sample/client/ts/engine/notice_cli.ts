@@ -1,5 +1,5 @@
 import * as engine from "./engine";
-import { encode, decode } from "@msgpack/msgpack";
+import { encode, decode } from "./engine/@msgpack/msgpack";
 import * as common from "./common_cli";
 // this enum code is codegen by geese codegen for ts
 
