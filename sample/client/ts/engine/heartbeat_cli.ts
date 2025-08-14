@@ -1,5 +1,5 @@
 import * as engine from "./engine";
-import { encode, decode } from "@msgpack/msgpack";
+import { encode, decode } from "./engine/@msgpack/msgpack";
 import * as common from "./common_cli";
 // this enum code is codegen by geese codegen for ts
 
@@ -41,7 +41,7 @@ export class heartbeat_call_heartbeat_rsp extends engine.session {
 
 export class heartbeat_module {
     public entity:engine.player;
-    public on_call_heartbeat:((heartbeat_call_heartbeat_rsp, string) => void)[] = []
+    public on_call_heartbeat:((heartbeat_call_heartbeat_rsp, entity_id:string) => void)[] = []
     public constructor(entity:engine.player) {
         this.entity = entity
 

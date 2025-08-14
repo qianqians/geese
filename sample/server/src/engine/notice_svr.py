@@ -16,7 +16,7 @@ class notice_caller(object):
     def notice(self, msg:str):
         _argv_20b10824_d060_350b_9c34_134701265d2a = []
         _argv_20b10824_d060_350b_9c34_134701265d2a.append(msg)
-        global_entity.instance().call_client("notice", dumps(_argv_20b10824_d060_350b_9c34_134701265d2a))
+        global_entity().call_client("notice", dumps(_argv_20b10824_d060_350b_9c34_134701265d2a))
 
 
 
