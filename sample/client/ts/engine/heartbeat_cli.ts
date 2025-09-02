@@ -41,7 +41,7 @@ export class heartbeat_call_heartbeat_rsp extends engine.session {
 
 export class heartbeat_module {
     public entity:engine.player;
-    public on_call_heartbeat:((heartbeat_call_heartbeat_rsp, string) => void)[] = []
+    public on_call_heartbeat:((heartbeat_call_heartbeat_rsp, entity_id:string) => void)[] = []
     public constructor(entity:engine.player) {
         this.entity = entity
 
