@@ -194,7 +194,7 @@ class app(object):
         asyncio.set_event_loop(self.__loop__)
         self.__loop__.run_forever()
 
-    def poll(self):
+    def poll(self, update:Callable[[], None] = None):
         self.ctx.set_health_state(True)
         busy_count = 0
         idle_count = 0
@@ -223,10 +223,11 @@ class app(object):
                         self.ctx.set_health_state(False)
                     health_state = False
                     self.is_idle = False
-            
+            if update is not None:
+                update()
         self.save_mgr.for_each_entity(lambda entt: entt.save_entity())
             
-    def run(self):
+    def run(self, update:Callable[[], None] = None):
         _thread.start_new_thread(__handle_poll_db_msg_thread__, (self,))
         _thread.start_new_thread(__handle_poll_coroutine_thread__, (self,))
-        self.poll()
+        self.poll(update)
