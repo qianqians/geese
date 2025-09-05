@@ -122,19 +122,29 @@ impl GateMsgHandle {
     }
     
     pub fn poll(_handle: Arc<StdMutex<GateMsgHandle>>, py: Python<'_>, py_handle: Py<PyAny>) -> bool {
+        let mut result = true;
         let ev_data: Box<ConnEvent>;
+        let _proxy: Arc<StdMutex<GateProxy>>;
         {
             let mut _self = _handle.as_ref().lock().unwrap();
             let opt_ev_data = _self.queue.deque();
-            ev_data = match opt_ev_data {
-                None => return false,
-                Some(ev_data) => ev_data
-            };
+            if opt_ev_data.is_none() {
+                println!("GateMsgHandle poll event ev_data is none break!");
+                result = false;
+            } else {
+                ev_data = opt_ev_data.unwrap();
+                _proxy = match ev_data.gate_proxy.upgrade() {
+                    None => {
+                        println!("GateMsgHandle poll event _proxy is none break!");
+                        return false;
+                    },
+                    Some(_p) => _p
+                };
+            }
         }
-        let _proxy = match ev_data.gate_proxy.upgrade() {
-            None => return false,
-            Some(_p) => _p
-        };
+        if !result {
+            return result;
+        }
         let _ev = ev_data.ev;
         println!("GateMsgHandle poll event begin!");
         
@@ -272,6 +282,7 @@ impl GateMsgHandle {
                 println!("ClientService::Heartbeats, conn_id:{}", _p_handle.conn_id);
             },
         }
+        println!("GateMsgHandle poll event end!");
         
         return true
     }
