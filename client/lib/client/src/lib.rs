@@ -111,6 +111,8 @@ impl ClientPump {
 
     pub fn poll_conn_msg<'a>(slf: PyRefMut<'a, Self>, py_handle: Py<PyAny>) -> bool {
         let py = slf.py();
-        GateMsgHandle::poll(slf.msg_handle.clone(), py, py_handle)
+        let is_break = GateMsgHandle::poll(slf.msg_handle.clone(), py, py_handle);
+        print!("poll_conn_msg is_break:{}", is_break);
+        is_break
     }
 }
