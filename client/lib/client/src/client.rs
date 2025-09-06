@@ -128,7 +128,6 @@ impl GateMsgHandle {
             opt_ev_data = _self.queue.deque();
         }
         if opt_ev_data.is_none() {
-            println!("GateMsgHandle poll event ev_data is none break!");
             return false;
         } 
         let ev_data = opt_ev_data.unwrap();
@@ -140,7 +139,6 @@ impl GateMsgHandle {
             Some(_p) => _p
         }; 
         let _ev = ev_data.ev;
-        println!("GateMsgHandle poll event begin!");
         
         match _ev {
             ClientService::ConnId(ev) => {
@@ -276,7 +274,6 @@ impl GateMsgHandle {
                 println!("ClientService::Heartbeats, conn_id:{}", _p_handle.conn_id);
             },
         }
-        println!("GateMsgHandle poll event end!");
         
         return true
     }

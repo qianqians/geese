@@ -141,15 +141,12 @@ class app(object):
     def poll_conn_msg(self):
         while True:
             if not self.__pump__.poll_conn_msg(self.__conn_handle__):
-                print("poll_conn_msg break!")
                 break
     
     def poll(self):
         while self.__is_run__:
             start = time.time()
-            print("poll_conn_msg begin!")
             self.poll_conn_msg()
-            print("poll_conn_msg end!")
             tick = time.time() - start
             if tick < 0.033:
                 time.sleep(0.033 - tick)
