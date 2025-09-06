@@ -289,7 +289,7 @@ impl HubContext {
         })
     }
 
-    pub fn entry_hub_service(slf: PyRefMut<'_, Self>, service_name: String) -> PyResult<Bound<PyAny>> {
+    pub fn entry_hub_service(slf: PyRefMut<'_, Self>, service_name: String) -> PyResult<Bound<'_, PyAny>> {
         trace!("entry_hub_service begin!");
 
         let _server = slf.server.clone();
@@ -301,7 +301,7 @@ impl HubContext {
         })
     }
 
-    pub fn entry_direct_hub_server(slf: PyRefMut<'_, Self>, hub_name: String) -> PyResult<Bound<PyAny>> {
+    pub fn entry_direct_hub_server(slf: PyRefMut<'_, Self>, hub_name: String) -> PyResult<Bound<'_, PyAny>> {
         trace!("entry_direct_hub_server begin!");
 
         let _server = slf.server.clone();
@@ -324,7 +324,7 @@ impl HubContext {
         })
     }
 
-    pub fn entry_gate_service(slf: PyRefMut<'_, Self>, gate_name: String) -> PyResult<Bound<PyAny>> {
+    pub fn entry_gate_service(slf: PyRefMut<'_, Self>, gate_name: String) -> PyResult<Bound<'_, PyAny>> {
         trace!("entry_gate_service begin!");
 
         let _server = slf.server.clone();let py = slf.py();

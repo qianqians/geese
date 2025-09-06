@@ -92,14 +92,14 @@ impl GateClientMsgHandle {
 
     pub async fn poll(&mut self) {
         loop {
-            let mut_ev_data: Box<ClientEvent>;
+            let opt_ev_data: Option<Box<ClientEvent>>;
             {
-                let opt_ev_data = self.queue.deque();
-                mut_ev_data = match opt_ev_data {
-                    None => break,
-                    Some(ev_data) => ev_data
-                };
+                opt_ev_data = self.queue.deque();
             }
+            let mut_ev_data = match opt_ev_data {
+                None => break,
+                Some(ev_data) => ev_data
+            };
             trace!("GateClientMsgHandle poll begin!");
             let proxy = mut_ev_data.proxy.clone();
             match mut_ev_data.ev {
