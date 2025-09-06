@@ -127,10 +127,10 @@ impl GateMsgHandle {
             let mut _self = _handle.as_ref().lock().unwrap();
             opt_ev_data = _self.queue.deque();
         }
-        if opt_ev_data.is_none() {
-            return false;
-        } 
-        let ev_data = opt_ev_data.unwrap();
+        let ev_data = match opt_ev_data {
+            None => return false,
+            Some(_data) => _data
+        };
         let _proxy = match ev_data.gate_proxy.upgrade() {
             None => {
                 println!("GateMsgHandle poll event _proxy is none break!");
