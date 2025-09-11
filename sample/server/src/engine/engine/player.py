@@ -64,7 +64,7 @@ class player(ABC, base_entity):
         if not app().is_idle:
             import random
             if random.random() < 0.2:
-                self.start_migrate_entity()
+                app().run_coroutine_async(self.start_migrate_entity())
             else:
                 self.__migrate_timer__ = Timer(app().ctx.migrate_time_interval(), self.try_migrate_entity)
                 self.__migrate_timer__.start()
@@ -72,8 +72,12 @@ class player(ABC, base_entity):
     async def start_migrate_entity(self):
         from app import app
         migrate_hub = await app().ctx.entry_hub_service(self.service_name)
+        await self.start_migrate_entity_initiative(migrate_hub)
+            
+    async def start_migrate_entity_initiative(self, migrate_hub:str):
         if migrate_hub != "":
-            app().ctx.hub_call_hub_migrate_entity(migrate_hub, self.service_name, self.entity_type, self.entity_id, "", "", self.conn_client_gate, self.conn_hub_server, self.full_info())
+            from app import app
+            app().ctx.hub_call_hub_migrate_entity(migrate_hub, self.service_name, self.entity_type, self.entity_id, "", "", self.conn_client_gate, self.conn_hub_server, msgpack.dumps(self.full_info()))
 
             for hub in self.conn_hub_server:
                 app().ctx.hub_call_hub_wait_migrate_entity(hub, self.entity_id)
@@ -227,7 +231,8 @@ class player_manager(object):
         
         if not _player.client_conn_id in self.conn_id_players:
             self.conn_id_players[_player.client_conn_id] = []
-        self.conn_id_players[_player.client_conn_id].append(_player)
+        if not _player in self.conn_id_players[_player.client_conn_id]:
+            self.conn_id_players[_player.client_conn_id].append(_player)
 
     def get_player(self, entity_id:str) -> player:
         if entity_id in self.players:
