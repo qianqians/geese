@@ -237,31 +237,31 @@ export abstract class context {
         else if (ev.call_rpc) {
             let event = ev.call_rpc;
             if (event.hub_name && event.entity_id && event.msg_cb_id && event.message && event.message.method && event.message.argvs) {
-                handle.on_call_rpc(event.hub_name, event.entity_id, event.msg_cb_id.toNumber(), event.message.method, event.message.argvs);
+                handle.on_call_rpc(event.hub_name, event.entity_id, event.msg_cb_id.toNumber(), event.message.method, new Uint8Array(event.message.argvs.buffer));
             }
         }
         else if (ev.call_rsp) {
             let event = ev.call_rsp;
             if (event.rsp && event.rsp.entity_id && event.rsp.msg_cb_id && event.rsp.argvs) {
-                handle.on_call_rsp(event.rsp.entity_id, event.rsp.msg_cb_id.toNumber(), event.rsp.argvs);
+                handle.on_call_rsp(event.rsp.entity_id, event.rsp.msg_cb_id.toNumber(), new Uint8Array(event.rsp.argvs.buffer));
             }
         }
         else if (ev.call_err) {
             let event = ev.call_err;
             if (event.err && event.err.entity_id && event.err.msg_cb_id && event.err.argvs) {
-                handle.on_call_err(event.err.entity_id, event.err.msg_cb_id.toNumber(), event.err.argvs);
+                handle.on_call_err(event.err.entity_id, event.err.msg_cb_id.toNumber(), new Uint8Array(event.err.argvs.buffer));
             }
         }
         else if (ev.call_ntf) {
             let event = ev.call_ntf;
             if (event.hub_name && event.entity_id && event.message && event.message.method && event.message.argvs) {
-                handle.on_call_ntf(event.hub_name, event.entity_id, event.message.method, event.message.argvs);
+                handle.on_call_ntf(event.hub_name, event.entity_id, event.message.method, new Uint8Array(event.message.argvs.buffer));
             }
         }
         else if (ev.call_global) {
             let event = ev.call_global;
             if (event.hub_name && event.message && event.message.method && event.message.argvs) {
-                handle.on_call_global(event.message.method, event.hub_name, event.message.argvs);
+                handle.on_call_global(event.message.method, event.hub_name, new Uint8Array(event.message.argvs.buffer));
             }
         }
 
