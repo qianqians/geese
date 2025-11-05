@@ -16,3 +16,8 @@ tcp = { path = "../../../crates/tcp", version = "0.1.0" }
 proto = { path = "../../../crates/proto", version = "0.1.0" }
 queue = { path = "../../../crates/queue", version = "0.1.0" }
 close_handle = { path = "../../../crates/close_handle", version = "0.1.0" }
+asset = { path = "../../../crates/asset", version = "0.1.0" }
+camera = { path = "../../../crates/camera", version = "0.1.0" }
+math = { path = "../../../crates/math", version = "0.1.0" }
+render = { path = "../../../crates/render", version = "0.1.0" }
+scene = { path = "../../../crates/scene", version = "0.1.0" }
