@@ -1,0 +1,9 @@
+[package]
+name = "scene"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cgmath = "0.18"
+math = { path = "../math", version = "0.1.0" }
+camera = { path = "../camera", version = "0.1.0" }

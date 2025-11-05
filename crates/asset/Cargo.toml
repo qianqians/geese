@@ -1,0 +1,7 @@
+[package]
+name = "asset"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+gltf = {version = "1.4.1", features = ["extras", "names"]}
