@@ -1,7 +1,15 @@
 {
-  "name": "ccc",
-  "uuid": "609b5779-17c6-48e2-a405-ce43ba58ce6d",
+  "name": "wasteland",
+  "uuid": "02dc08d1-5a1f-4b43-9eff-d642cd3258c6",
   "creator": {
     "version": "3.8.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/thrift": "^0.10.17"
+  },
+  "dependencies": {
+    "steamworks.js": "^0.4.0",
+    "thrift": "^0.21.0"
   }
 }
