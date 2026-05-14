@@ -3,12 +3,7 @@ use std::fmt::Debug;
 use math::AABB;
 use camera::frustum::{Frustum};
 
-// 场景对象 trait
-pub trait SceneObject: Debug {
-    fn entity_id(&self) -> String;
-    fn aabb(&self) -> AABB;
-    fn center(&self) -> Point3<f32>;
-}
+use crate::scene_object::{SceneObject};
 
 // 八叉树节点
 #[derive(Debug)]
