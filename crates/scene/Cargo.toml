@@ -5,5 +5,7 @@ edition = "2024"
 
 [dependencies]
 cgmath = "0.18"
+gltf = {version = "1.4.1", features = ["extras", "names"]}
 math = { path = "../math", version = "0.1.0" }
 camera = { path = "../camera", version = "0.1.0" }
+asset = { path = "../asset", version = "0.1.0" }

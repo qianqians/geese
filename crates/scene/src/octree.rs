@@ -1,21 +1,18 @@
 use cgmath::{Point3/* , Matrix4, Vector3, InnerSpace, EuclideanSpace, Rad, Deg, PerspectiveFov */};
-use std::fmt::Debug;
 use math::AABB;
 use camera::frustum::{Frustum};
 
 use crate::scene_object::{SceneObject};
 
-// 八叉树节点
-#[derive(Debug)]
-struct OctreeNode<T: SceneObject> {
+struct OctreeNode {
     bounds: AABB,
-    children: Option<[Box<OctreeNode<T>>; 8]>,
-    objects: Vec<T>,
+    children: Option<[Box<OctreeNode>; 8]>,
+    objects: Vec< SceneObject>,
     max_objects: usize,
     max_depth: usize,
 }
 
-impl<T: SceneObject> OctreeNode<T> {
+impl OctreeNode {
     fn new(bounds: AABB, max_objects: usize, max_depth: usize) -> Self {
         OctreeNode {
             bounds,
@@ -88,7 +85,7 @@ impl<T: SceneObject> OctreeNode<T> {
         let objects = std::mem::take(&mut self.objects);
         for obj in objects {
             for child in children.iter_mut() {
-                if child.bounds.contains_point(obj.center()) {
+                if child.bounds.contains_point(obj.center) {
                     child.insert(obj);
                     break;
                 }
@@ -98,16 +95,16 @@ impl<T: SceneObject> OctreeNode<T> {
         self.children = Some(children);
     }
     
-    fn insert(&mut self, object: T) {
+    fn insert(&mut self, object: SceneObject) {
         // 如果对象不在本节点的边界内，则不插入
-        if !self.bounds.contains_point(object.center()) {
+        if !self.bounds.contains_point(object.center) {
             return;
         }
         
         // 如果有子节点，尝试插入到子节点中
         if let Some(children) = &mut self.children {
             for child in children.iter_mut() {
-                if child.bounds.contains_point(object.center()) {
+                if child.bounds.contains_point(object.center) {
                     child.insert(object);
                     return;
                 }
@@ -123,7 +120,7 @@ impl<T: SceneObject> OctreeNode<T> {
         }
     }
     
-    fn query_frustum<'a>(&'a self, frustum: &Frustum, result: &mut Vec<&'a T>) {
+    fn query_frustum<'a>(&'a self, frustum: &Frustum, result: &mut Vec<&'a SceneObject>) {
         // 检查当前节点的边界是否与视锥体相交
         if !frustum.intersects_aabb(self.bounds.min, self.bounds.max) {
             return;
@@ -131,7 +128,7 @@ impl<T: SceneObject> OctreeNode<T> {
         
         // 添加当前节点中所有在视锥体内的对象
         for obj in &self.objects {
-            if frustum.contains_aabb(obj.aabb().min, obj.aabb().max) {
+            if frustum.contains_aabb(obj.aabb.min, obj.aabb.max) {
                 result.push(obj);
             }
         }
@@ -145,24 +142,22 @@ impl<T: SceneObject> OctreeNode<T> {
     }
 }
 
-// 八叉树
-#[derive(Debug)]
-pub struct Octree<T: SceneObject> {
-    root: OctreeNode<T>,
+pub struct Octree {
+    root: OctreeNode,
 }
 
-impl<T: SceneObject> Octree<T> {
+impl Octree {
     pub fn new(bounds: AABB, max_objects: usize, max_depth: usize) -> Self {
         Octree {
             root: OctreeNode::new(bounds, max_objects, max_depth),
         }
     }
     
-    pub fn insert(&mut self, object: T) {
+    pub fn insert(&mut self, object: SceneObject) {
         self.root.insert(object);
     }
     
-    pub fn query_frustum<'a>(&'a self, frustum: &Frustum) -> Vec<&'a T> {
+    pub fn query_frustum<'a>(&'a self, frustum: &Frustum) -> Vec<&'a SceneObject> {
         let mut result = Vec::new();
         self.root.query_frustum(frustum, &mut result);
         result
