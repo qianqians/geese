@@ -8,7 +8,7 @@ use cgmath::{Point3/* , Matrix4, Vector3, InnerSpace, EuclideanSpace, Rad, Deg, 
 use asset::load;
 use math::AABB;
 
-fn import_document(node: &gltf::Node, bounds: & mut AABB) {
+fn import_document_AABB(node: &gltf::Node, bounds: & mut AABB) {
     if let Some(mesh) = node.mesh() {
         for primitive in mesh.primitives() {
             let bbox = primitive.bounding_box();
@@ -24,7 +24,7 @@ fn import_document(node: &gltf::Node, bounds: & mut AABB) {
     }
 
     for child in node.children() {
-        import_document(&child, bounds);
+        import_document_AABB(&child, bounds);
     }
 }
 
@@ -37,7 +37,7 @@ pub fn import_scene(path: String, max_objects: usize, max_depth: usize) -> Resul
     );
     for scene in gltf.scenes() {
         for node in scene.nodes() {
-            import_document(&node, &mut bounds);
+            import_document_AABB(&node, &mut bounds);
         }
     }
 
