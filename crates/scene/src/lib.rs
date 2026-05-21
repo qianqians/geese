@@ -1,7 +1,10 @@
+mod material;
 pub mod octree;
+mod scene;
 pub mod scene_object;
 
 pub use octree::Octree;
+pub use scene::Scene;
 pub use scene_object::SceneObject;
 
 use asset::load;
@@ -12,8 +15,9 @@ use cgmath::{
 use gltf::mesh::Mesh;
 use gltf::mesh::Primitive;
 use gltf::mesh::util::ReadIndices;
+use material::load_material_library;
 use math::AABB;
-use render::{ModelMesh, Vertex};
+use render::{MaterialHandle, ModelMesh, Vertex};
 use uuid::Uuid;
 
 fn import_document_aabb(node: &gltf::Node, bounds: &mut AABB) {
@@ -78,7 +82,6 @@ fn load_primitive(prim: &Primitive, buffers: &[gltf::buffer::Data], out: &mut Mo
         .map(|tex_coords| tex_coords.into_f32().collect())
         .unwrap_or_else(|| vec![[0.0, 0.0]; positions.len()]);
 
-
     for i in 0..positions.len() {
         let position = positions[i];
         let normal = normals[i];
@@ -91,7 +94,7 @@ fn load_primitive(prim: &Primitive, buffers: &[gltf::buffer::Data], out: &mut Mo
         });
     }
 
-    out.material_index = prim.material().index().unwrap_or(0);
+    out.material = prim.material().index().map(MaterialHandle);
 }
 
 fn load_gltf_mesh(mesh: &Mesh, buffers: &[gltf::buffer::Data], oct: &mut Octree) {
@@ -132,8 +135,9 @@ pub fn import_scene(
     path: String,
     max_objects: usize,
     max_depth: usize,
-) -> Result<Octree, Box<dyn std::error::Error>> {
-    let (gltf, buffers, _images) = load(path)?;
+) -> Result<Scene, Box<dyn std::error::Error>> {
+    let (gltf, buffers, images) = load(path)?;
+    let materials = load_material_library(&gltf, &images);
 
     let mut bounds: AABB = AABB::new(
         Point3::new(-100.0, -100.0, -100.0),
@@ -144,13 +148,16 @@ pub fn import_scene(
             import_document_aabb(&node, &mut bounds);
         }
     }
-
     let mut tree = Octree::new(bounds, max_objects, max_depth);
+
     for scene in gltf.scenes() {
         for node in scene.nodes() {
             load_node(&node, &buffers, &mut tree);
         }
     }
 
-    Ok(tree)
+    Ok(Scene {
+        octree: tree,
+        materials,
+    })
 }
