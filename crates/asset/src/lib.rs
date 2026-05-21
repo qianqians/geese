@@ -1,6 +1,13 @@
-use gltf::Gltf;
-
-pub fn load(path:String) -> Result<Gltf, Box<dyn std::error::Error>> {
-    let gltf = Gltf::open(path)?;
+pub fn load(
+    path: String,
+) -> Result<
+    (
+        gltf::Document,
+        Vec<gltf::buffer::Data>,
+        Vec<gltf::image::Data>,
+    ),
+    Box<dyn std::error::Error>,
+> {
+    let gltf = gltf::import(path)?;
     Ok(gltf)
 }

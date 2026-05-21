@@ -4,32 +4,136 @@ pub mod scene_object;
 pub use octree::Octree;
 pub use scene_object::SceneObject;
 
-use cgmath::{Point3/* , Matrix4, Vector3, InnerSpace, EuclideanSpace, Rad, Deg, PerspectiveFov */};
 use asset::load;
+use cgmath::{
+    Point3, Vector2,
+    Vector3, /* , Matrix4, InnerSpace, EuclideanSpace, Rad, Deg, PerspectiveFov */
+};
+use gltf::mesh::Mesh;
+use gltf::mesh::Primitive;
+use gltf::mesh::util::ReadIndices;
 use math::AABB;
+use render::{ModelMesh, Vertex};
+use uuid::Uuid;
 
-fn import_document_AABB(node: &gltf::Node, bounds: & mut AABB) {
+fn import_document_aabb(node: &gltf::Node, bounds: &mut AABB) {
     if let Some(mesh) = node.mesh() {
         for primitive in mesh.primitives() {
             let bbox = primitive.bounding_box();
             let min = Point3::new(bbox.min[0], bbox.min[1], bbox.min[2]);
             let max = Point3::new(bbox.max[0], bbox.max[1], bbox.max[2]);
-            if bounds.min.x > min.x { bounds.min.x = min.x; }
-            if bounds.min.y > min.y { bounds.min.y = min.y; }
-            if bounds.min.z > min.z { bounds.min.z = min.z; }
-            if bounds.max.x < max.x { bounds.max.x = max.x; }
-            if bounds.max.y < max.y { bounds.max.y = max.y; }
-            if bounds.max.z < max.z { bounds.max.z = max.z; }
+            if bounds.min.x > min.x {
+                bounds.min.x = min.x;
+            }
+            if bounds.min.y > min.y {
+                bounds.min.y = min.y;
+            }
+            if bounds.min.z > min.z {
+                bounds.min.z = min.z;
+            }
+            if bounds.max.x < max.x {
+                bounds.max.x = max.x;
+            }
+            if bounds.max.y < max.y {
+                bounds.max.y = max.y;
+            }
+            if bounds.max.z < max.z {
+                bounds.max.z = max.z;
+            }
         }
     }
 
     for child in node.children() {
-        import_document_AABB(&child, bounds);
+        import_document_aabb(&child, bounds);
     }
 }
 
-pub fn import_scene(path: String, max_objects: usize, max_depth: usize) -> Result<Octree, Box<dyn std::error::Error>> {
-    let gltf = load(path)?;
+fn load_indices(prim: &Primitive, buffers: &[gltf::buffer::Data]) -> Vec<u32> {
+    let reader = prim.reader(|buffer| Some(buffers[buffer.index()].0.as_slice()));
+    let mut indices = Vec::new();
+
+    match reader.read_indices() {
+        Some(ReadIndices::U8(iter)) => indices.extend(iter.map(u32::from)),
+        Some(ReadIndices::U16(iter)) => indices.extend(iter.map(u32::from)),
+        Some(ReadIndices::U32(iter)) => indices.extend(iter),
+        None => {}
+    }
+
+    indices
+}
+
+fn load_primitive(prim: &Primitive, buffers: &[gltf::buffer::Data], out: &mut ModelMesh) {
+    let indices = load_indices(prim, buffers);
+    out.indices.extend(indices);
+
+    let reader = prim.reader(|buffer| Some(buffers[buffer.index()].0.as_slice()));
+
+    let positions: Vec<_> = reader.read_positions().unwrap().collect();
+    let normals: Vec<_> = reader
+        .read_normals()
+        .map(Iterator::collect)
+        .unwrap_or_else(|| vec![[0.0, 1.0, 0.0]; positions.len()]);
+    let uvs: Vec<_> = reader
+        .read_tex_coords(0)
+        .map(|tex_coords| tex_coords.into_f32().collect())
+        .unwrap_or_else(|| vec![[0.0, 0.0]; positions.len()]);
+
+
+    for i in 0..positions.len() {
+        let position = positions[i];
+        let normal = normals[i];
+        let uv = uvs[i];
+
+        out.vertices.push(Vertex {
+            position: Point3::new(position[0], position[1], position[2]),
+            normal: Vector3::new(normal[0], normal[1], normal[2]),
+            uv: Vector2::new(uv[0], uv[1]),
+        });
+    }
+
+    out.material_index = prim.material().index().unwrap_or(0);
+}
+
+fn load_gltf_mesh(mesh: &Mesh, buffers: &[gltf::buffer::Data], oct: &mut Octree) {
+    for prim in mesh.primitives() {
+        let bbox = prim.bounding_box();
+        let min = Point3::new(bbox.min[0], bbox.min[1], bbox.min[2]);
+        let max = Point3::new(bbox.max[0], bbox.max[1], bbox.max[2]);
+        let center = Point3::new(
+            (min.x + max.x) * 0.5,
+            (min.y + max.y) * 0.5,
+            (min.z + max.z) * 0.5,
+        );
+
+        let mut model_mesh = ModelMesh::new();
+        load_primitive(&prim, buffers, &mut model_mesh);
+        oct.insert(SceneObject {
+            entity_id: Uuid::new_v4().to_string(),
+            aabb: AABB { min, max },
+            center: center,
+            mesh: model_mesh,
+        });
+    }
+}
+
+fn load_node(node: &gltf::Node, buffers: &[gltf::buffer::Data], oct: &mut Octree) {
+    // 如果这个节点有 Mesh → 加载
+    if let Some(mesh) = node.mesh() {
+        load_gltf_mesh(&mesh, buffers, oct);
+    }
+
+    // 递归加载子节点
+    for child in node.children() {
+        load_node(&child, buffers, oct);
+    }
+}
+
+pub fn import_scene(
+    path: String,
+    max_objects: usize,
+    max_depth: usize,
+) -> Result<Octree, Box<dyn std::error::Error>> {
+    let (gltf, buffers, _images) = load(path)?;
 
     let mut bounds: AABB = AABB::new(
         Point3::new(-100.0, -100.0, -100.0),
@@ -37,11 +141,16 @@ pub fn import_scene(path: String, max_objects: usize, max_depth: usize) -> Resul
     );
     for scene in gltf.scenes() {
         for node in scene.nodes() {
-            import_document_AABB(&node, &mut bounds);
+            import_document_aabb(&node, &mut bounds);
         }
     }
 
-    let tree = Octree::new(bounds, max_objects, max_depth);
-    
+    let mut tree = Octree::new(bounds, max_objects, max_depth);
+    for scene in gltf.scenes() {
+        for node in scene.nodes() {
+            load_node(&node, &buffers, &mut tree);
+        }
+    }
+
     Ok(tree)
 }
