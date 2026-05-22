@@ -12,6 +12,7 @@ pub struct ModelMesh {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
     pub material: Option<MaterialHandle>,
+    pub flags: MeshFlags,
 }
 
 impl ModelMesh {
@@ -20,6 +21,13 @@ impl ModelMesh {
             vertices: Vec::new(),
             indices: Vec::new(),
             material: None,
+            flags: MeshFlags::default(),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct MeshFlags {
+    pub has_normals: bool,
+    pub has_uv0: bool,
 }
