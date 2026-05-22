@@ -67,18 +67,18 @@ fn load_indices(prim: &Primitive, buffers: &[gltf::buffer::Data]) -> Vec<u32> {
 }
 
 fn load_primitive(prim: &Primitive, buffers: &[gltf::buffer::Data], out: &mut ModelMesh) {
-    let indices = load_indices(prim, buffers);
-    out.indices.extend(indices);
-
     let reader = prim.reader(|buffer| Some(buffers[buffer.index()].0.as_slice()));
 
     let positions: Vec<_> = reader.read_positions().unwrap().collect();
-    let normals: Vec<_> = reader
-        .read_normals()
+    let normals = reader.read_normals();
+    let has_normals = normals.is_some();
+    let normals: Vec<_> = normals
         .map(Iterator::collect)
         .unwrap_or_else(|| vec![[0.0, 1.0, 0.0]; positions.len()]);
-    let uvs: Vec<_> = reader
-        .read_tex_coords(0)
+
+    let tex_coords = reader.read_tex_coords(0);
+    let has_uv0 = tex_coords.is_some();
+    let uvs: Vec<_> = tex_coords
         .map(|tex_coords| tex_coords.into_f32().collect())
         .unwrap_or_else(|| vec![[0.0, 0.0]; positions.len()]);
 
@@ -94,6 +94,14 @@ fn load_primitive(prim: &Primitive, buffers: &[gltf::buffer::Data], out: &mut Mo
         });
     }
 
+    let mut indices = load_indices(prim, buffers);
+    if indices.is_empty() {
+        indices.extend(0..positions.len() as u32);
+    }
+
+    out.indices.extend(indices);
+    out.flags.has_normals = has_normals;
+    out.flags.has_uv0 = has_uv0;
     out.material = prim.material().index().map(MaterialHandle);
 }
 

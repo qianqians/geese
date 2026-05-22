@@ -174,6 +174,16 @@ impl OctreeNode {
             }
         }
     }
+
+    fn collect_objects<'a>(&'a self, result: &mut Vec<&'a SceneObject>) {
+        result.extend(self.objects.iter());
+
+        if let Some(children) = &self.children {
+            for child in children.iter() {
+                child.collect_objects(result);
+            }
+        }
+    }
 }
 
 pub struct Octree {
@@ -194,6 +204,12 @@ impl Octree {
     pub fn query_frustum<'a>(&'a self, frustum: &Frustum) -> Vec<&'a SceneObject> {
         let mut result = Vec::new();
         self.root.query_frustum(frustum, &mut result);
+        result
+    }
+
+    pub fn objects(&self) -> Vec<&SceneObject> {
+        let mut result = Vec::new();
+        self.root.collect_objects(&mut result);
         result
     }
 }
