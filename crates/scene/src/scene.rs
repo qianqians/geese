@@ -3,7 +3,7 @@ use math::AABB;
 use render::MaterialLibrary;
 use render::{RenderQueue, SceneRenderer};
 
-use crate::animation::{AnimationClip, AnimationPlayer, SceneNode, sample_clip};
+use crate::animation::{AnimationClip, AnimationPlayer, SceneNode, Skin, sample_clip};
 use crate::{Octree, SceneObject};
 
 pub struct Scene {
@@ -12,6 +12,7 @@ pub struct Scene {
     pub octree: Octree,
     pub materials: MaterialLibrary,
     pub animations: Vec<AnimationClip>,
+    pub skins: Vec<Skin>,
     bounds: AABB,
     max_objects: usize,
     max_depth: usize,
@@ -23,6 +24,7 @@ impl Scene {
         objects: Vec<SceneObject>,
         materials: MaterialLibrary,
         animations: Vec<AnimationClip>,
+        skins: Vec<Skin>,
         bounds: AABB,
         max_objects: usize,
         max_depth: usize,
@@ -33,6 +35,7 @@ impl Scene {
             octree: Octree::new(bounds, max_objects, max_depth),
             materials,
             animations,
+            skins,
             bounds,
             max_objects,
             max_depth,
@@ -113,12 +116,29 @@ impl Scene {
             self.objects[object_index].center = world_aabb.center();
             self.objects[object_index].model_matrix = world.into();
             self.objects[object_index].normal_matrix = normal.into();
+            self.objects[object_index].joint_matrices =
+                self.compute_joint_matrices(self.objects[object_index].mesh.skin);
         }
 
         let children = self.nodes[node_id].children.clone();
         for child in children {
             self.update_node_world(child, world);
         }
+    }
+
+    fn compute_joint_matrices(&self, skin: Option<render::SkinHandle>) -> Vec<[[f32; 4]; 4]> {
+        let Some(skin) = skin.and_then(|handle| self.skins.get(handle.0)) else {
+            return Vec::new();
+        };
+
+        skin.joints
+            .iter()
+            .zip(skin.inverse_bind_matrices.iter())
+            .map(|(joint_node, inverse_bind)| {
+                let joint_world = self.nodes[*joint_node].world_transform;
+                (joint_world * *inverse_bind).into()
+            })
+            .collect()
     }
 }
 

@@ -5,6 +5,7 @@ pub trait RenderObject {
     fn mesh(&self) -> &ModelMesh;
     fn model_matrix(&self) -> [[f32; 4]; 4];
     fn normal_matrix(&self) -> [[f32; 4]; 4];
+    fn joint_matrices(&self) -> &[[[f32; 4]; 4]];
 }
 
 pub struct RenderCommand<'a> {
@@ -13,6 +14,7 @@ pub struct RenderCommand<'a> {
     pub material: &'a Material,
     pub model_matrix: [[f32; 4]; 4],
     pub normal_matrix: [[f32; 4]; 4],
+    pub joint_matrices: &'a [[[f32; 4]; 4]],
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -69,6 +71,7 @@ impl SceneRenderer {
                 material,
                 model_matrix: object.model_matrix(),
                 normal_matrix: object.normal_matrix(),
+                joint_matrices: object.joint_matrices(),
             });
         }
 

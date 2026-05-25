@@ -44,6 +44,12 @@ pub struct SceneNode {
     pub world_transform: Matrix4<f32>,
 }
 
+#[derive(Clone, Debug)]
+pub struct Skin {
+    pub joints: Vec<usize>,
+    pub inverse_bind_matrices: Vec<Matrix4<f32>>,
+}
+
 impl SceneNode {
     pub fn new(id: usize, parent: Option<usize>, transform: Transform) -> Self {
         Self {

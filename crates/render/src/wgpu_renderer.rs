@@ -2,6 +2,8 @@ use wgpu::util::DeviceExt;
 
 use crate::{FilterMode, MaterialLibrary, RenderQueue, Texture, TextureFormat, Vertex, WrapMode};
 
+const MAX_JOINTS: usize = 128;
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GpuVertex {
@@ -9,6 +11,8 @@ pub struct GpuVertex {
     pub normal: [f32; 3],
     pub uv: [f32; 2],
     pub tangent: [f32; 4],
+    pub joints: [u32; 4],
+    pub weights: [f32; 4],
 }
 
 impl GpuVertex {
@@ -37,6 +41,20 @@ impl GpuVertex {
                     shader_location: 3,
                     format: wgpu::VertexFormat::Float32x4,
                 },
+                wgpu::VertexAttribute {
+                    offset: (std::mem::size_of::<[f32; 8]>() + std::mem::size_of::<[f32; 4]>())
+                        as wgpu::BufferAddress,
+                    shader_location: 4,
+                    format: wgpu::VertexFormat::Uint32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: (std::mem::size_of::<[f32; 8]>()
+                        + std::mem::size_of::<[f32; 4]>()
+                        + std::mem::size_of::<[u32; 4]>())
+                        as wgpu::BufferAddress,
+                    shader_location: 5,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
             ],
         }
     }
@@ -49,6 +67,13 @@ impl From<&Vertex> for GpuVertex {
             normal: [vertex.normal.x, vertex.normal.y, vertex.normal.z],
             uv: [vertex.uv.x, vertex.uv.y],
             tangent: vertex.tangent,
+            joints: [
+                u32::from(vertex.joints[0]),
+                u32::from(vertex.joints[1]),
+                u32::from(vertex.joints[2]),
+                u32::from(vertex.joints[3]),
+            ],
+            weights: vertex.weights,
         }
     }
 }
@@ -100,6 +125,8 @@ impl MaterialUniform {
 pub struct ObjectUniform {
     pub model: [[f32; 4]; 4],
     pub normal: [[f32; 4]; 4],
+    pub skin: [u32; 4],
+    pub joints: [[[f32; 4]; 4]; MAX_JOINTS],
 }
 
 #[repr(C)]
@@ -475,6 +502,8 @@ impl WgpuSceneRenderer {
                     contents: bytemuck::bytes_of(&ObjectUniform {
                         model: command.model_matrix,
                         normal: command.normal_matrix,
+                        skin: [command.mesh.flags.has_skin as u32, 0, 0, 0],
+                        joints: joint_uniforms(command.joint_matrices),
                     }),
                     usage: wgpu::BufferUsages::UNIFORM,
                 });
@@ -529,6 +558,14 @@ impl WgpuSceneRenderer {
             pass.draw_indexed(0..command.index_count, 0, 0..1);
         }
     }
+}
+
+fn joint_uniforms(joints: &[[[f32; 4]; 4]]) -> [[[f32; 4]; 4]; MAX_JOINTS] {
+    let mut output = [identity_matrix(); MAX_JOINTS];
+    for (index, joint) in joints.iter().take(MAX_JOINTS).enumerate() {
+        output[index] = *joint;
+    }
+    output
 }
 
 fn identity_matrix() -> [[f32; 4]; 4] {
