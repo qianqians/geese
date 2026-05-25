@@ -85,9 +85,21 @@ impl MaterialUniform {
     pub fn new(base_color_factor: [f32; 4], normal_map_enabled: bool, shininess: f32) -> Self {
         Self {
             base_color_factor,
-            params: [normal_map_enabled as u32 as f32, shininess, 0.0, 0.0],
+            params: [
+                normal_map_enabled as u32 as f32,
+                shininess.max(1.0),
+                0.0,
+                0.0,
+            ],
         }
     }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct ObjectUniform {
+    pub model: [[f32; 4]; 4],
+    pub normal: [[f32; 4]; 4],
 }
 
 #[repr(C)]
@@ -98,13 +110,19 @@ pub struct LightUniform {
     pub ambient: [f32; 4],
 }
 
+impl LightUniform {
+    pub fn directional(direction: [f32; 3], color: [f32; 3], ambient: [f32; 3]) -> Self {
+        Self {
+            direction: [direction[0], direction[1], direction[2], 0.0],
+            color: [color[0], color[1], color[2], 1.0],
+            ambient: [ambient[0], ambient[1], ambient[2], 1.0],
+        }
+    }
+}
+
 impl Default for LightUniform {
     fn default() -> Self {
-        Self {
-            direction: [0.4, -0.8, 0.4, 0.0],
-            color: [1.0, 1.0, 1.0, 1.0],
-            ambient: [0.08, 0.08, 0.08, 1.0],
-        }
+        Self::directional([0.4, -0.8, 0.4], [1.0, 1.0, 1.0], [0.08, 0.08, 0.08])
     }
 }
 
@@ -121,6 +139,8 @@ pub struct WgpuRenderCommand {
     pub index_count: u32,
     material_buffer: wgpu::Buffer,
     material_bind_group: wgpu::BindGroup,
+    object_buffer: wgpu::Buffer,
+    object_bind_group: wgpu::BindGroup,
     normal_texture: Option<wgpu::Texture>,
     normal_texture_view: Option<wgpu::TextureView>,
     normal_sampler: Option<wgpu::Sampler>,
@@ -136,6 +156,7 @@ pub struct WgpuSceneRenderer {
     camera_bind_group: wgpu::BindGroup,
     light_buffer: wgpu::Buffer,
     material_bind_group_layout: wgpu::BindGroupLayout,
+    object_bind_group_layout: wgpu::BindGroupLayout,
     default_normal_texture: wgpu::Texture,
     default_normal_texture_view: wgpu::TextureView,
     default_sampler: wgpu::Sampler,
@@ -212,9 +233,28 @@ impl WgpuSceneRenderer {
                 ],
             });
 
+        let object_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("scene object bind group layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("scene pipeline layout"),
-            bind_group_layouts: &[&camera_bind_group_layout, &material_bind_group_layout],
+            bind_group_layouts: &[
+                &camera_bind_group_layout,
+                &material_bind_group_layout,
+                &object_bind_group_layout,
+            ],
             push_constant_ranges: &[],
         });
 
@@ -320,6 +360,7 @@ impl WgpuSceneRenderer {
             camera_bind_group,
             light_buffer,
             material_bind_group_layout,
+            object_bind_group_layout,
             default_normal_texture,
             default_normal_texture_view,
             default_sampler,
@@ -350,6 +391,17 @@ impl WgpuSceneRenderer {
         materials: &MaterialLibrary,
         render_queue: &RenderQueue<'_>,
     ) -> WgpuRenderQueue {
+        self.prepare_with_shininess(device, gpu_queue, materials, render_queue, 32.0)
+    }
+
+    pub fn prepare_with_shininess(
+        &self,
+        device: &wgpu::Device,
+        gpu_queue: &wgpu::Queue,
+        materials: &MaterialLibrary,
+        render_queue: &RenderQueue<'_>,
+        shininess: f32,
+    ) -> WgpuRenderQueue {
         let commands = render_queue
             .commands
             .iter()
@@ -368,32 +420,31 @@ impl WgpuSceneRenderer {
                     usage: wgpu::BufferUsages::INDEX,
                 });
 
+                let normal_map_enabled = command.material.normal_texture.is_some()
+                    && command.mesh.flags.has_tangents
+                    && command.mesh.flags.has_uv0;
+
                 let material_buffer =
                     device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                         label: Some("scene material buffer"),
                         contents: bytemuck::bytes_of(&MaterialUniform::new(
                             command.material.base_color_factor,
-                            command.material.normal_texture.is_some()
-                                && command.mesh.flags.has_tangents
-                                && command.mesh.flags.has_uv0,
-                            32.0,
+                            normal_map_enabled,
+                            shininess,
                         )),
                         usage: wgpu::BufferUsages::UNIFORM,
                     });
 
-                let normal_texture = command
-                    .material
-                    .normal_texture
-                    .and_then(|handle| materials.texture(handle))
-                    .map(|texture| upload_texture(device, gpu_queue, texture));
+                let normal_source = normal_map_enabled
+                    .then_some(command.material.normal_texture)
+                    .flatten()
+                    .and_then(|handle| materials.texture(handle));
+                let normal_texture =
+                    normal_source.map(|texture| upload_texture(device, gpu_queue, texture));
                 let normal_texture_view = normal_texture
                     .as_ref()
                     .map(|texture| texture.create_view(&wgpu::TextureViewDescriptor::default()));
-                let normal_sampler = command
-                    .material
-                    .normal_texture
-                    .and_then(|handle| materials.texture(handle))
-                    .map(|texture| create_sampler(device, texture));
+                let normal_sampler = normal_source.map(|texture| create_sampler(device, texture));
 
                 let normal_view = normal_texture_view
                     .as_ref()
@@ -419,6 +470,24 @@ impl WgpuSceneRenderer {
                     ],
                 });
 
+                let object_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("scene object buffer"),
+                    contents: bytemuck::bytes_of(&ObjectUniform {
+                        model: command.model_matrix,
+                        normal: command.normal_matrix,
+                    }),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
+
+                let object_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("scene object bind group"),
+                    layout: &self.object_bind_group_layout,
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: object_buffer.as_entire_binding(),
+                    }],
+                });
+
                 WgpuRenderCommand {
                     entity_id: command.entity_id.to_string(),
                     vertex_buffer,
@@ -426,6 +495,8 @@ impl WgpuSceneRenderer {
                     index_count: command.mesh.indices.len() as u32,
                     material_buffer,
                     material_bind_group,
+                    object_buffer,
+                    object_bind_group,
                     normal_texture,
                     normal_texture_view,
                     normal_sampler,
@@ -446,11 +517,13 @@ impl WgpuSceneRenderer {
 
         for command in &queue.commands {
             let _keep_material_buffer_alive = &command.material_buffer;
+            let _keep_object_buffer_alive = &command.object_buffer;
             let _keep_normal_texture_alive = &command.normal_texture;
             let _keep_normal_texture_view_alive = &command.normal_texture_view;
             let _keep_normal_sampler_alive = &command.normal_sampler;
             let _keep_default_normal_texture_alive = &self.default_normal_texture;
             pass.set_bind_group(1, &command.material_bind_group, &[]);
+            pass.set_bind_group(2, &command.object_bind_group, &[]);
             pass.set_vertex_buffer(0, command.vertex_buffer.slice(..));
             pass.set_index_buffer(command.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             pass.draw_indexed(0..command.index_count, 0, 0..1);

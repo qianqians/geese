@@ -1,17 +1,23 @@
+pub mod animation;
 mod material;
 pub mod octree;
 mod scene;
 pub mod scene_object;
 
+pub use animation::{AnimationClip, AnimationPlayer, SceneNode, Transform};
 pub use octree::Octree;
 pub use scene::Scene;
 pub use scene_object::SceneObject;
 
 use asset::load;
+use std::collections::HashMap;
+
+use animation::{AnimatedProperty, AnimationChannel, AnimationOutputs, Interpolation};
 use cgmath::{
-    InnerSpace, Point3, Vector2,
-    Vector3, /* , Matrix4, InnerSpace, EuclideanSpace, Rad, Deg, PerspectiveFov */
+    InnerSpace, Matrix4, Point3, Quaternion, Vector2,
+    Vector3, /* , InnerSpace, EuclideanSpace, Rad, Deg, PerspectiveFov */
 };
+use gltf::animation::util::ReadOutputs;
 use gltf::mesh::Mesh;
 use gltf::mesh::Primitive;
 use gltf::mesh::util::ReadIndices;
@@ -163,7 +169,13 @@ fn generate_tangents(positions: &[[f32; 3]], uvs: &[[f32; 2]], indices: &[u32]) 
         .collect()
 }
 
-fn load_gltf_mesh(mesh: &Mesh, buffers: &[gltf::buffer::Data], oct: &mut Octree) {
+fn load_gltf_mesh(
+    mesh: &Mesh,
+    buffers: &[gltf::buffer::Data],
+    objects: &mut Vec<SceneObject>,
+) -> Vec<usize> {
+    let mut object_indices = Vec::new();
+
     for prim in mesh.primitives() {
         let bbox = prim.bounding_box();
         let min = Point3::new(bbox.min[0], bbox.min[1], bbox.min[2]);
@@ -176,25 +188,49 @@ fn load_gltf_mesh(mesh: &Mesh, buffers: &[gltf::buffer::Data], oct: &mut Octree)
 
         let mut model_mesh = ModelMesh::new();
         load_primitive(&prim, buffers, &mut model_mesh);
-        oct.insert(SceneObject {
+        let object_index = objects.len();
+        objects.push(SceneObject {
             entity_id: Uuid::new_v4().to_string(),
+            local_aabb: AABB { min, max },
             aabb: AABB { min, max },
             center: center,
             mesh: model_mesh,
+            model_matrix: Matrix4::from_scale(1.0).into(),
+            normal_matrix: Matrix4::from_scale(1.0).into(),
         });
+        object_indices.push(object_index);
     }
+
+    object_indices
 }
 
-fn load_node(node: &gltf::Node, buffers: &[gltf::buffer::Data], oct: &mut Octree) {
-    // 如果这个节点有 Mesh → 加载
+fn load_node(
+    node: &gltf::Node,
+    parent: Option<usize>,
+    buffers: &[gltf::buffer::Data],
+    nodes: &mut Vec<SceneNode>,
+    objects: &mut Vec<SceneObject>,
+    node_map: &mut HashMap<usize, usize>,
+) -> usize {
+    let (translation, rotation, scale) = node.transform().decomposed();
+    let node_id = nodes.len();
+    nodes.push(SceneNode::new(
+        node_id,
+        parent,
+        Transform::from_gltf(translation, rotation, scale),
+    ));
+    node_map.insert(node.index(), node_id);
+
     if let Some(mesh) = node.mesh() {
-        load_gltf_mesh(&mesh, buffers, oct);
+        nodes[node_id].objects = load_gltf_mesh(&mesh, buffers, objects);
     }
 
-    // 递归加载子节点
     for child in node.children() {
-        load_node(&child, buffers, oct);
+        let child_id = load_node(&child, Some(node_id), buffers, nodes, objects, node_map);
+        nodes[node_id].children.push(child_id);
     }
+
+    node_id
 }
 
 pub fn import_scene(
@@ -214,16 +250,108 @@ pub fn import_scene(
             import_document_aabb(&node, &mut bounds);
         }
     }
-    let mut tree = Octree::new(bounds, max_objects, max_depth);
+    let mut nodes = Vec::new();
+    let mut objects = Vec::new();
+    let mut node_map = HashMap::new();
 
     for scene in gltf.scenes() {
         for node in scene.nodes() {
-            load_node(&node, &buffers, &mut tree);
+            load_node(
+                &node,
+                None,
+                &buffers,
+                &mut nodes,
+                &mut objects,
+                &mut node_map,
+            );
         }
     }
+    let animations = load_animations(&gltf, &buffers, &node_map);
 
-    Ok(Scene {
-        octree: tree,
+    Ok(Scene::new(
+        nodes,
+        objects,
         materials,
-    })
+        animations,
+        bounds,
+        max_objects,
+        max_depth,
+    ))
+}
+
+fn load_animations(
+    document: &gltf::Document,
+    buffers: &[gltf::buffer::Data],
+    node_map: &HashMap<usize, usize>,
+) -> Vec<AnimationClip> {
+    document
+        .animations()
+        .map(|animation| {
+            let mut duration = 0.0;
+            let mut channels = Vec::new();
+
+            for channel in animation.channels() {
+                let Some(&target_node) = node_map.get(&channel.target().node().index()) else {
+                    continue;
+                };
+                let property = match channel.target().property() {
+                    gltf::animation::Property::Translation => AnimatedProperty::Translation,
+                    gltf::animation::Property::Rotation => AnimatedProperty::Rotation,
+                    gltf::animation::Property::Scale => AnimatedProperty::Scale,
+                    gltf::animation::Property::MorphTargetWeights => continue,
+                };
+                let interpolation = match channel.sampler().interpolation() {
+                    gltf::animation::Interpolation::Linear => Interpolation::Linear,
+                    gltf::animation::Interpolation::Step => Interpolation::Step,
+                    gltf::animation::Interpolation::CubicSpline => Interpolation::CubicSpline,
+                };
+
+                let reader = channel.reader(|buffer| Some(buffers[buffer.index()].0.as_slice()));
+                let Some(inputs) = reader.read_inputs() else {
+                    continue;
+                };
+                let inputs: Vec<_> = inputs.collect();
+                if let Some(last) = inputs.last() {
+                    duration = f32::max(duration, *last);
+                }
+
+                let Some(outputs) = reader.read_outputs() else {
+                    continue;
+                };
+                let outputs = match outputs {
+                    ReadOutputs::Translations(values) => AnimationOutputs::Translations(
+                        values
+                            .map(|value| Vector3::new(value[0], value[1], value[2]))
+                            .collect(),
+                    ),
+                    ReadOutputs::Rotations(values) => AnimationOutputs::Rotations(
+                        values
+                            .into_f32()
+                            .map(|value| Quaternion::new(value[3], value[0], value[1], value[2]))
+                            .collect(),
+                    ),
+                    ReadOutputs::Scales(values) => AnimationOutputs::Scales(
+                        values
+                            .map(|value| Vector3::new(value[0], value[1], value[2]))
+                            .collect(),
+                    ),
+                    ReadOutputs::MorphTargetWeights(_) => continue,
+                };
+
+                channels.push(AnimationChannel {
+                    target_node,
+                    property,
+                    interpolation,
+                    inputs,
+                    outputs,
+                });
+            }
+
+            AnimationClip {
+                name: animation.name().map(str::to_string),
+                duration,
+                channels,
+            }
+        })
+        .collect()
 }
