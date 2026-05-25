@@ -14,6 +14,11 @@ struct Material {
     params: vec4<f32>,
 };
 
+struct Object {
+    model: mat4x4<f32>,
+    normal: mat4x4<f32>,
+};
+
 @group(0) @binding(0)
 var<uniform> camera: Camera;
 
@@ -28,6 +33,9 @@ var normal_texture: texture_2d<f32>;
 
 @group(1) @binding(2)
 var normal_sampler: sampler;
+
+@group(2) @binding(0)
+var<uniform> object: Object;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -47,11 +55,12 @@ struct VertexOutput {
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
-    output.clip_position = camera.view_projection * vec4<f32>(input.position, 1.0);
-    output.world_position = input.position;
-    output.normal = normalize(input.normal);
+    let world_position = object.model * vec4<f32>(input.position, 1.0);
+    output.clip_position = camera.view_projection * world_position;
+    output.world_position = world_position.xyz;
+    output.normal = normalize((object.normal * vec4<f32>(input.normal, 0.0)).xyz);
     output.uv = input.uv;
-    output.tangent = input.tangent;
+    output.tangent = vec4<f32>(normalize((object.model * vec4<f32>(input.tangent.xyz, 0.0)).xyz), input.tangent.w);
     return output;
 }
 
@@ -61,7 +70,16 @@ fn normal_from_map(input: VertexOutput) -> vec3<f32> {
     }
 
     let n = normalize(input.normal);
-    let t = normalize(input.tangent.xyz);
+    let raw_t = input.tangent.xyz;
+    let orthogonal_t = raw_t - n * dot(n, raw_t);
+    var t = vec3<f32>(1.0, 0.0, 0.0);
+    if (dot(orthogonal_t, orthogonal_t) > 0.000001) {
+        t = normalize(orthogonal_t);
+    } else if (abs(n.y) < 0.999) {
+        t = normalize(cross(vec3<f32>(0.0, 1.0, 0.0), n));
+    } else {
+        t = normalize(cross(vec3<f32>(1.0, 0.0, 0.0), n));
+    }
     let b = normalize(cross(n, t) * input.tangent.w);
     let sampled = textureSample(normal_texture, normal_sampler, input.uv).xyz * 2.0 - vec3<f32>(1.0, 1.0, 1.0);
     let tbn = mat3x3<f32>(t, b, n);

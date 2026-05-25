@@ -2,6 +2,7 @@ use cgmath::{Point3, Vector2, Vector3};
 
 use crate::MaterialHandle;
 
+#[derive(Clone)]
 pub struct Vertex {
     pub position: Point3<f32>,
     pub normal: Vector3<f32>,
@@ -9,6 +10,7 @@ pub struct Vertex {
     pub tangent: [f32; 4],
 }
 
+#[derive(Clone)]
 pub struct ModelMesh {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
