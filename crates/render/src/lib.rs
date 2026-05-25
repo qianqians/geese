@@ -10,6 +10,6 @@ pub use material::{
 pub use mesh::{MeshFlags, ModelMesh, Vertex};
 pub use scene::{RenderCommand, RenderObject, RenderQueue, RenderStats, SceneRenderer};
 pub use wgpu_renderer::{
-    CameraUniform, GpuVertex, MaterialUniform, WgpuRenderCommand, WgpuRenderQueue,
+    CameraUniform, GpuVertex, LightUniform, MaterialUniform, WgpuRenderCommand, WgpuRenderQueue,
     WgpuSceneRenderer, WgpuSceneRendererDescriptor,
 };

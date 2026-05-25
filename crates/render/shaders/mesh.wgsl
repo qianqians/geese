@@ -1,43 +1,87 @@
 struct Camera {
     view_projection: mat4x4<f32>,
+    camera_position: vec4<f32>,
+};
+
+struct Light {
+    direction: vec4<f32>,
+    color: vec4<f32>,
+    ambient: vec4<f32>,
 };
 
 struct Material {
     base_color_factor: vec4<f32>,
+    params: vec4<f32>,
 };
 
 @group(0) @binding(0)
 var<uniform> camera: Camera;
 
+@group(0) @binding(1)
+var<uniform> light: Light;
+
 @group(1) @binding(0)
 var<uniform> material: Material;
+
+@group(1) @binding(1)
+var normal_texture: texture_2d<f32>;
+
+@group(1) @binding(2)
+var normal_sampler: sampler;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
+    @location(3) tangent: vec4<f32>,
 };
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
-    @location(0) normal: vec3<f32>,
-    @location(1) uv: vec2<f32>,
+    @location(0) world_position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) uv: vec2<f32>,
+    @location(3) tangent: vec4<f32>,
 };
 
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
     output.clip_position = camera.view_projection * vec4<f32>(input.position, 1.0);
+    output.world_position = input.position;
     output.normal = normalize(input.normal);
     output.uv = input.uv;
+    output.tangent = input.tangent;
     return output;
+}
+
+fn normal_from_map(input: VertexOutput) -> vec3<f32> {
+    if (material.params.x < 0.5) {
+        return normalize(input.normal);
+    }
+
+    let n = normalize(input.normal);
+    let t = normalize(input.tangent.xyz);
+    let b = normalize(cross(n, t) * input.tangent.w);
+    let sampled = textureSample(normal_texture, normal_sampler, input.uv).xyz * 2.0 - vec3<f32>(1.0, 1.0, 1.0);
+    let tbn = mat3x3<f32>(t, b, n);
+    return normalize(tbn * sampled);
 }
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let light_dir = normalize(vec3<f32>(0.4, 0.8, 0.4));
-    let diffuse = max(dot(normalize(input.normal), light_dir), 0.0);
-    let lighting = 0.25 + diffuse * 0.75;
-    let color = material.base_color_factor;
-    return vec4<f32>(color.rgb * lighting, color.a);
+    let normal = normal_from_map(input);
+    let light_dir = normalize(-light.direction.xyz);
+    let view_dir = normalize(camera.camera_position.xyz - input.world_position);
+    let half_dir = normalize(light_dir + view_dir);
+
+    let diffuse_strength = max(dot(normal, light_dir), 0.0);
+    let specular_strength = pow(max(dot(normal, half_dir), 0.0), max(material.params.y, 1.0));
+
+    let base_color = material.base_color_factor;
+    let ambient = light.ambient.rgb * base_color.rgb;
+    let diffuse = diffuse_strength * light.color.rgb * base_color.rgb;
+    let specular = specular_strength * light.color.rgb;
+
+    return vec4<f32>(ambient + diffuse + specular, base_color.a);
 }
