@@ -6,6 +6,7 @@ pub struct Vertex {
     pub position: Point3<f32>,
     pub normal: Vector3<f32>,
     pub uv: Vector2<f32>,
+    pub tangent: [f32; 4],
 }
 
 pub struct ModelMesh {
@@ -30,4 +31,5 @@ impl ModelMesh {
 pub struct MeshFlags {
     pub has_normals: bool,
     pub has_uv0: bool,
+    pub has_tangents: bool,
 }

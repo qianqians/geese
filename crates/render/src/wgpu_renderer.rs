@@ -1,6 +1,6 @@
 use wgpu::util::DeviceExt;
 
-use crate::{RenderQueue, Vertex};
+use crate::{FilterMode, MaterialLibrary, RenderQueue, Texture, TextureFormat, Vertex, WrapMode};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -8,6 +8,7 @@ pub struct GpuVertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
     pub uv: [f32; 2],
+    pub tangent: [f32; 4],
 }
 
 impl GpuVertex {
@@ -31,6 +32,11 @@ impl GpuVertex {
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float32x2,
                 },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
+                    shader_location: 3,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
             ],
         }
     }
@@ -42,6 +48,7 @@ impl From<&Vertex> for GpuVertex {
             position: [vertex.position.x, vertex.position.y, vertex.position.z],
             normal: [vertex.normal.x, vertex.normal.y, vertex.normal.z],
             uv: [vertex.uv.x, vertex.uv.y],
+            tangent: vertex.tangent,
         }
     }
 }
@@ -50,11 +57,20 @@ impl From<&Vertex> for GpuVertex {
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CameraUniform {
     pub view_projection: [[f32; 4]; 4],
+    pub camera_position: [f32; 4],
 }
 
 impl CameraUniform {
-    pub fn new(view_projection: [[f32; 4]; 4]) -> Self {
-        Self { view_projection }
+    pub fn new(view_projection: [[f32; 4]; 4], camera_position: [f32; 3]) -> Self {
+        Self {
+            view_projection,
+            camera_position: [
+                camera_position[0],
+                camera_position[1],
+                camera_position[2],
+                1.0,
+            ],
+        }
     }
 }
 
@@ -62,6 +78,34 @@ impl CameraUniform {
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MaterialUniform {
     pub base_color_factor: [f32; 4],
+    pub params: [f32; 4],
+}
+
+impl MaterialUniform {
+    pub fn new(base_color_factor: [f32; 4], normal_map_enabled: bool, shininess: f32) -> Self {
+        Self {
+            base_color_factor,
+            params: [normal_map_enabled as u32 as f32, shininess, 0.0, 0.0],
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct LightUniform {
+    pub direction: [f32; 4],
+    pub color: [f32; 4],
+    pub ambient: [f32; 4],
+}
+
+impl Default for LightUniform {
+    fn default() -> Self {
+        Self {
+            direction: [0.4, -0.8, 0.4, 0.0],
+            color: [1.0, 1.0, 1.0, 1.0],
+            ambient: [0.08, 0.08, 0.08, 1.0],
+        }
+    }
 }
 
 pub struct WgpuSceneRendererDescriptor {
@@ -77,6 +121,9 @@ pub struct WgpuRenderCommand {
     pub index_count: u32,
     material_buffer: wgpu::Buffer,
     material_bind_group: wgpu::BindGroup,
+    normal_texture: Option<wgpu::Texture>,
+    normal_texture_view: Option<wgpu::TextureView>,
+    normal_sampler: Option<wgpu::Sampler>,
 }
 
 pub struct WgpuRenderQueue {
@@ -87,11 +134,19 @@ pub struct WgpuSceneRenderer {
     pipeline: wgpu::RenderPipeline,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    light_buffer: wgpu::Buffer,
     material_bind_group_layout: wgpu::BindGroupLayout,
+    default_normal_texture: wgpu::Texture,
+    default_normal_texture_view: wgpu::TextureView,
+    default_sampler: wgpu::Sampler,
 }
 
 impl WgpuSceneRenderer {
-    pub fn new(device: &wgpu::Device, descriptor: WgpuSceneRendererDescriptor) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        descriptor: WgpuSceneRendererDescriptor,
+    ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("scene mesh shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/mesh.wgsl").into()),
@@ -100,31 +155,61 @@ impl WgpuSceneRenderer {
         let camera_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("scene camera bind group layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                }],
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
             });
 
         let material_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("scene material bind group layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                }],
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
             });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -183,37 +268,89 @@ impl WgpuSceneRenderer {
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("scene camera buffer"),
-            contents: bytemuck::bytes_of(&CameraUniform::new(identity_matrix())),
+            contents: bytemuck::bytes_of(&CameraUniform::new(identity_matrix(), [0.0, 0.0, 1.0])),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("scene light buffer"),
+            contents: bytemuck::bytes_of(&LightUniform::default()),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
         let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("scene camera bind group"),
             layout: &camera_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera_buffer.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: camera_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: light_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        let default_normal_texture = create_rgba_texture(
+            device,
+            queue,
+            "default normal texture",
+            1,
+            1,
+            &[128, 128, 255, 255],
+        );
+        let default_normal_texture_view =
+            default_normal_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let default_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("default scene sampler"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
         });
 
         Self {
             pipeline,
             camera_buffer,
             camera_bind_group,
+            light_buffer,
             material_bind_group_layout,
+            default_normal_texture,
+            default_normal_texture_view,
+            default_sampler,
         }
     }
 
-    pub fn update_camera(&self, queue: &wgpu::Queue, view_projection: [[f32; 4]; 4]) {
+    pub fn update_camera(
+        &self,
+        queue: &wgpu::Queue,
+        view_projection: [[f32; 4]; 4],
+        camera_position: [f32; 3],
+    ) {
         queue.write_buffer(
             &self.camera_buffer,
             0,
-            bytemuck::bytes_of(&CameraUniform::new(view_projection)),
+            bytemuck::bytes_of(&CameraUniform::new(view_projection, camera_position)),
         );
     }
 
-    pub fn prepare(&self, device: &wgpu::Device, queue: &RenderQueue<'_>) -> WgpuRenderQueue {
-        let commands = queue
+    pub fn update_light(&self, queue: &wgpu::Queue, light: LightUniform) {
+        queue.write_buffer(&self.light_buffer, 0, bytemuck::bytes_of(&light));
+    }
+
+    pub fn prepare(
+        &self,
+        device: &wgpu::Device,
+        gpu_queue: &wgpu::Queue,
+        materials: &MaterialLibrary,
+        render_queue: &RenderQueue<'_>,
+    ) -> WgpuRenderQueue {
+        let commands = render_queue
             .commands
             .iter()
             .map(|command| {
@@ -234,19 +371,52 @@ impl WgpuSceneRenderer {
                 let material_buffer =
                     device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                         label: Some("scene material buffer"),
-                        contents: bytemuck::bytes_of(&MaterialUniform {
-                            base_color_factor: command.material.base_color_factor,
-                        }),
+                        contents: bytemuck::bytes_of(&MaterialUniform::new(
+                            command.material.base_color_factor,
+                            command.material.normal_texture.is_some()
+                                && command.mesh.flags.has_tangents
+                                && command.mesh.flags.has_uv0,
+                            32.0,
+                        )),
                         usage: wgpu::BufferUsages::UNIFORM,
                     });
+
+                let normal_texture = command
+                    .material
+                    .normal_texture
+                    .and_then(|handle| materials.texture(handle))
+                    .map(|texture| upload_texture(device, gpu_queue, texture));
+                let normal_texture_view = normal_texture
+                    .as_ref()
+                    .map(|texture| texture.create_view(&wgpu::TextureViewDescriptor::default()));
+                let normal_sampler = command
+                    .material
+                    .normal_texture
+                    .and_then(|handle| materials.texture(handle))
+                    .map(|texture| create_sampler(device, texture));
+
+                let normal_view = normal_texture_view
+                    .as_ref()
+                    .unwrap_or(&self.default_normal_texture_view);
+                let normal_sampler_ref = normal_sampler.as_ref().unwrap_or(&self.default_sampler);
 
                 let material_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("scene material bind group"),
                     layout: &self.material_bind_group_layout,
-                    entries: &[wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: material_buffer.as_entire_binding(),
-                    }],
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: material_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(normal_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::Sampler(normal_sampler_ref),
+                        },
+                    ],
                 });
 
                 WgpuRenderCommand {
@@ -256,6 +426,9 @@ impl WgpuSceneRenderer {
                     index_count: command.mesh.indices.len() as u32,
                     material_buffer,
                     material_bind_group,
+                    normal_texture,
+                    normal_texture_view,
+                    normal_sampler,
                 }
             })
             .collect();
@@ -273,6 +446,10 @@ impl WgpuSceneRenderer {
 
         for command in &queue.commands {
             let _keep_material_buffer_alive = &command.material_buffer;
+            let _keep_normal_texture_alive = &command.normal_texture;
+            let _keep_normal_texture_view_alive = &command.normal_texture_view;
+            let _keep_normal_sampler_alive = &command.normal_sampler;
+            let _keep_default_normal_texture_alive = &self.default_normal_texture;
             pass.set_bind_group(1, &command.material_bind_group, &[]);
             pass.set_vertex_buffer(0, command.vertex_buffer.slice(..));
             pass.set_index_buffer(command.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
@@ -288,4 +465,99 @@ fn identity_matrix() -> [[f32; 4]; 4] {
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ]
+}
+
+fn upload_texture(device: &wgpu::Device, queue: &wgpu::Queue, texture: &Texture) -> wgpu::Texture {
+    let pixels = to_rgba8(texture);
+    create_rgba_texture(
+        device,
+        queue,
+        texture.name.as_deref().unwrap_or("scene texture"),
+        texture.width,
+        texture.height,
+        &pixels,
+    )
+}
+
+fn create_rgba_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    label: &str,
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+) -> wgpu::Texture {
+    device.create_texture_with_data(
+        queue,
+        &wgpu::TextureDescriptor {
+            label: Some(label),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        },
+        wgpu::util::TextureDataOrder::LayerMajor,
+        pixels,
+    )
+}
+
+fn to_rgba8(texture: &Texture) -> Vec<u8> {
+    match texture.format {
+        TextureFormat::R8 => texture
+            .pixels
+            .iter()
+            .flat_map(|r| [*r, *r, *r, 255])
+            .collect(),
+        TextureFormat::R8G8 => texture
+            .pixels
+            .chunks_exact(2)
+            .flat_map(|px| [px[0], px[1], 0, 255])
+            .collect(),
+        TextureFormat::R8G8B8 => texture
+            .pixels
+            .chunks_exact(3)
+            .flat_map(|px| [px[0], px[1], px[2], 255])
+            .collect(),
+        TextureFormat::R8G8B8A8 => texture.pixels.clone(),
+        _ => vec![128, 128, 255, 255],
+    }
+}
+
+fn create_sampler(device: &wgpu::Device, texture: &Texture) -> wgpu::Sampler {
+    device.create_sampler(&wgpu::SamplerDescriptor {
+        label: texture.name.as_deref(),
+        address_mode_u: convert_wrap_mode(texture.sampler.wrap_s),
+        address_mode_v: convert_wrap_mode(texture.sampler.wrap_t),
+        address_mode_w: wgpu::AddressMode::Repeat,
+        mag_filter: convert_filter_mode(texture.sampler.mag_filter),
+        min_filter: convert_filter_mode(texture.sampler.min_filter),
+        mipmap_filter: convert_filter_mode(texture.sampler.min_filter),
+        ..Default::default()
+    })
+}
+
+fn convert_filter_mode(mode: FilterMode) -> wgpu::FilterMode {
+    match mode {
+        FilterMode::Nearest
+        | FilterMode::NearestMipmapNearest
+        | FilterMode::NearestMipmapLinear => wgpu::FilterMode::Nearest,
+        FilterMode::Linear | FilterMode::LinearMipmapNearest | FilterMode::LinearMipmapLinear => {
+            wgpu::FilterMode::Linear
+        }
+    }
+}
+
+fn convert_wrap_mode(mode: WrapMode) -> wgpu::AddressMode {
+    match mode {
+        WrapMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
+        WrapMode::Repeat => wgpu::AddressMode::Repeat,
+        WrapMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
+    }
 }
