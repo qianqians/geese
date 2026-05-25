@@ -4,7 +4,7 @@ pub mod octree;
 mod scene;
 pub mod scene_object;
 
-pub use animation::{AnimationClip, AnimationPlayer, SceneNode, Transform};
+pub use animation::{AnimationClip, AnimationPlayer, SceneNode, Skin, Transform};
 pub use octree::Octree;
 pub use scene::Scene;
 pub use scene_object::SceneObject;
@@ -23,7 +23,7 @@ use gltf::mesh::Primitive;
 use gltf::mesh::util::ReadIndices;
 use material::load_material_library;
 use math::AABB;
-use render::{MaterialHandle, ModelMesh, Vertex};
+use render::{MaterialHandle, ModelMesh, SkinHandle, Vertex};
 use uuid::Uuid;
 
 fn import_document_aabb(node: &gltf::Node, bounds: &mut AABB) {
@@ -104,6 +104,14 @@ fn load_primitive(prim: &Primitive, buffers: &[gltf::buffer::Data], out: &mut Mo
     } else {
         vec![[1.0, 0.0, 0.0, 1.0]; positions.len()]
     };
+    let joints: Vec<_> = reader
+        .read_joints(0)
+        .map(|joints| joints.into_u16().collect())
+        .unwrap_or_else(|| vec![[0, 0, 0, 0]; positions.len()]);
+    let weights: Vec<_> = reader
+        .read_weights(0)
+        .map(|weights| weights.into_f32().collect())
+        .unwrap_or_else(|| vec![[1.0, 0.0, 0.0, 0.0]; positions.len()]);
 
     for i in 0..positions.len() {
         let position = positions[i];
@@ -115,6 +123,8 @@ fn load_primitive(prim: &Primitive, buffers: &[gltf::buffer::Data], out: &mut Mo
             normal: Vector3::new(normal[0], normal[1], normal[2]),
             uv: Vector2::new(uv[0], uv[1]),
             tangent: tangents[i],
+            joints: joints[i],
+            weights: weights[i],
         });
     }
 
@@ -122,6 +132,7 @@ fn load_primitive(prim: &Primitive, buffers: &[gltf::buffer::Data], out: &mut Mo
     out.flags.has_normals = has_normals;
     out.flags.has_uv0 = has_uv0;
     out.flags.has_tangents = has_gltf_tangents || has_uv0;
+    out.flags.has_skin = reader.read_joints(0).is_some() && reader.read_weights(0).is_some();
     out.material = prim.material().index().map(MaterialHandle);
 }
 
@@ -171,6 +182,8 @@ fn generate_tangents(positions: &[[f32; 3]], uvs: &[[f32; 2]], indices: &[u32]) 
 
 fn load_gltf_mesh(
     mesh: &Mesh,
+    node_id: usize,
+    skin: Option<SkinHandle>,
     buffers: &[gltf::buffer::Data],
     objects: &mut Vec<SceneObject>,
 ) -> Vec<usize> {
@@ -188,15 +201,19 @@ fn load_gltf_mesh(
 
         let mut model_mesh = ModelMesh::new();
         load_primitive(&prim, buffers, &mut model_mesh);
+        model_mesh.skin = skin;
+        model_mesh.flags.has_skin = model_mesh.flags.has_skin && skin.is_some();
         let object_index = objects.len();
         objects.push(SceneObject {
             entity_id: Uuid::new_v4().to_string(),
+            node: node_id,
             local_aabb: AABB { min, max },
             aabb: AABB { min, max },
             center: center,
             mesh: model_mesh,
             model_matrix: Matrix4::from_scale(1.0).into(),
             normal_matrix: Matrix4::from_scale(1.0).into(),
+            joint_matrices: Vec::new(),
         });
         object_indices.push(object_index);
     }
@@ -211,6 +228,7 @@ fn load_node(
     nodes: &mut Vec<SceneNode>,
     objects: &mut Vec<SceneObject>,
     node_map: &mut HashMap<usize, usize>,
+    skin_map: &HashMap<usize, usize>,
 ) -> usize {
     let (translation, rotation, scale) = node.transform().decomposed();
     let node_id = nodes.len();
@@ -222,11 +240,23 @@ fn load_node(
     node_map.insert(node.index(), node_id);
 
     if let Some(mesh) = node.mesh() {
-        nodes[node_id].objects = load_gltf_mesh(&mesh, buffers, objects);
+        let skin = node
+            .skin()
+            .and_then(|skin| skin_map.get(&skin.index()).copied())
+            .map(SkinHandle);
+        nodes[node_id].objects = load_gltf_mesh(&mesh, node_id, skin, buffers, objects);
     }
 
     for child in node.children() {
-        let child_id = load_node(&child, Some(node_id), buffers, nodes, objects, node_map);
+        let child_id = load_node(
+            &child,
+            Some(node_id),
+            buffers,
+            nodes,
+            objects,
+            node_map,
+            skin_map,
+        );
         nodes[node_id].children.push(child_id);
     }
 
@@ -263,6 +293,25 @@ pub fn import_scene(
                 &mut nodes,
                 &mut objects,
                 &mut node_map,
+                &HashMap::new(),
+            );
+        }
+    }
+    let (skins, skin_map) = load_skins(&gltf, &buffers, &node_map);
+    nodes.clear();
+    objects.clear();
+    node_map.clear();
+
+    for scene in gltf.scenes() {
+        for node in scene.nodes() {
+            load_node(
+                &node,
+                None,
+                &buffers,
+                &mut nodes,
+                &mut objects,
+                &mut node_map,
+                &skin_map,
             );
         }
     }
@@ -273,6 +322,7 @@ pub fn import_scene(
         objects,
         materials,
         animations,
+        skins,
         bounds,
         max_objects,
         max_depth,
@@ -354,4 +404,33 @@ fn load_animations(
             }
         })
         .collect()
+}
+
+fn load_skins(
+    document: &gltf::Document,
+    buffers: &[gltf::buffer::Data],
+    node_map: &HashMap<usize, usize>,
+) -> (Vec<Skin>, HashMap<usize, usize>) {
+    let mut skins = Vec::new();
+    let mut skin_map = HashMap::new();
+
+    for skin in document.skins() {
+        let joints: Vec<_> = skin
+            .joints()
+            .filter_map(|joint| node_map.get(&joint.index()).copied())
+            .collect();
+        let inverse_bind_matrices: Vec<_> = skin
+            .reader(|buffer| Some(buffers[buffer.index()].0.as_slice()))
+            .read_inverse_bind_matrices()
+            .map(|matrices| matrices.map(Matrix4::from).collect())
+            .unwrap_or_else(|| vec![Matrix4::from_scale(1.0); joints.len()]);
+
+        skin_map.insert(skin.index(), skins.len());
+        skins.push(Skin {
+            joints,
+            inverse_bind_matrices,
+        });
+    }
+
+    (skins, skin_map)
 }

@@ -17,6 +17,8 @@ struct Material {
 struct Object {
     model: mat4x4<f32>,
     normal: mat4x4<f32>,
+    skin: vec4<u32>,
+    joints: array<mat4x4<f32>, 128>,
 };
 
 @group(0) @binding(0)
@@ -42,6 +44,8 @@ struct VertexInput {
     @location(1) normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
     @location(3) tangent: vec4<f32>,
+    @location(4) joints: vec4<u32>,
+    @location(5) weights: vec4<f32>,
 };
 
 struct VertexOutput {
@@ -52,15 +56,33 @@ struct VertexOutput {
     @location(3) tangent: vec4<f32>,
 };
 
+fn skin_matrix(input: VertexInput) -> mat4x4<f32> {
+    if (object.skin.x == 0u) {
+        return mat4x4<f32>(
+            vec4<f32>(1.0, 0.0, 0.0, 0.0),
+            vec4<f32>(0.0, 1.0, 0.0, 0.0),
+            vec4<f32>(0.0, 0.0, 1.0, 0.0),
+            vec4<f32>(0.0, 0.0, 0.0, 1.0),
+        );
+    }
+
+    return object.joints[input.joints.x] * input.weights.x
+        + object.joints[input.joints.y] * input.weights.y
+        + object.joints[input.joints.z] * input.weights.z
+        + object.joints[input.joints.w] * input.weights.w;
+}
+
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
-    let world_position = object.model * vec4<f32>(input.position, 1.0);
+    let skin = skin_matrix(input);
+    let model = object.model * skin;
+    let world_position = model * vec4<f32>(input.position, 1.0);
     output.clip_position = camera.view_projection * world_position;
     output.world_position = world_position.xyz;
-    output.normal = normalize((object.normal * vec4<f32>(input.normal, 0.0)).xyz);
+    output.normal = normalize((object.normal * skin * vec4<f32>(input.normal, 0.0)).xyz);
     output.uv = input.uv;
-    output.tangent = vec4<f32>(normalize((object.model * vec4<f32>(input.tangent.xyz, 0.0)).xyz), input.tangent.w);
+    output.tangent = vec4<f32>(normalize((model * vec4<f32>(input.tangent.xyz, 0.0)).xyz), input.tangent.w);
     return output;
 }
 
