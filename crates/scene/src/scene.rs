@@ -1,9 +1,16 @@
+use std::collections::HashMap;
+
 use camera::frustum::Frustum;
+use cgmath::InnerSpace;
 use math::AABB;
 use render::MaterialLibrary;
 use render::{RenderQueue, SceneRenderer};
 
-use crate::animation::{AnimationClip, AnimationPlayer, SceneNode, Skin, sample_clip};
+use crate::animation::{
+    AnimatedProperty, AnimationClip, AnimationOutputs, AnimationPlayer, SceneNode, Skin,
+    quat_dot, quat_exp, quat_log, sample_clip, sample_indices, sample_quat, sample_vec3,
+};
+use crate::animation_graph::AnimationStateMachine;
 use crate::{Octree, SceneObject};
 
 pub struct Scene {
@@ -13,6 +20,7 @@ pub struct Scene {
     pub materials: MaterialLibrary,
     pub animations: Vec<AnimationClip>,
     pub skins: Vec<Skin>,
+    animation_names: HashMap<String, usize>,
     bounds: AABB,
     max_objects: usize,
     max_depth: usize,
@@ -29,6 +37,11 @@ impl Scene {
         max_objects: usize,
         max_depth: usize,
     ) -> Self {
+        let animation_names: HashMap<String, usize> = animations
+            .iter()
+            .enumerate()
+            .filter_map(|(i, a)| a.name.as_ref().map(|n| (n.clone(), i)))
+            .collect();
         let mut scene = Self {
             nodes,
             objects,
@@ -36,6 +49,7 @@ impl Scene {
             materials,
             animations,
             skins,
+            animation_names,
             bounds,
             max_objects,
             max_depth,
@@ -43,6 +57,14 @@ impl Scene {
         scene.update_world_transforms();
         scene.rebuild_octree();
         scene
+    }
+
+    pub fn animation_index(&self, name: &str) -> Option<usize> {
+        self.animation_names.get(name).copied()
+    }
+
+    pub fn animation_duration(&self, index: usize) -> Option<f32> {
+        self.animations.get(index).map(|a| a.duration)
     }
 
     pub fn objects(&self) -> Vec<&SceneObject> {
@@ -71,6 +93,96 @@ impl Scene {
 
         player.advance(dt, clip.duration);
         sample_clip(clip, player.time, &mut self.nodes);
+        self.update_world_transforms();
+        self.rebuild_octree();
+    }
+
+    pub fn update_animation_graph(&mut self, graph: &mut AnimationStateMachine, dt: f32) {
+        use cgmath::Vector3;
+
+        let active = graph.update(dt, &self.animations);
+
+        if active.len() == 1 && (active[0].weight - 1.0).abs() < f32::EPSILON {
+            if let Some(clip) = self.animations.get(active[0].clip) {
+                sample_clip(clip, active[0].time, &mut self.nodes);
+            }
+        } else if !active.is_empty() {
+            for node in self.nodes.iter_mut() {
+                node.local_transform = node.base_transform;
+            }
+
+            let mut trans_acc = vec![Vector3::new(0.0, 0.0, 0.0); self.nodes.len()];
+            let mut rot_acc = vec![Vector3::new(0.0, 0.0, 0.0); self.nodes.len()];
+            let mut scale_acc = vec![Vector3::new(0.0, 0.0, 0.0); self.nodes.len()];
+            let mut has_trans = vec![false; self.nodes.len()];
+            let mut has_rot = vec![false; self.nodes.len()];
+            let mut has_scale = vec![false; self.nodes.len()];
+
+            for anim in &active {
+                let Some(clip) = self.animations.get(anim.clip) else {
+                    continue;
+                };
+                for channel in &clip.channels {
+                    if channel.inputs.is_empty() || channel.target_node >= self.nodes.len() {
+                        continue;
+                    }
+                    let (left, right, factor, interval) =
+                        sample_indices(&channel.inputs, anim.time, channel.interpolation);
+                    let base = self.nodes[channel.target_node].base_transform;
+
+                    match (&channel.property, &channel.outputs) {
+                        (
+                            AnimatedProperty::Translation,
+                            AnimationOutputs::Translations(values),
+                        ) => {
+                            let v = sample_vec3(
+                                values, left, right, factor, interval, channel.interpolation,
+                            );
+                            trans_acc[channel.target_node] += (v - base.translation) * anim.weight;
+                            has_trans[channel.target_node] = true;
+                        }
+                        (AnimatedProperty::Rotation, AnimationOutputs::Rotations(values)) => {
+                            let q = sample_quat(
+                                values, left, right, factor, interval, channel.interpolation,
+                            );
+                            let q = if quat_dot(q, base.rotation) < 0.0 {
+                                -q
+                            } else {
+                                q
+                            };
+                            let relative = quat_log(q * base.rotation.conjugate());
+                            rot_acc[channel.target_node] += relative * anim.weight;
+                            has_rot[channel.target_node] = true;
+                        }
+                        (AnimatedProperty::Scale, AnimationOutputs::Scales(values)) => {
+                            let v = sample_vec3(
+                                values, left, right, factor, interval, channel.interpolation,
+                            );
+                            scale_acc[channel.target_node] += (v - base.scale) * anim.weight;
+                            has_scale[channel.target_node] = true;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            for i in 0..self.nodes.len() {
+                if has_trans[i] {
+                    self.nodes[i].local_transform.translation =
+                        self.nodes[i].base_transform.translation + trans_acc[i];
+                }
+                if has_rot[i] {
+                    self.nodes[i].local_transform.rotation =
+                        (quat_exp(rot_acc[i]) * self.nodes[i].base_transform.rotation)
+                            .normalize();
+                }
+                if has_scale[i] {
+                    self.nodes[i].local_transform.scale =
+                        self.nodes[i].base_transform.scale + scale_acc[i];
+                }
+            }
+        }
+
         self.update_world_transforms();
         self.rebuild_octree();
     }
