@@ -1,10 +1,15 @@
 pub mod animation;
+pub mod animation_graph;
 mod material;
 pub mod octree;
 mod scene;
 pub mod scene_object;
 
 pub use animation::{AnimationClip, AnimationPlayer, SceneNode, Skin, Transform};
+pub use animation_graph::{
+    ActiveAnimation, AnimationState, AnimationStateMachine, Blend1DEntry, BlendTree, Parameter,
+    Transition, TransitionCondition,
+};
 pub use octree::Octree;
 pub use scene::Scene;
 pub use scene_object::SceneObject;
