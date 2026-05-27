@@ -30,3 +30,4 @@ local_ip = { path = "../../../crates/local_ip", version = "0.1.0" }
 time = { path = "../../../crates/time", version = "0.1.0" }
 health = { path = "../../../crates/health", version = "0.1.0" }
 consul = { path = "../../../crates/consul", version = "0.1.0" }
+physics = { path = "../../../crates/physics", version = "0.1.0", features = ["pyo3"] }

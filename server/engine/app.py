@@ -63,6 +63,7 @@ class app(object):
         self.__loop__ = None
         self.__conn_pump__ = None
         self.__db_pump__ = None
+        self.__physics_tick__:Callable[[float], None] = None
         
         self.is_idle = True
         self.config:dict = None
@@ -118,6 +119,15 @@ class app(object):
         _service = self.service_mgr.get_service(_entity.service_name)
         if _service is not None:
             _service.on_migrate(_entity)
+
+    def register_physics_tick(self, tick:Callable[[float], None]):
+        """注入可选的物理推进钩子；signature: ``tick(dt: float) -> None``。
+
+        例：``app().register_physics_tick(lambda dt: scene.step(dt))``。
+        默认 dt 与主循环 tick 节奏一致（0.033s）。
+        """
+        self.__physics_tick__ = tick
+        return self
 
     def register(self, entity_type:str, creator:Callable[[str, str, dict]]):
         self.__entity_create_method__[entity_type] = creator
@@ -205,6 +215,11 @@ class app(object):
                 self.poll_conn_msg()
             except Exception as ex:
                 self.error("poll Exception:{0}", ex)
+            if self.__physics_tick__ is not None:
+                try:
+                    self.__physics_tick__(0.033)
+                except Exception as ex:
+                    self.error("physics tick Exception:{0}", ex)
             tick = time.time() - start
             if tick < 0.033:
                 idle_count += 1
