@@ -1,8 +1,8 @@
-use scene::animation_graph::{
+use avatar::{
     AnimationState, AnimationStateMachine, Blend1DEntry, BlendTree, Transition,
     TransitionCondition,
 };
-use scene::AnimationClip;
+use avatar::AnimationClip;
 
 #[test]
 fn test_state_machine_single_state() {
