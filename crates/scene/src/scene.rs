@@ -6,11 +6,11 @@ use math::AABB;
 use render::MaterialLibrary;
 use render::{RenderQueue, SceneRenderer};
 
-use crate::animation::{
+use avatar::{
     AnimatedProperty, AnimationClip, AnimationOutputs, AnimationPlayer, SceneNode, Skin,
     quat_dot, quat_exp, quat_log, sample_clip, sample_indices, sample_quat, sample_vec3,
 };
-use crate::animation_graph::AnimationStateMachine;
+use avatar::AnimationStateMachine;
 use crate::{Octree, SceneObject};
 
 pub struct Scene {

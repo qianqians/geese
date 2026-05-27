@@ -168,7 +168,7 @@ pub fn sample_clip(clip: &AnimationClip, time: f32, nodes: &mut [SceneNode]) {
     }
 }
 
-pub(crate) fn sample_indices(inputs: &[f32], time: f32, interpolation: Interpolation) -> (usize, usize, f32, f32) {
+pub fn sample_indices(inputs: &[f32], time: f32, interpolation: Interpolation) -> (usize, usize, f32, f32) {
     if inputs.len() == 1 || time <= inputs[0] {
         return (0, 0, 0.0, 0.0);
     }
@@ -197,7 +197,7 @@ fn output_index(index: usize, interpolation: Interpolation) -> usize {
     }
 }
 
-pub(crate) fn sample_vec3(
+pub fn sample_vec3(
     values: &[Vector3<f32>],
     left: usize,
     right: usize,
@@ -226,7 +226,7 @@ pub(crate) fn sample_vec3(
     }
 }
 
-pub(crate) fn sample_quat(
+pub fn sample_quat(
     values: &[Quaternion<f32>],
     left: usize,
     right: usize,
@@ -272,11 +272,11 @@ pub(crate) fn sample_quat(
     }
 }
 
-pub(crate) fn quat_dot(a: Quaternion<f32>, b: Quaternion<f32>) -> f32 {
+pub fn quat_dot(a: Quaternion<f32>, b: Quaternion<f32>) -> f32 {
     a.s * b.s + a.v.dot(b.v)
 }
 
-pub(crate) fn quat_log(q: Quaternion<f32>) -> Vector3<f32> {
+pub fn quat_log(q: Quaternion<f32>) -> Vector3<f32> {
     let w = q.s.clamp(-1.0, 1.0);
     if w > 0.9999999 {
         Vector3::new(0.0, 0.0, 0.0)
@@ -287,7 +287,7 @@ pub(crate) fn quat_log(q: Quaternion<f32>) -> Vector3<f32> {
     }
 }
 
-pub(crate) fn quat_exp(v: Vector3<f32>) -> Quaternion<f32> {
+pub fn quat_exp(v: Vector3<f32>) -> Quaternion<f32> {
     let angle = v.magnitude();
     if angle < 1e-6 {
         Quaternion::new(1.0, 0.0, 0.0, 0.0)

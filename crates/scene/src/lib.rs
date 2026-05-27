@@ -1,12 +1,10 @@
-pub mod animation;
-pub mod animation_graph;
 mod material;
 pub mod octree;
 mod scene;
 pub mod scene_object;
 
-pub use animation::{AnimationClip, AnimationPlayer, SceneNode, Skin, Transform};
-pub use animation_graph::{
+pub use avatar::{AnimationClip, AnimationPlayer, SceneNode, Skin, Transform};
+pub use avatar::{
     ActiveAnimation, AnimationState, AnimationStateMachine, Blend1DEntry, BlendTree, Parameter,
     Transition, TransitionCondition,
 };
@@ -17,7 +15,7 @@ pub use scene_object::SceneObject;
 use asset::load;
 use std::collections::HashMap;
 
-use animation::{AnimatedProperty, AnimationChannel, AnimationOutputs, Interpolation};
+use avatar::{AnimatedProperty, AnimationChannel, AnimationOutputs, Interpolation};
 use cgmath::{
     InnerSpace, Matrix4, Point3, Quaternion, Vector2,
     Vector3, /* , InnerSpace, EuclideanSpace, Rad, Deg, PerspectiveFov */
