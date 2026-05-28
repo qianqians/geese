@@ -12,6 +12,14 @@
 - [client/engine/session.py](file://client/engine/session.py)
 - [client/engine/player.py](file://client/engine/player.py)
 - [client/engine/subentity.py](file://client/engine/subentity.py)
+- [client/engine/scene.py](file://client/engine/scene.py)
+- [client/engine/camera.py](file://client/engine/camera.py)
+- [client/lib/client/src/py/mod.rs](file://client/lib/client/src/py/mod.rs)
+- [client/lib/client/src/py/camera.rs](file://client/lib/client/src/py/camera.rs)
+- [client/lib/client/src/py/scene.rs](file://client/lib/client/src/py/scene.rs)
+- [client/lib/client/src/py/scene_object.rs](file://client/lib/client/src/py/scene_object.rs)
+- [client/lib/client/src/py/aabb.rs](file://client/lib/client/src/py/aabb.rs)
+- [client/lib/client/src/py/transform.rs](file://client/lib/client/src/py/transform.rs)
 - [expand/ts/package.json](file://expand/ts/package.json)
 - [expand/ts/engine/index.ts](file://expand/ts/engine/index.ts)
 - [sample/client/py/app.py](file://sample/client/py/app.py)
@@ -36,23 +44,29 @@
 
 ## 项目结构
 geese 客户端 SDK 在仓库中以多语言实现并共享同一套协议与引擎逻辑：
-- Rust 扩展：通过 Python 扩展模块形式导出 Rust 实现的客户端上下文与消息泵，便于在 Python 中调用。
+- Rust 扩展：顶层 cdylib `pyclient`（`client/src/lib.rs`）仅声明 `#[pymodule]`，调用子 crate `client::add_to_module` 统一注册所有 pyo3 类（网络、场景、相机）。
 - Python 引擎：提供应用入口、连接上下文、实体管理器、回调与消息轮询等高层封装。
+- 渲染场景与相机：`crates/scene` / `crates/camera` 启用 `pyo3` feature 后由 `client::add_to_module` 转发注册到 `pyclient`，覆盖 glTF 导入、八叉树可见性查询、动画推进、视锥体裁剪。
 - TypeScript 引擎：提供与 Python 引擎一致的接口与行为，用于浏览器或 Node.js 环境。
 - 协议层：统一的 Thrift 协议与消息模型，支撑跨语言通信。
+- 隔离说明：server 侧 `pyhub` 仅提供物理（rapier）与 Hub 运行时，client 侧 `pyclient` 仅提供网络与渲染场景；二者完全隔离。
 
 ```mermaid
 graph TB
 subgraph "Rust 扩展"
-RS_LIB["client/lib/client/src/lib.rs"]
-RS_MOD["client/src/lib.rs"]
+RS_MOD["client/src/lib.rs<br/>pyclient #[pymodule]"]
+RS_LIB["client/lib/client/src/lib.rs<br/>add_to_module"]
 RS_DEPS["client/lib/client/Cargo.toml"]
+SCENE["crates/scene::py"]
+CAM["crates/camera::py"]
 end
 subgraph "Python 引擎"
 PY_APP["client/engine/app.py"]
 PY_CTX["client/engine/context.py"]
 PY_PLAYER["client/engine/player.py"]
 PY_SUB["client/engine/subentity.py"]
+PY_SCENE["client/engine/scene.py"]
+PY_CAM["client/engine/camera.py"]
 PY_INIT["client/engine/__init__.py"]
 end
 subgraph "TypeScript 引擎"
@@ -62,12 +76,18 @@ end
 subgraph "协议"
 PROTO["crates/proto/src/lib.rs"]
 end
-RS_LIB --> PROTO
 RS_MOD --> RS_LIB
+RS_LIB --> PROTO
+RS_LIB --> SCENE
+RS_LIB --> CAM
 PY_APP --> PY_CTX
 PY_APP --> PY_PLAYER
 PY_APP --> PY_SUB
 PY_INIT --> PY_APP
+PY_INIT --> PY_SCENE
+PY_INIT --> PY_CAM
+PY_SCENE --> RS_MOD
+PY_CAM --> RS_MOD
 TS_IDX --> PROTO
 TS_PKG --> TS_IDX
 ```
@@ -111,13 +131,26 @@ TS_PKG --> TS_IDX
 - 消息泵与轮询
   - Python：ClientPump 轮询连接消息，驱动回调执行；应用主循环按帧节流。
   - Rust：GateMsgHandle 提供 poll 钩子，配合 Python 扩展进行消息处理。
+- pyo3 注册入口
+  - `pyclient` cdylib（`client/src/lib.rs`）：顶层 `#[pymodule]` 函数，仅调用 `client::add_to_module(m)`，不直接注册 pyclass。
+  - `client::add_to_module`（`client/lib/client/src/lib.rs`）：集中注册 `ClientContext` / `ClientPump`，并转发 `client::py::add_to_module(m)` 注册全部渲染相关 pyclass。
+  - `client::py`（`client/lib/client/src/py/mod.rs`）：作为渲染层 pyo3 包装的统一入口，集中注册 `Plane` / `Frustum` / `AABB` / `Transform` / `SceneObject` / `SceneNode` / `Scene` 7 个 pyclass。底层 `crates/camera`、`crates/scene` **零 pyo3 依赖**，仅暴露纯 Rust API。
+- 渲染场景与相机
+  - `Scene` / `SceneNode` / `SceneObject` / `AABB` / `Transform`：glTF 导入、八叉树可见性查询、动画推进、世界矩阵访问。
+  - `Frustum` / `Plane`：从 View×Projection 矩阵构造视锥体，提供点 / 球 / AABB 的包含与相交查询。
 
 **章节来源**
 - [client/engine/app.py:40-157](file://client/engine/app.py#L40-L157)
 - [client/engine/context.py:4-39](file://client/engine/context.py#L4-L39)
-- [client/lib/client/src/lib.rs:27-116](file://client/lib/client/src/lib.rs#L27-L116)
+- [client/src/lib.rs:1-7](file://client/src/lib.rs#L1-L7)
+- [client/lib/client/src/lib.rs:27-131](file://client/lib/client/src/lib.rs#L27-L131)
 - [client/engine/player.py:9-108](file://client/engine/player.py#L9-L108)
 - [client/engine/subentity.py:9-89](file://client/engine/subentity.py#L9-L89)
+- [client/engine/scene.py:1-35](file://client/engine/scene.py#L1-L35)
+- [client/engine/camera.py:1-12](file://client/engine/camera.py#L1-L12)
+- [client/lib/client/src/py/mod.rs:1-41](file://client/lib/client/src/py/mod.rs#L1-L41)
+- [client/lib/client/src/py/camera.rs:1-128](file://client/lib/client/src/py/camera.rs#L1-L128)
+- [client/lib/client/src/py/scene.rs:1-212](file://client/lib/client/src/py/scene.rs#L1-L212)
 
 ## 架构总览
 下图展示客户端 SDK 的三层结构：协议层、引擎层、应用层。Rust 扩展作为引擎层的核心，Python/TS 引擎提供高层 API 与运行时环境。
@@ -364,7 +397,7 @@ TS_APP --> DEPS["依赖<br/>package.json"]
 ## 依赖分析
 - Rust 扩展依赖
   - tokio、async-trait、thrift、serde、uuid 等，提供异步网络与序列化能力。
-  - 内部依赖 crates/net、wss、tcp、proto、queue、close_handle、asset、camera、math、render、scene 等，形成完整客户端运行时。
+  - 内部依赖 crates/net、wss、tcp、proto、queue、close_handle、asset、camera、math、render、scene 等，其中 `camera`、`scene` 为零 pyo3 依赖的纯 Rust crate，pyo3 包装全部集中在 `client/lib/client/src/py/`，形成完整客户端运行时。
 - Python 扩展依赖
   - pyo3、tokio、thrift、serde_json、uuid、tracing 等，桥接 Rust 与 Python。
 - TypeScript 依赖

@@ -21,6 +21,7 @@ use proto::common::{
 };
 
 mod client;
+pub mod py;
 
 use crate::client::{Context, GateMsgHandle, StdMutex};
 
@@ -113,4 +114,20 @@ impl ClientPump {
         let py = slf.py();
         GateMsgHandle::poll(slf.msg_handle.clone(), py, py_handle)
     }
+}
+
+/// 把客户端相关的全部 pyclass / pyfunction 挂到给定 Python 模块。
+///
+/// 由宿主进程的顶层 pymodule（`client/src/lib.rs` 中的 `pyclient`）调用。
+/// 包含：
+/// - 网络层：[`ClientContext`] / [`ClientPump`]
+/// - 渲染层（相机、场景、GLTF、八叉树、动画）：`py::*`
+///
+/// 渲染相关的 PyClass 全部定义在本子 crate 的 [`py`] 模块中，底层
+/// `crates/camera` / `crates/scene` 保持零 pyo3 依赖。
+pub fn add_to_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<ClientContext>()?;
+    m.add_class::<ClientPump>()?;
+    py::add_to_module(m)?;
+    Ok(())
 }

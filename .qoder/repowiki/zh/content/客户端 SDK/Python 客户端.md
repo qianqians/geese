@@ -11,18 +11,22 @@
 - [client/engine/receiver.py](file://client/engine/receiver.py)
 - [client/engine/callback.py](file://client/engine/callback.py)
 - [client/engine/base_entity.py](file://client/engine/base_entity.py)
+- [client/engine/scene.py](file://client/engine/scene.py)
+- [client/engine/camera.py](file://client/engine/camera.py)
 - [sample/client/py/engine/login_cli.py](file://sample/client/py/engine/login_cli.py)
 - [sample/client/py/engine/get_rank_cli.py](file://sample/client/py/engine/get_rank_cli.py)
 - [sample/client/py/engine/heartbeat_cli.py](file://sample/client/py/engine/heartbeat_cli.py)
 - [sample/client/py/engine/common_cli.py](file://sample/client/py/engine/common_cli.py)
-- [crates/physics/src/py/mod.rs](file://crates/physics/src/py/mod.rs)
-- [crates/physics/src/py/world.rs](file://crates/physics/src/py/world.rs)
-- [crates/physics/src/py/body.rs](file://crates/physics/src/py/body.rs)
-- [crates/physics/src/py/shape.rs](file://crates/physics/src/py/shape.rs)
-- [crates/physics/src/py/query.rs](file://crates/physics/src/py/query.rs)
-- [server/engine/physics.py](file://server/engine/physics.py)
-- [server/engine/tests/test_physics.py](file://server/engine/tests/test_physics.py)
-- [server/src/hub_lib.rs](file://server/src/hub_lib.rs)
+- [client/Cargo.toml](file://client/Cargo.toml)
+- [client/src/lib.rs](file://client/src/lib.rs)
+- [client/lib/client/Cargo.toml](file://client/lib/client/Cargo.toml)
+- [client/lib/client/src/lib.rs](file://client/lib/client/src/lib.rs)
+- [client/lib/client/src/py/mod.rs](file://client/lib/client/src/py/mod.rs)
+- [client/lib/client/src/py/scene.rs](file://client/lib/client/src/py/scene.rs)
+- [client/lib/client/src/py/scene_object.rs](file://client/lib/client/src/py/scene_object.rs)
+- [client/lib/client/src/py/aabb.rs](file://client/lib/client/src/py/aabb.rs)
+- [client/lib/client/src/py/transform.rs](file://client/lib/client/src/py/transform.rs)
+- [client/lib/client/src/py/camera.rs](file://client/lib/client/src/py/camera.rs)
 </cite>
 
 ## 目录
@@ -40,7 +44,7 @@
 ## 简介
 本指南面向使用 Python 客户端 SDK 的开发者，系统讲解客户端核心架构、上下文与连接管理、异步编程模型（事件循环与协程调度）、登录与重连流程、实体管理 API、消息处理机制（全局方法注册、回调绑定、自定义消息处理），以及错误处理、网络异常恢复与性能优化建议。文档同时提供可直接参考的实际示例路径，帮助快速集成到实际项目中。
 
-**更新** 本版本新增了对物理系统支持的说明，包括物理 API 的 Python 绑定和使用示例。
+**更新** 本版本将渲染相关模块（scene / 八叉树 / GLTF 资源导入 / camera）通过 pyo3 暴露到 Python 层，并将所有客户端 pyo3 注册逻辑集中到 `client/lib/client/src/lib.rs::add_to_module`，顶层 cdylib `pyclient` 仅负责声明 `#[pymodule]` 入口；**注意** 原文档将 server 侧的 `pyhub` 物理系统误归入客户端 SDK，本次已订正——physics 仅在 server 侧使用，客户端不引入。
 
 ## 项目结构
 客户端 SDK 的核心位于 client/engine 目录，采用"引擎层"组织方式：app 负责应用生命周期与线程/事件循环协调；context 封装底层连接上下文；conn_msg_handle 处理来自网关/Hub 的消息分发；player/subentity/receiver 管理不同类型的实体；callback 提供 RPC 回调与超时控制；基础实体类 base_entity 统一实体标识。
@@ -96,7 +100,7 @@ SUB --> BASE
 - 回调与超时
   - callback 提供响应回调与错误回调注册，以及基于定时器的超时触发。
 
-**更新** 新增物理系统支持，通过 pyo3 绑定提供 Python 友好的物理 API，包括 World、Scene、Body、Shape 等核心类。
+**更新** 新增渲染相关模块（scene / 八叉树 / GLTF 资源导入 / camera）的 pyo3 导出，统一封装入 `client/lib/client::add_to_module`。
 
 **章节来源**
 - [client/engine/app.py:40-157](file://client/engine/app.py#L40-L157)
@@ -308,120 +312,112 @@ base_entity <|-- receiver
 **章节来源**
 - [client/engine/callback.py:5-23](file://client/engine/callback.py#L5-L23)
 
-### 物理系统：Python 绑定与 API
-**新增** 客户端现支持物理系统，通过 pyo3 绑定提供完整的 Python API。
+### 渲染场景：Python 绑定与 API
+**新增** 客户端将渲染所需的 scene / 八叉树 / GLTF 资源导入 / camera 模块通过 pyo3 暴露给 Python 层。Python 业务代码可直接构造视锥体、导入 glTF、做可见性裁剪与动画推进。
 
-#### 物理系统架构
-物理系统采用 Rust 实现高性能物理引擎，通过 pyo3 暴露 Python 接口：
+#### pyo3 导出架构
+所有 pyo3 类的注册逻辑集中在 `client/lib/client::add_to_module`，顶层 cdylib（`client/src/lib.rs::pyclient`）仅声明 `#[pymodule]` 入口并调用该函数；与 server 侧 `pyhub` 模式对称。
 
 ```mermaid
 graph TB
-subgraph "物理系统架构"
-PYMOD["pyhub 模块<br/>Python 绑定入口"]
-WORLD["PyPhysicsWorld<br/>物理世界"]
-SHAPE["PyShape<br/>形状描述"]
-BODY["PyBody<br/>刚体"]
-RAY["PyRayHit<br/>射线命中"]
-COL["PyCollisionEvent<br/>碰撞事件"]
-PYAPI["engine.physics<br/>Python API 封装"]
-END
-PYMOD --> WORLD
-PYMOD --> SHAPE
-PYMOD --> BODY
-PYMOD --> RAY
-PYMOD --> COL
-PYAPI --> PYMOD
+PYMOD["pyclient #[pymodule]<br/>client/src/lib.rs"]
+ADD["client::add_to_module<br/>client/lib/client/src/lib.rs"]
+NET["网络层<br/>ClientContext / ClientPump"]
+SCENE["scene::py::add_to_module<br/>Scene / SceneNode / SceneObject / AABB / Transform"]
+CAM["camera::py::add_to_module<br/>Frustum / Plane"]
+PYWRAP["engine.scene / engine.camera<br/>Python 薄封装"]
+PYMOD --> ADD
+ADD --> NET
+ADD --> SCENE
+ADD --> CAM
+PYWRAP --> PYMOD
 ```
 
 **图表来源**
-- [crates/physics/src/py/mod.rs:18-27](file://crates/physics/src/py/mod.rs#L18-L27)
-- [server/src/hub_lib.rs:9](file://server/src/hub_lib.rs#L9)
+- [client/src/lib.rs:1-7](file://client/src/lib.rs#L1-L7)
+- [client/lib/client/src/lib.rs:118-132](file://client/lib/client/src/lib.rs#L118-L132)
+- [client/lib/client/src/py/mod.rs:1-41](file://client/lib/client/src/py/mod.rs#L1-L41)
+- [client/lib/client/src/py/camera.rs:46-127](file://client/lib/client/src/py/camera.rs#L46-L127)
 
 #### 核心类与方法
 
-##### PhysicsWorld（物理世界）
-- 创建和销毁场景：create_scene(), destroy_scene()
-- 场景管理：contains_scene(), scene_count()
-- 步进控制：step()（通过 Scene 调用）
+##### Scene（场景容器）
+- 静态构造：`Scene.import_gltf(path, max_objects=8, max_depth=6)` 导入 `.gltf` / `.glb`
+- 数量查询：`node_count()` / `object_count()` / `animation_count()` / `skin_count()`
+- 节点/对象访问：`get_node(idx)` / `get_object(idx)` / `root_nodes()` / `all_objects()`
+- 可见性查询（基于内置八叉树）：`visible_objects(frustum)`
+- 动画：`animation_index(name)` / `animation_duration(idx)` / `animation_names()` / `update_animation(clip_index, time, dt, ...)`
+- 变换：`update_world_transforms()` / `rebuild_octree()` / `bounds()`
+- 内部使用 `Arc<Mutex<Scene>>` 串行化访问
 
-##### PhysicsShape（形状描述）
-- 几何形状工厂：cuboid(), ball(), capsule(), cylinder()
-- 三角网格：trimesh(vertices, indices)
-- 不可变值类型，用于刚体创建
+##### SceneObject（场景对象，值视图）
+- 元数据：`entity_id` / `node` / `material_handle` / `skin_handle`
+- 包围盒：`local_aabb` / `aabb` / `center`
+- 矩阵：`model_matrix` / `normal_matrix` / `joint_matrices`（行主序 4x4）
+- 网格数据：`vertex_count()` / `index_count()` / `positions()` / `normals()` / `uvs()` / `indices()`
 
-##### PhysicsBody（刚体）
-- 动态刚体：add_dynamic(world, scene_id, shape, ...)
-- 固定刚体：add_fixed(world, scene_id, shape, ...)
-- 运动学刚体：add_kinematic(world, scene_id, shape, ...)
-- 属性访问：position(), rotation(), linvel(), angvel()
-- 运动控制：set_translation(), set_rotation(), set_linvel(), set_angvel()
-- 力学操作：apply_impulse(), apply_torque_impulse()
-- 生命周期：remove(), is_alive()
+##### SceneNode（场景节点，值视图）
+- 拓扑：`id` / `parent` / `children` / `objects`
+- 变换：`base_transform` / `local_transform` / `world_transform`
 
-##### Scene（场景封装）
-- 场景管理：create_scene(), destroy_scene()
-- 物理步进：step(dt)
-- 重力设置：set_gravity(gravity)
-- 刚体创建：add_dynamic(), add_fixed(), add_kinematic()
-- 射线检测：cast_ray(origin, direction, max_toi, solid=True)
-- 碰撞事件：drain_collision_events()
+##### AABB / Transform
+- `AABB.min` / `max` / `center` / `size`，`contains_point` / `intersects`
+- `Transform.translation` / `rotation`（四元数 (x,y,z,w)） / `scale` / `matrix()`
 
-##### World（世界封装）
-- 进程级单例：get_world()
-- 场景创建：create_scene(gravity=(0.0, -9.81, 0.0))
-- 场景管理：destroy_scene(), contains_scene(), scene_count()
+##### Frustum（视锥体）
+- 静态构造：`Frustum.from_view_projection(matrix)`（行主序 4x4）/ `from_view_projection_column_major(matrix)`
+- 包含/相交查询：`contains_point` / `contains_sphere` / `contains_aabb` / `intersects_aabb`
+- 平面访问：`planes()` 返回 6 个 `Plane`（左/右/下/上/近/远）
 
 **章节来源**
-- [crates/physics/src/py/world.rs:37-51](file://crates/physics/src/py/world.rs#L37-L51)
-- [crates/physics/src/py/shape.rs:24-87](file://crates/physics/src/py/shape.rs#L24-L87)
-- [crates/physics/src/py/body.rs:75-346](file://crates/physics/src/py/body.rs#L75-L346)
-- [server/engine/physics.py:53-275](file://server/engine/physics.py#L53-L275)
+- [client/lib/client/src/lib.rs:118-132](file://client/lib/client/src/lib.rs#L118-L132)
+- [client/lib/client/src/py/scene.rs:38-211](file://client/lib/client/src/py/scene.rs#L38-L211)
+- [client/lib/client/src/py/scene_object.rs:14-207](file://client/lib/client/src/py/scene_object.rs#L14-L207)
+- [client/lib/client/src/py/aabb.rs:9-66](file://client/lib/client/src/py/aabb.rs#L9-L66)
+- [client/lib/client/src/py/transform.rs:9-69](file://client/lib/client/src/py/transform.rs#L9-L69)
+- [client/lib/client/src/py/camera.rs:55-127](file://client/lib/client/src/py/camera.rs#L55-L127)
 
 #### 使用示例
-以下示例展示了物理系统的典型用法：
+以下示例展示渲染场景 API 的典型用法：
 
 ```python
-# 创建物理世界和场景
-from engine.physics import World, Shape, get_world
+from client.engine.scene import Scene
+from client.engine.camera import Frustum
 
-world = get_world()
-scene = world.create_scene((0.0, -9.81, 0.0))
+# 1. 导入 glTF 场景（构建节点树 + 八叉树）
+scene = Scene.import_gltf("assets/level.glb", max_objects=8, max_depth=6)
+print(scene)  # Scene(nodes=..., objects=..., animations=..., skins=...)
 
-# 创建几何形状
-shape = Shape.cuboid(0.5, 0.5, 0.5)
+# 2. 视锥体可见性裁剪
+vp = build_view_projection_matrix(...)        # 行主序 4x4 嵌套 list
+frustum = Frustum.from_view_projection(vp)
+for obj in scene.visible_objects(frustum):
+    print(obj.entity_id, obj.center, obj.aabb.min, obj.aabb.max)
 
-# 创建动态刚体
-body = scene.add_dynamic(
-    shape,
-    position=(0.0, 10.0, 0.0),
-    density=1.0,
-    friction=0.5,
-    restitution=0.0
-)
+# 3. 推进单条动画并刷新世界矩阵 + 八叉树
+clip = scene.animation_index("Run") or 0
+time = 0.0
+for _ in range(60):
+    time, _ = scene.update_animation(clip, time=time, dt=1.0 / 60.0)
 
-# 物理步进
-for i in range(60):
-    scene.step(1.0/60.0)
-    
-# 查询位置
-x, y, z = body.position()
-print(f"Body position: ({x}, {y}, {z})")
-
-# 射线检测
-hit = scene.cast_ray((0.0, 5.0, 0.0), (0.0, -1.0, 0.0), 100.0)
-if hit:
-    print(f"Hit at distance: {hit.toi}")
+# 4. 取节点世界变换矩阵
+root_ids = scene.root_nodes()
+for nid in root_ids:
+    node = scene.get_node(nid)
+    print(node.id, node.world_transform)
 ```
 
 **章节来源**
-- [server/engine/tests/test_physics.py:26-74](file://server/engine/tests/test_physics.py#L26-L74)
+- [client/engine/scene.py:1-35](file://client/engine/scene.py#L1-L35)
+- [client/engine/camera.py:1-12](file://client/engine/camera.py#L1-L12)
+- [client/lib/client/src/py/scene.rs:38-211](file://client/lib/client/src/py/scene.rs#L38-L211)
 
 ## 依赖分析
 - app 依赖 context、conn_msg_handle、实体管理器与事件循环。
 - player/subentity/receiver 依赖 app 以访问 context 与回调注册。
 - conn_msg_handle 依赖 app 的实体管理器与全局方法表。
 - callback 作为轻量工具被 player/subentity 使用。
-- **更新** 物理系统依赖 pyo3 绑定，通过 hub_lib.rs 暴露到 Python 环境。
+- **更新** 渲染场景模块（`engine.scene` / `engine.camera`）通过 `pyclient` cdylib 加载，其 pyo3 注册实体由 `client/lib/client::add_to_module` 统一处理，进一步依赖 `crates/scene` 与 `crates/camera` 的 `pyo3` feature。
 
 ```mermaid
 graph LR
@@ -436,8 +432,10 @@ SUB["subentity.py"] --> APP
 RCV["receiver.py"] --> APP
 PLR --> CBK["callback.py"]
 SUB --> CBK
-PHYS["engine.physics"] --> PYHUB["pyhub 模块"]
-PYHUB --> PYMOD["pyo3 绑定"]
+SCN["engine.scene / engine.camera"] --> PYCLIENT["pyclient cdylib"]
+PYCLIENT --> ADD["client::add_to_module"]
+ADD --> SCENECRATE["crates/scene::py"]
+ADD --> CAMCRATE["crates/camera::py"]
 ```
 
 **图表来源**
@@ -447,7 +445,8 @@ PYHUB --> PYMOD["pyo3 绑定"]
 - [client/engine/subentity.py:9-89](file://client/engine/subentity.py#L9-L89)
 - [client/engine/receiver.py:7-48](file://client/engine/receiver.py#L7-L48)
 - [client/engine/callback.py:5-23](file://client/engine/callback.py#L5-L23)
-- [server/src/hub_lib.rs:9](file://server/src/hub_lib.rs#L9)
+- [client/src/lib.rs:1-7](file://client/src/lib.rs#L1-L7)
+- [client/lib/client/src/lib.rs:118-132](file://client/lib/client/src/lib.rs#L118-L132)
 
 **章节来源**
 - [client/engine/app.py:40-157](file://client/engine/app.py#L40-L157)
@@ -458,12 +457,12 @@ PYHUB --> PYMOD["pyo3 绑定"]
 - 异步调度：通过 asyncio.run_coroutine_threadsafe 在事件循环线程安全地提交协程任务。
 - 消息批处理：conn_msg_handle 内部按类型分派，减少不必要的查找成本。
 - 实体管理：player/subentity/receiver 使用字典索引，O(1) 查找与更新。
-- **更新** 物理系统采用 Rust 实现，性能优异；Python API 仅做薄封装，避免额外开销。
+- **更新** 渲染场景模块（scene / 八叉树 / GLTF / camera）采用 Rust 实现，Python API 仅做薄封装；可见性裁剪由 Rust 八叉树完成，避免在 Python 中遍历大场景。
 - 建议
   - 合理设置心跳周期与网络超时，避免频繁重连。
   - 控制回调数量与生命周期，及时释放不再使用的回调。
   - 对高频通知进行去抖/合并，降低 UI 或业务层压力。
-  - 物理步进频率与游戏帧率匹配，避免过高的计算负载。
+  - 视锥体每帧只构造一次后复用 `Frustum.from_view_projection`；动画推进与 `update_world_transforms` / `rebuild_octree` 按需调用，避免每帧无谓重建八叉树。
 
 ## 故障排查指南
 - 连接失败
@@ -477,11 +476,11 @@ PYHUB --> PYMOD["pyo3 绑定"]
   - 确认已通过 reg_hub_notify_callback 注册对应方法名的通知回调。
 - 被踢下线/迁移
   - on_kick_off/on_transfer_complete 会触发关闭与事件回调，请在上层做资源清理与重连策略。
-- **更新** 物理系统相关问题
-  - 确认 pyhub 模块已正确加载，物理类可用。
-  - 检查场景 ID 和刚体 ID 的有效性。
-  - 验证形状参数的合理性（如半径必须为正数）。
-  - 注意物理坐标系与游戏坐标的转换。
+- **更新** 渲染场景相关问题
+  - 确认已编译并加载 `pyclient` cdylib（顶层 `client/src/lib.rs`），`engine.scene` / `engine.camera` 应能正常 import。
+  - `Scene.import_gltf` 失败时检查文件路径与 glTF/GLB 合法性；启用 `RUST_LOG=info` 可看到 `crates/scene` 内部日志。
+  - 视锥体输入矩阵需为行主序 4×4 嵌套 list；如果业务侧使用列主序请改用 `Frustum.from_view_projection_column_major`。
+  - 动画推进后必须调用 `scene.update_world_transforms()`（必要时再 `rebuild_octree()`）才能让 `visible_objects` 命中最新世界矩阵。
 
 **章节来源**
 - [client/engine/conn_msg_handle.py:27-35](file://client/engine/conn_msg_handle.py#L27-L35)
@@ -493,7 +492,9 @@ PYHUB --> PYMOD["pyo3 绑定"]
 ## 结论
 该 Python 客户端 SDK 通过 app/context/conn_msg_handle 的清晰分层，结合 player/subentity/receiver 的实体模型与 callback 的回调体系，提供了稳定可靠的连接、认证、实体管理与消息处理能力。配合事件循环与线程隔离，既满足异步编程需求，又保持了良好的可维护性与扩展性。
 
-**更新** 新增的物理系统支持进一步增强了客户端的功能，通过 pyo3 绑定提供高性能的物理模拟能力，包括刚体动力学、碰撞检测、射线检测等功能，为游戏开发提供了完整的物理仿真解决方案。
+**更新** 新增的渲染场景模块（scene / 八叉树 / GLTF 资源导入 / camera）通过 pyo3 暴露到 Python 层，配合集中式 `client::add_to_module` 注册架构，使 Python 业务代码可以直接驱动 glTF 场景导入、动画推进、视锥体可见性裁剪等高性能渲染能力。
+
+**注意** server 侧 `pyhub` 中存在的物理系统（rapier）**不属于客户端 SDK**，本文档不再描述其 API；如需了解物理仿真，请参阅 `服务器架构` 与 `API 参考` 中的 server 侧文档。
 
 ## 附录：使用示例与最佳实践
 
@@ -580,70 +581,81 @@ D --> E
 - [client/engine/callback.py:13-23](file://client/engine/callback.py#L13-L23)
 - [client/engine/conn_msg_handle.py:27-35](file://client/engine/conn_msg_handle.py#L27-L35)
 
-### 物理系统使用指南
-**新增** 物理系统的完整使用指南：
+### 渲染场景使用指南
+**新增** 渲染场景模块在 Python 侧的完整使用指南，覆盖资源加载、可见性查询、动画推进与节点矩阵访问：
 
-#### 基础使用
+#### 基础使用：导入 glTF 与查询节点
 ```python
-from engine.physics import World, Shape, get_world
+from client.engine.scene import Scene
 
-# 获取世界实例
-world = get_world()
-# 创建场景（设置重力）
-scene = world.create_scene((0.0, -9.81, 0.0))
+# 1. 导入 glTF / GLB 场景；同时构建八叉树用于可见性查询
+scene = Scene.import_gltf("assets/level.glb", max_objects=8, max_depth=6)
 
-# 创建形状
-shape = Shape.cuboid(1.0, 1.0, 1.0)
+print("nodes:", scene.node_count())
+print("objects:", scene.object_count())
+print("animations:", scene.animation_count())
 
-# 创建刚体
-body = scene.add_dynamic(shape, position=(0.0, 10.0, 0.0))
+# 2. 遍历根节点 → 子节点 → 对象
+for nid in scene.root_nodes():
+    node = scene.get_node(nid)
+    print(node.id, node.world_transform)  # 行主序 4x4
+    for oid in node.objects:
+        obj = scene.get_object(oid)
+        print("  -", obj.entity_id, obj.aabb.min, obj.aabb.max)
 ```
 
-#### 物理步进
+#### 视锥体可见性裁剪
 ```python
-# 每帧调用
-def game_loop():
-    scene.step(1.0/60.0)  # 60 FPS
-    
-    # 获取刚体状态
-    pos = body.position()
-    vel = body.linvel()
+from client.engine.camera import Frustum
+
+# vp 必须是行主序 4x4 嵌套 list；如使用列主序请改用 from_view_projection_column_major
+vp = build_view_projection_matrix(...)
+frustum = Frustum.from_view_projection(vp)
+
+for obj in scene.visible_objects(frustum):
+    print(obj.entity_id, obj.center)
 ```
 
-#### 射线检测
+#### 动画推进与世界矩阵刷新
 ```python
-# 射线检测
-hit = scene.cast_ray(
-    origin=(0.0, 10.0, 0.0),
-    direction=(0.0, -1.0, 0.0),
-    max_toi=100.0
-)
-if hit:
-    print(f"Hit at distance: {hit.toi}")
-    print(f"Normal: {hit.normal}")
+clip_idx = scene.animation_index("Run") or 0
+time = 0.0
+for _ in range(60):
+    # update_animation 内部会调用 update_world_transforms
+    time, _ = scene.update_animation(clip_idx, time=time, dt=1.0 / 60.0)
+
+# 业务直接修改 transform 后，需要手动刷新
+scene.update_world_transforms()
+scene.rebuild_octree()
 ```
 
-#### 碰撞事件处理
+#### 平面级查询（自定义裁剪/触发）
 ```python
-# 获取碰撞事件
-events = scene.drain_collision_events()
-for event in events:
-    print(f"Collision between bodies {event.body_a} and {event.body_b}")
+for plane in frustum.planes():
+    print(plane.normal, plane.distance)
+
+# 单点 / AABB 查询
+from client.engine.scene import AABB
+aabb = scene.get_object(0).aabb
+print(frustum.contains_aabb(aabb))
 ```
 
 **章节来源**
-- [server/engine/physics.py:53-275](file://server/engine/physics.py#L53-L275)
-- [server/engine/tests/test_physics.py:26-74](file://server/engine/tests/test_physics.py#L26-L74)
+- [client/engine/scene.py:1-35](file://client/engine/scene.py#L1-L35)
+- [client/engine/camera.py:1-12](file://client/engine/camera.py#L1-L12)
+- [client/lib/client/src/py/scene.rs:38-211](file://client/lib/client/src/py/scene.rs#L38-L211)
+- [client/lib/client/src/py/scene_object.rs:14-207](file://client/lib/client/src/py/scene_object.rs#L14-L207)
+- [client/lib/client/src/py/camera.rs:55-127](file://client/lib/client/src/py/camera.rs#L55-L127)
 
 ### 实际项目集成要点
 - 初始化顺序：context → app → 实体管理器 → 事件循环线程。
 - 生命周期管理：在应用退出时调用 app.close()，确保资源释放。
 - 参数编码：login/reconnect/request_hub_service 的参数需按 SDK 规范序列化为二进制。
-- **更新** 物理系统集成：
-  - 确保 pyhub 模块正确安装和导入。
-  - 在服务器端启用物理系统支持。
-  - 合理配置物理步进频率与游戏帧率。
-  - 注意物理单位与游戏单位的转换。
+- **更新** 渲染场景集成：
+  - 顶层 cdylib `pyclient` 由 `client/src/lib.rs` 声明 `#[pymodule]`，全部注册逻辑集中在子 crate `client::add_to_module` 中；要新增 pyclass 请改 `client/lib/client/src/py/` 下的文件并在 `client::py::add_to_module` 里注册，不要在顶层 cdylib 内直接注册。
+  - 渲染层 PyClass（`Plane` / `Frustum` / `AABB` / `Transform` / `SceneObject` / `SceneNode` / `Scene`）全部集中在 `client/lib/client/src/py/`；底层 `crates/camera`、`crates/scene` **零 pyo3 依赖**，仅暴露纯 Rust API，可被任意不含 pyo3 的上层复用。
+  - server 侧 `pyhub` 不引入 scene/camera；client 侧 `pyclient` 不引入 physics，二者保持完全隔离。
+  - 行主序 vs 列主序：所有矩阵在 Python 边界都使用行主序 `[row][col]`；底层 `cgmath` 是列主序，已在 `client/lib/client/src/py/` 中统一转置。
 - 示例参考
   - 通用协议编解码与枚举：[sample/client/py/engine/common_cli.py:9-67](file://sample/client/py/engine/common_cli.py#L9-L67)
   - 登录调用与回调封装：[sample/client/py/engine/login_cli.py:12-46](file://sample/client/py/engine/login_cli.py#L12-L46)
