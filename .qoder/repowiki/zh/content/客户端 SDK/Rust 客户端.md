@@ -5,8 +5,6 @@
 - [lib.rs](file://client/lib/client/src/lib.rs)
 - [client.rs](file://client/lib/client/src/client.rs)
 - [lib.rs（Python 扩展）](file://client/Cargo.toml)
-- [lib.rs（顶层 cdylib）](file://client/src/lib.rs)
-- [Cargo.toml（子 client）](file://client/lib/client/Cargo.toml)
 - [lib.rs（网络抽象）](file://crates/net/src/lib.rs)
 - [lib.rs（TCP 连接）](file://crates/tcp/src/lib.rs)
 - [tcp_connect.rs](file://crates/tcp/src/tcp_connect.rs)
@@ -41,20 +39,16 @@
 
 ## 项目结构
 客户端 SDK 由以下关键部分组成：
-- Python 扩展层：顶层 cdylib `pyclient`（`client/src/lib.rs`）仅声明 `#[pymodule]`，调用子 crate `client/lib/client::add_to_module`统一注册所有 pyo3 类（网络、场景、相机）
+- Python 扩展层：通过 PyO3 暴露出 Rust 核心能力，供 Python 层调用
 - Rust 核心层：负责网络连接、消息编解码、事件队列与回调分发
 - 协议层：基于 Thrift 的网关与客户端消息类型定义
 - 网络抽象层：统一 Reader/Writer 抽象，屏蔽 TCP/WSS 差异
-- 场景与相机层（`crates/scene` / `crates/camera`）：零 pyo3 依赖的纯 Rust crate，pyo3 包装全部集中在 `client/lib/client/src/py/` 下，由 `client::py::add_to_module` 统一注册到 `pyclient`
 - 示例与样例：演示登录、心跳、RPC 调用等典型流程
 
 ```mermaid
 graph TB
 subgraph "Python 扩展层"
-PYMOD["pyclient #[pymodule]<br/>client/src/lib.rs"]
-ADD["client::add_to_module<br/>client/lib/client/src/lib.rs"]
 PYC["ClientContext<br/>ClientPump"]
-SCN["client::py<br/>(client/lib/client/src/py)"]
 end
 subgraph "Rust 核心层"
 CTX["Context<br/>连接/发送/消息句柄"]
@@ -71,9 +65,6 @@ GATE["GateClientService<br/>GateCall*"]
 CLIENT["ClientService<br/>Create/Refresh/Delete/KickOff/..."]
 COMMON["Msg/RpcRsp/RpcErr"]
 end
-PYMOD --> ADD
-ADD --> PYC
-ADD --> SCN
 PYC --> CTX
 CTX --> GP
 CTX --> GMH
@@ -102,9 +93,6 @@ CLIENT --> COMMON
 - [client.rs:1-356](file://client/lib/client/src/client.rs#L1-L356)
 
 ## 核心组件
-- pyclient cdylib (`client/src/lib.rs`)：顶层 `#[pymodule]` 入口，仅调用 `client::add_to_module`
-- client::add_to_module (`client/lib/client/src/lib.rs`)：统一注册 `ClientContext` / `ClientPump` + `client::py::add_to_module`（包含 `Plane` / `Frustum` / `AABB` / `Transform` / `SceneObject` / `SceneNode` / `Scene`）
-- client::py (`client/lib/client/src/py/mod.rs`)：渲染层 pyo3 包装统一入口，底层 `crates/camera` / `crates/scene` 零 pyo3 依赖
 - ClientContext：Python 可调用的客户端上下文，封装连接、登录、RPC、心跳等入口
 - ClientPump：轮询消息的桥接对象，将底层事件派发给 Python 回调
 - Context：Rust 内部上下文，持有 GateProxy、消息句柄与 Tokio 运行时
