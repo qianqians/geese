@@ -7,6 +7,6 @@ pub fn pyhub(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<HubConnMsgPump>()?;
     m.add_class::<HubDBMsgPump>()?;
     physics::py::add_to_module(m)?;
-    aoi::py::add_to_module(m)?;
+    hub::aoi_py::add_to_module(m)?;
     Ok(())
 }

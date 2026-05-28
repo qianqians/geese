@@ -79,6 +79,7 @@ mod gate_msg_handle;
 mod hub_service_manager;
 mod conn_manager;
 mod hub_server;
+pub mod aoi_py;
 
 use crate::hub_server::HubServer;
 use crate::dbproxy_msg_handle::DBCallbackMsgHandle;

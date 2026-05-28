@@ -1,15 +1,15 @@
-//! pyo3 绑定层（feature = "pyo3"）。
+//! AOI（Area of Interest）的 pyo3 绑定层。
 //!
 //! 不在此处声明 `#[pymodule]`，而是提供 [`add_to_module`]，由宿主进程的
-//! 顶层 pymodule（例如 server 的 `pyhub`）调用，将 AOI 类挂到现有命名空间。
+//! 顶层 pymodule（server 的 `pyhub`）调用，将 AOI 类挂到现有命名空间。
 //!
 //! 暴露给 Python：
 //! - `AoiGrid`：九宫格 AOI 容器；接受 entity_id 为 u64
-//! - `take_events()` 返回 `list[(str, int, int)]`，元素形如 `("enter", obs, tgt)` / `("leave", obs, tgt)`
+//! - `take_events()` 返回 `list[(str, int, int)]`
 
 use pyo3::prelude::*;
 
-use crate::{Aoi, AoiEvent, EntityId, GridAoi};
+use aoi::{Aoi, AoiEvent, EntityId, GridAoi};
 
 #[pyclass(module = "pyhub", name = "AoiGrid")]
 pub struct PyGridAoi {
