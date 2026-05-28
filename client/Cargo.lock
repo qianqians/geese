@@ -216,6 +216,7 @@ dependencies = [
  "asset",
  "async-trait",
  "camera",
+ "cgmath",
  "close_handle",
  "math",
  "net",

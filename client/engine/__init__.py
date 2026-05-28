@@ -6,3 +6,5 @@ from .player import *
 from .subentity import *
 from .receiver import *
 from .msgpack import *
+from .scene import *
+from .camera import *

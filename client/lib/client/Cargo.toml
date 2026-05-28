@@ -10,6 +10,7 @@ thrift = "0.17.0"
 async-trait = "0.1.68"
 tokio = { version = "1.41.1", features = ["full"] }
 pyo3 = "0.26.0"
+cgmath = "0.18"
 net = { path = "../../../crates/net", version = "0.1.0" }
 wss = { path = "../../../crates/wss", version = "0.1.0" }
 tcp = { path = "../../../crates/tcp", version = "0.1.0" }
