@@ -9,6 +9,9 @@
 
 use std::collections::{HashMap, HashSet};
 
+#[cfg(feature = "pyo3")]
+pub mod py;
+
 pub type EntityId = u64;
 
 /// 进出兴趣范围的事件。
