@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use camera::frustum::Frustum;
 use cgmath::InnerSpace;
@@ -21,6 +21,10 @@ pub struct Scene {
     pub animations: Vec<AnimationClip>,
     pub skins: Vec<Skin>,
     animation_names: HashMap<String, usize>,
+    /// 静态对象在 self.objects 中的索引——这些对象的 aabb 不会因动画变化，进 octree。
+    static_indices: Vec<usize>,
+    /// 动态对象索引——会被动画驱动，每帧线性参与 frustum 测试，不进 octree 以避免每帧重建。
+    dynamic_indices: Vec<usize>,
     bounds: AABB,
     max_objects: usize,
     max_depth: usize,
@@ -42,6 +46,8 @@ impl Scene {
             .enumerate()
             .filter_map(|(i, a)| a.name.as_ref().map(|n| (n.clone(), i)))
             .collect();
+        let (static_indices, dynamic_indices) =
+            classify_objects(&nodes, &objects, &animations);
         let mut scene = Self {
             nodes,
             objects,
@@ -50,6 +56,8 @@ impl Scene {
             animations,
             skins,
             animation_names,
+            static_indices,
+            dynamic_indices,
             bounds,
             max_objects,
             max_depth,
@@ -67,12 +75,38 @@ impl Scene {
         self.animations.get(index).map(|a| a.duration)
     }
 
-    pub fn objects(&self) -> Vec<&SceneObject> {
-        self.octree.objects()
+    /// 静态对象索引（进 octree 的对象）。
+    pub fn static_indices(&self) -> &[usize] {
+        &self.static_indices
     }
 
+    /// 动态对象索引（每帧 frustum 线性测试的对象）。
+    pub fn dynamic_indices(&self) -> &[usize] {
+        &self.dynamic_indices
+    }
+
+    /// 取场景全部对象引用。
+    pub fn objects(&self) -> Vec<&SceneObject> {
+        self.objects.iter().collect()
+    }
+
+    /// 视锥剪枝：静态对象走八叉树，动态对象逐个做 AABB 测试，合并返回。
     pub fn visible_objects(&self, frustum: &Frustum) -> Vec<&SceneObject> {
-        self.octree.query_frustum(frustum)
+        let mut result: Vec<&SceneObject> = self
+            .octree
+            .query_frustum(frustum)
+            .into_iter()
+            .map(|id| &self.objects[id])
+            .collect();
+
+        for &id in &self.dynamic_indices {
+            let obj = &self.objects[id];
+            if frustum.intersects_aabb(obj.aabb.min, obj.aabb.max) {
+                result.push(obj);
+            }
+        }
+
+        result
     }
 
     pub fn render_queue<'a>(
@@ -94,7 +128,8 @@ impl Scene {
         player.advance(dt, clip.duration);
         sample_clip(clip, player.time, &mut self.nodes);
         self.update_world_transforms();
-        self.rebuild_octree();
+        // 静态 octree 不需要每帧重建——动态对象的 aabb 已在 update_world_transforms 中更新，
+        // visible_objects 通过 dynamic_indices 线性测试覆盖它们。
     }
 
     pub fn update_animation_graph(&mut self, graph: &mut AnimationStateMachine, dt: f32) {
@@ -184,7 +219,7 @@ impl Scene {
         }
 
         self.update_world_transforms();
-        self.rebuild_octree();
+        // 同 update_animation：静态 octree 不重建。
     }
 
     pub fn update_world_transforms(&mut self) {
@@ -200,12 +235,14 @@ impl Scene {
         }
     }
 
+    /// 重建静态部分八叉树。仅当外部直接修改了静态对象的 aabb 时才需要调用；
+    /// 动画驱动的动态对象不进 octree，因此动画更新无需调用本方法。
     pub fn rebuild_octree(&mut self) {
-        let mut octree = Octree::new(self.bounds, self.max_objects, self.max_depth);
-        for object in &self.objects {
-            octree.insert(object.clone());
+        self.octree = Octree::new(self.bounds, self.max_objects, self.max_depth);
+        for &id in &self.static_indices {
+            let obj = &self.objects[id];
+            self.octree.insert(id, obj.aabb, obj.center);
         }
-        self.octree = octree;
     }
 
     fn update_node_world(&mut self, node_id: usize, parent_world: cgmath::Matrix4<f32>) {
@@ -251,6 +288,134 @@ impl Scene {
                 (joint_world * *inverse_bind).into()
             })
             .collect()
+    }
+}
+
+/// 根据动画 channel 的 target_node 集合 + 其后代节点 + 拥有 skin 的对象，
+/// 把对象划分为静态/动态两组。判断保守：宁可让对象动态化（性能略差但正确性安全）。
+fn classify_objects(
+    nodes: &[SceneNode],
+    objects: &[SceneObject],
+    animations: &[AnimationClip],
+) -> (Vec<usize>, Vec<usize>) {
+    let mut dynamic_nodes: HashSet<usize> = HashSet::new();
+    let mut queue: VecDeque<usize> = VecDeque::new();
+
+    for clip in animations {
+        for channel in &clip.channels {
+            if channel.target_node < nodes.len() && dynamic_nodes.insert(channel.target_node) {
+                queue.push_back(channel.target_node);
+            }
+        }
+    }
+
+    while let Some(id) = queue.pop_front() {
+        for &child in &nodes[id].children {
+            if dynamic_nodes.insert(child) {
+                queue.push_back(child);
+            }
+        }
+    }
+
+    let mut static_indices = Vec::new();
+    let mut dynamic_indices = Vec::new();
+    for (i, obj) in objects.iter().enumerate() {
+        let is_dynamic = obj.mesh.skin.is_some() || dynamic_nodes.contains(&obj.node);
+        if is_dynamic {
+            dynamic_indices.push(i);
+        } else {
+            static_indices.push(i);
+        }
+    }
+
+    (static_indices, dynamic_indices)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use avatar::{
+        AnimatedProperty, AnimationChannel, AnimationOutputs, Interpolation, Transform,
+    };
+    use cgmath::{Matrix4, Point3, Vector3};
+    use render::{ModelMesh, SkinHandle};
+
+    fn dummy_obj(node: usize, has_skin: bool, center: Point3<f32>) -> SceneObject {
+        let half = Vector3::new(0.1, 0.1, 0.1);
+        let aabb = AABB::new(center - half, center + half);
+        let mut mesh = ModelMesh::new();
+        if has_skin {
+            mesh.skin = Some(SkinHandle(0));
+        }
+        SceneObject {
+            entity_id: String::new(),
+            node,
+            local_aabb: aabb,
+            aabb,
+            center,
+            mesh,
+            model_matrix: Matrix4::from_scale(1.0).into(),
+            normal_matrix: Matrix4::from_scale(1.0).into(),
+            joint_matrices: Vec::new(),
+        }
+    }
+
+    fn dummy_node(id: usize, parent: Option<usize>) -> SceneNode {
+        SceneNode::new(id, parent, Transform::default())
+    }
+
+    #[test]
+    fn classify_marks_animated_subtree_and_skinned_as_dynamic() {
+        // 节点 0(root) → 1(child) → 2(grandchild)；节点 3(独立)
+        let mut nodes = vec![
+            dummy_node(0, None),
+            dummy_node(1, Some(0)),
+            dummy_node(2, Some(1)),
+            dummy_node(3, None),
+        ];
+        nodes[0].children.push(1);
+        nodes[1].children.push(2);
+
+        let objects = vec![
+            dummy_obj(0, false, Point3::new(0.0, 0.0, 0.0)), // 0: 动画根 → 动态
+            dummy_obj(1, false, Point3::new(0.0, 0.0, 0.0)), // 1: 动画子 → 动态
+            dummy_obj(2, false, Point3::new(0.0, 0.0, 0.0)), // 2: 动画孙 → 动态
+            dummy_obj(3, false, Point3::new(0.0, 0.0, 0.0)), // 3: 独立节点 → 静态
+            dummy_obj(3, true, Point3::new(0.0, 0.0, 0.0)),  // 4: 独立但 has skin → 动态
+        ];
+
+        let animations = vec![AnimationClip {
+            name: None,
+            duration: 1.0,
+            channels: vec![AnimationChannel {
+                target_node: 0,
+                property: AnimatedProperty::Translation,
+                interpolation: Interpolation::Linear,
+                inputs: vec![0.0, 1.0],
+                outputs: AnimationOutputs::Translations(vec![
+                    Vector3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                ]),
+            }],
+        }];
+
+        let (statics, dynamics) = classify_objects(&nodes, &objects, &animations);
+        assert_eq!(statics, vec![3], "only obj#3 (no anim, no skin) is static");
+        let mut sorted_dyn = dynamics.clone();
+        sorted_dyn.sort();
+        assert_eq!(sorted_dyn, vec![0, 1, 2, 4]);
+    }
+
+    #[test]
+    fn classify_handles_no_animation() {
+        let nodes = vec![dummy_node(0, None), dummy_node(1, None)];
+        let objects = vec![
+            dummy_obj(0, false, Point3::new(0.0, 0.0, 0.0)),
+            dummy_obj(1, true, Point3::new(0.0, 0.0, 0.0)),
+        ];
+        let (statics, dynamics) = classify_objects(&nodes, &objects, &[]);
+        assert_eq!(statics, vec![0]);
+        assert_eq!(dynamics, vec![1], "skinned object is always dynamic");
     }
 }
 
