@@ -67,6 +67,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 
 [[package]]
+name = "aoi"
+version = "0.1.0"
+dependencies = [
+ "pyo3",
+]
+
+[[package]]
 name = "approx"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -919,6 +926,7 @@ dependencies = [
 name = "geese_server"
 version = "0.1.0"
 dependencies = [
+ "aoi",
  "config",
  "consul",
  "consulrs",
