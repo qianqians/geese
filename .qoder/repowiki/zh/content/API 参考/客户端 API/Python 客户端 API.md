@@ -10,11 +10,20 @@
 - [client/engine/player.py](file://client/engine/player.py)
 - [client/engine/subentity.py](file://client/engine/subentity.py)
 - [client/engine/receiver.py](file://client/engine/receiver.py)
+- [client/engine/receiver.py](file://client/engine/receiver.py)
 - [client/engine/callback.py](file://client/engine/callback.py)
 - [client/engine/conn_msg_handle.py](file://client/engine/conn_msg_handle.py)
 - [client/engine/msgpack/__init__.py](file://client/engine/msgpack/__init__.py)
 - [client/engine/msgpack/exceptions.py](file://client/engine/msgpack/exceptions.py)
 - [client/engine/pyclient/__init__.py](file://client/engine/pyclient/__init__.py)
+- [client/engine/camera.py](file://client/engine/camera.py)
+- [client/engine/scene.py](file://client/engine/scene.py)
+- [client/lib/client/src/py/camera.rs](file://client/lib/client/src/py/camera.rs)
+- [client/lib/client/src/py/scene.rs](file://client/lib/client/src/py/scene.rs)
+- [client/lib/client/src/py/aabb.rs](file://client/lib/client/src/py/aabb.rs)
+- [client/lib/client/src/py/transform.rs](file://client/lib/client/src/py/transform.rs)
+- [client/lib/client/src/py/scene_object.rs](file://client/lib/client/src/py/scene_object.rs)
+- [client/lib/client/src/py/mod.rs](file://client/lib/client/src/py/mod.rs)
 - [sample/client/py/app.py](file://sample/client/py/app.py)
 - [sample/client/py/engine/common_cli.py](file://sample/client/py/engine/common_cli.py)
 </cite>
@@ -25,17 +34,18 @@
 3. [核心组件](#核心组件)
 4. [架构总览](#架构总览)
 5. [详细组件分析](#详细组件分析)
-6. [依赖分析](#依赖分析)
-7. [性能考虑](#性能考虑)
-8. [故障排查指南](#故障排查指南)
-9. [结论](#结论)
-10. [附录](#附录)
+6. [相机与场景API](#相机与场景api)
+7. [依赖分析](#依赖分析)
+8. [性能考虑](#性能考虑)
+9. [故障排查指南](#故障排查指南)
+10. [结论](#结论)
+11. [附录](#附录)
 
 ## 简介
-本文件为 geese Python 客户端 SDK 的权威参考文档，覆盖应用框架、会话与上下文、实体管理（玩家、子实体、接收器）、消息编解码、回调与超时、连接建立与心跳、以及错误处理与异常管理。文档同时提供 Python 特性（装饰器、生成器、上下文管理器）在 SDK 中的使用建议与最佳实践，帮助开发者正确、高效地集成与扩展。
+本文件为 geese Python 客户端 SDK 的权威参考文档，覆盖应用框架、会话与上下文、实体管理（玩家、子实体、接收器）、消息编解码、回调与超时、连接建立与心跳、相机与场景API、以及错误处理与异常管理。文档同时提供 Python 特性（装饰器、生成器、上下文管理器）在 SDK 中的使用建议与最佳实践，帮助开发者正确、高效地集成与扩展。
 
 ## 项目结构
-客户端引擎位于 client/engine，核心模块包括应用入口、上下文、会话、实体基类与三大实体类型（玩家、子实体、接收器）、回调封装、连接消息处理器、以及消息包（msgpack）工具集。示例客户端位于 sample/client/py，展示如何注册实体、发起 RPC 调用、处理通知与全局方法。
+客户端引擎位于 client/engine，核心模块包括应用入口、上下文、会话、实体基类与三大实体类型（玩家、子实体、接收器）、回调封装、连接消息处理器、相机与场景API、以及消息包（msgpack）工具集。示例客户端位于 sample/client/py，展示如何注册实体、发起 RPC 调用、处理通知与全局方法。
 
 ```mermaid
 graph TB
@@ -52,6 +62,8 @@ I["conn_msg_handle.py<br/>连接消息分发"]
 J["msgpack/__init__.py<br/>序列化工具"]
 K["msgpack/exceptions.py<br/>异常定义"]
 L["pyclient/__init__.py<br/>底层桥接导出"]
+M["camera.py<br/>相机API封装"]
+N["scene.py<br/>场景API封装"]
 end
 A --> B
 A --> I
@@ -70,9 +82,11 @@ I --> G
 A --> J
 B --> J
 J --> K
+M --> L
+N --> L
 ```
 
-图表来源
+**图表来源**
 - [client/engine/app.py:1-157](file://client/engine/app.py#L1-L157)
 - [client/engine/context.py:1-39](file://client/engine/context.py#L1-L39)
 - [client/engine/session.py:1-7](file://client/engine/session.py#L1-L7)
@@ -85,12 +99,16 @@ J --> K
 - [client/engine/msgpack/__init__.py:1-58](file://client/engine/msgpack/__init__.py#L1-L58)
 - [client/engine/msgpack/exceptions.py:1-49](file://client/engine/msgpack/exceptions.py#L1-L49)
 - [client/engine/pyclient/__init__.py:1-5](file://client/engine/pyclient/__init__.py#L1-L5)
+- [client/engine/camera.py:1-12](file://client/engine/camera.py#L1-L12)
+- [client/engine/scene.py:1-35](file://client/engine/scene.py#L1-L35)
 
-章节来源
+**章节来源**
 - [client/engine/__init__.py:1-8](file://client/engine/__init__.py#L1-L8)
 - [client/engine/app.py:1-157](file://client/engine/app.py#L1-L157)
 - [client/engine/context.py:1-39](file://client/engine/context.py#L1-L39)
 - [client/engine/msgpack/__init__.py:1-58](file://client/engine/msgpack/__init__.py#L1-L58)
+- [client/engine/camera.py:1-12](file://client/engine/camera.py#L1-L12)
+- [client/engine/scene.py:1-35](file://client/engine/scene.py#L1-L35)
 
 ## 核心组件
 - 应用入口与事件循环：负责构建上下文、启动轮询线程、调度协程、驱动连接消息处理与心跳。
@@ -99,9 +117,10 @@ J --> K
 - 回调封装：提供带超时的回调对象，支持成功与错误回调绑定，并可设置超时触发。
 - 连接消息处理器：根据服务器推送的消息类型，分派到对应实体或全局方法处理。
 - 消息编解码：基于 msgpack 的打包/解包工具，兼容纯 Python 与 C 扩展实现。
+- 相机与场景API：提供 Frustum/Plane 相机视锥体与 AABB/Transform/SceneObject/SceneNode/Scene 场景管理功能。
 - 示例应用：演示连接、登录、注册实体、发起 RPC、处理通知与全局方法的完整流程。
 
-章节来源
+**章节来源**
 - [client/engine/app.py:40-157](file://client/engine/app.py#L40-L157)
 - [client/engine/context.py:4-39](file://client/engine/context.py#L4-L39)
 - [client/engine/player.py:9-108](file://client/engine/player.py#L9-L108)
@@ -110,6 +129,8 @@ J --> K
 - [client/engine/callback.py:5-23](file://client/engine/callback.py#L5-L23)
 - [client/engine/conn_msg_handle.py:6-86](file://client/engine/conn_msg_handle.py#L6-L86)
 - [client/engine/msgpack/__init__.py:13-58](file://client/engine/msgpack/__init__.py#L13-L58)
+- [client/engine/camera.py:1-12](file://client/engine/camera.py#L1-L12)
+- [client/engine/scene.py:1-35](file://client/engine/scene.py#L1-L35)
 - [sample/client/py/app.py:1-71](file://sample/client/py/app.py#L1-L71)
 
 ## 架构总览
@@ -122,24 +143,30 @@ participant Ctx as "上下文(context)"
 participant Pump as "连接泵(ClientPump)"
 participant Conn as "连接(handle)"
 participant Ent as "实体(player/subentity/receiver)"
+participant Cam as "相机API(camera.py)"
+participant Scn as "场景API(scene.py)"
 participant RPC as "RPC/通知"
 App->>Ctx : "connect_tcp/connect_ws/login/reconnect/request_hub_service"
 App->>Pump : "poll_conn_msg(handle)"
 Pump-->>Conn : "接收服务器消息"
 Conn-->>App : "on_conn_id/on_create_remote_entity/.../on_call_global"
 App->>Ent : "创建/更新/删除实体"
+App->>Cam : "Frustum/Plane 相机操作"
+App->>Scn : "Scene/SceneNode/SceneObject 管理"
 Ent->>Ctx : "call_rpc/call_rsp/call_err/call_ntf"
 Ctx-->>RPC : "转发至底层桥接"
 RPC-->>Ent : "on_call_* 分发回调"
 ```
 
-图表来源
+**图表来源**
 - [client/engine/app.py:60-157](file://client/engine/app.py#L60-L157)
 - [client/engine/context.py:8-39](file://client/engine/context.py#L8-L39)
 - [client/engine/conn_msg_handle.py:7-86](file://client/engine/conn_msg_handle.py#L7-L86)
 - [client/engine/player.py:68-88](file://client/engine/player.py#L68-L88)
 - [client/engine/subentity.py:57-69](file://client/engine/subentity.py#L57-L69)
 - [client/engine/receiver.py:20-28](file://client/engine/receiver.py#L20-L28)
+- [client/engine/camera.py:9](file://client/engine/camera.py#L9)
+- [client/engine/scene.py:32](file://client/engine/scene.py#L32)
 
 ## 详细组件分析
 
@@ -194,11 +221,11 @@ class Context {
 App --> Context : "持有"
 ```
 
-图表来源
+**图表来源**
 - [client/engine/app.py:40-157](file://client/engine/app.py#L40-L157)
 - [client/engine/context.py:4-39](file://client/engine/context.py#L4-L39)
 
-章节来源
+**章节来源**
 - [client/engine/app.py:40-157](file://client/engine/app.py#L40-L157)
 
 ### 上下文（context）
@@ -209,7 +236,7 @@ App --> Context : "持有"
   - 维护底层 ClientContext 实例，所有方法最终委托到底层实现。
   - 提供 poll_conn_msg 用于驱动底层消息轮询。
 
-章节来源
+**章节来源**
 - [client/engine/context.py:4-39](file://client/engine/context.py#L4-L39)
 
 ### 会话（session）
@@ -218,7 +245,7 @@ App --> Context : "持有"
 - 字段
   - source：字符串，表示会话来源标识。
 
-章节来源
+**章节来源**
 - [client/engine/session.py:3-7](file://client/engine/session.py#L3-L7)
 
 ### 实体基类（base_entity）
@@ -228,7 +255,7 @@ App --> Context : "持有"
   - entity_type：实体类型字符串
   - entity_id：实体唯一标识
 
-章节来源
+**章节来源**
 - [client/engine/base_entity.py:3-6](file://client/engine/base_entity.py#L3-L6)
 
 ### 玩家实体（player）
@@ -275,10 +302,10 @@ Player --|> BaseEntity
 PlayerManager --> Player : "管理"
 ```
 
-图表来源
+**图表来源**
 - [client/engine/player.py:9-108](file://client/engine/player.py#L9-L108)
 
-章节来源
+**章节来源**
 - [client/engine/player.py:9-108](file://client/engine/player.py#L9-L108)
 
 ### 子实体（subentity）
@@ -290,7 +317,7 @@ PlayerManager --> Player : "管理"
   - 处理回调：handle_hub_response、handle_hub_response_error、handle_hub_notify
   - 生命周期：由 app 注册与管理，支持按 entity_id 更新与删除。
 
-章节来源
+**章节来源**
 - [client/engine/subentity.py:9-89](file://client/engine/subentity.py#L9-L89)
 
 ### 接收器（receiver）
@@ -301,7 +328,7 @@ PlayerManager --> Player : "管理"
   - 处理回调：handle_hub_notify
   - 生命周期：由 app 注册与管理，支持按 entity_id 更新与删除。
 
-章节来源
+**章节来源**
 - [client/engine/receiver.py:7-48](file://client/engine/receiver.py#L7-L48)
 
 ### 回调封装（callback）
@@ -322,10 +349,10 @@ Timeout --> |是| Fire["触发超时回调"]
 Timeout --> |否| Done["结束"]
 ```
 
-图表来源
+**图表来源**
 - [client/engine/callback.py:5-23](file://client/engine/callback.py#L5-L23)
 
-章节来源
+**章节来源**
 - [client/engine/callback.py:5-23](file://client/engine/callback.py#L5-L23)
 
 ### 连接消息处理器（conn_msg_handle）
@@ -338,7 +365,7 @@ Timeout --> |否| Done["结束"]
   - on_call_rpc / on_call_rsp / on_call_err / on_call_ntf：请求/响应/错误/通知分发
   - on_call_global：全局方法分发
 
-章节来源
+**章节来源**
 - [client/engine/conn_msg_handle.py:6-86](file://client/engine/conn_msg_handle.py#L6-L86)
 
 ### 消息编解码（msgpack）
@@ -347,7 +374,7 @@ Timeout --> |否| Done["结束"]
 - 异常
   - 定义了 UnpackException 及其子类（BufferFull、OutOfData、FormatError、StackError、ExtraData），以及 Pack 相关异常别名。
 
-章节来源
+**章节来源**
 - [client/engine/msgpack/__init__.py:13-58](file://client/engine/msgpack/__init__.py#L13-L58)
 - [client/engine/msgpack/exceptions.py:1-49](file://client/engine/msgpack/exceptions.py#L1-L49)
 
@@ -355,7 +382,7 @@ Timeout --> |否| Done["结束"]
 - 职责
   - 导出底层 ClientContext 与 ClientPump，供 context 与 app 使用。
 
-章节来源
+**章节来源**
 - [client/engine/pyclient/__init__.py:1-5](file://client/engine/pyclient/__init__.py#L1-L5)
 
 ### 示例应用（sample/client/py/app.py）
@@ -366,17 +393,170 @@ Timeout --> |否| Done["结束"]
   - 回调链路：callBack 成功/错误回调 + timeout 超时处理。
   - 连接方式：支持 TCP 或 WS，示例中默认使用 WS。
 
-章节来源
+**章节来源**
 - [sample/client/py/app.py:1-71](file://sample/client/py/app.py#L1-L71)
+
+## 相机与场景API
+
+### 相机API（Frustum/Plane）
+- 职责
+  - 提供视锥体（Frustum）和裁剪平面（Plane）的 Python 封装，用于场景可视性判断和碰撞检测。
+- 类型与方法
+  - Plane：裁剪平面，支持从系数构造、获取法向量和距离、计算点到平面距离。
+  - Frustum：视锥体，支持从视图投影矩阵构造、点/球/包围盒包含测试、与包围盒相交测试、获取六个裁剪平面。
+- 关键接口
+  - Plane.new(a, b, c, d)：从平面系数构造
+  - Plane.normal/distance：获取法向量和距离
+  - Plane.distance_to_point(p)：计算点到平面距离
+  - Frustum.from_view_projection(matrix)：从行主序矩阵构造
+  - Frustum.from_view_projection_column_major(matrix)：从列主序矩阵构造
+  - Frustum.contains_point/sphere/aabb()：包含性测试
+  - Frustum.intersects_aabb()：相交性测试
+  - Frustum.planes()：获取裁剪平面列表
+
+```mermaid
+classDiagram
+class Plane {
++new(a : float, b : float, c : float, d : float) Plane
++normal : tuple[float, float, float]
++distance : float
++distance_to_point(p : tuple[float, float, float]) float
+}
+class Frustum {
++from_view_projection(matrix : list[list[float]]) Frustum
++from_view_projection_column_major(matrix : list[list[float]]) Frustum
++contains_point(p : tuple[float, float, float]) bool
++contains_sphere(center : tuple[float, float, float], radius : float) bool
++contains_aabb(min : tuple[float, float, float], max : tuple[float, float, float]) bool
++intersects_aabb(min : tuple[float, float, float], max : tuple[float, float, float]) bool
++planes() list[Plane]
+}
+Plane <|-- Frustum : "包含6个裁剪平面"
+```
+
+**图表来源**
+- [client/lib/client/src/py/camera.rs:8-43](file://client/lib/client/src/py/camera.rs#L8-L43)
+- [client/lib/client/src/py/camera.rs:46-127](file://client/lib/client/src/py/camera.rs#L46-L127)
+
+**章节来源**
+- [client/engine/camera.py:1-12](file://client/engine/camera.py#L1-L12)
+- [client/lib/client/src/py/camera.rs:1-128](file://client/lib/client/src/py/camera.rs#L1-L128)
+
+### 场景API（Scene/SceneNode/SceneObject/AABB/Transform）
+- 职责
+  - 提供完整的场景管理系统，包括场景容器、节点层次结构、对象实例、几何包围盒和变换矩阵。
+- 类型与方法
+  - Scene：场景容器，支持GLTF导入、节点/对象查询、动画播放、可见性查询、八叉树管理。
+  - SceneNode：场景节点，表示对象的层次结构和变换关系。
+  - SceneObject：场景对象，表示具体的网格实例及其属性。
+  - AABB：轴对齐包围盒，支持边界框操作和相交测试。
+  - Transform：变换矩阵，支持平移、旋转、缩放分解和矩阵输出。
+- 关键接口
+  - Scene.import_gltf(path, max_objects=8, max_depth=6)：从GLTF/GLB文件导入场景
+  - Scene.get_node(idx)/get_object(idx)：获取节点和对象视图
+  - Scene.visible_objects(frustum)：基于视锥体的可见性查询
+  - Scene.update_world_transforms()/rebuild_octree()：更新变换和重建八叉树
+  - Scene.update_animation(clip_index, time, dt, ...)：推进动画播放
+  - SceneNode.base_transform/local_transform/world_transform：获取各种变换
+  - SceneObject.aabb/local_aabb/model_matrix/normal_matrix：获取几何属性
+  - AABB.min/max/center/size/intersects()：包围盒操作
+  - Transform.translation/rotation/scale/matrix：变换属性
+
+```mermaid
+classDiagram
+class Scene {
++import_gltf(path : str, max_objects : int, max_depth : int) Scene
++get_node(idx : int) SceneNode?
++get_object(idx : int) SceneObject?
++visible_objects(frustum : Frustum) list[SceneObject]
++update_world_transforms() void
++rebuild_octree() void
++update_animation(clip_index : int, time : float, dt : float, ...) (float, bool)
+}
+class SceneNode {
++id : int
++parent : int?
++children : list[int]
++objects : list[int]
++base_transform : Transform
++local_transform : Transform
++world_transform : list[list[float]]
+}
+class SceneObject {
++entity_id : str
++node : int
++local_aabb : AABB
++aabb : AABB
++center : tuple[float, float, float]
++model_matrix : list[list[float]]
++normal_matrix : list[list[float]]
++joint_matrices : list[list[list[float]]]
++vertex_count() : int
++index_count() : int
++positions()/normals()/uvs() : list
++indices() : list[u32]
++material_handle()/skin_handle() : int?
+}
+class AABB {
++new(min : tuple[float, float, float], max : tuple[float, float, float]) AABB
++min/max/center/size : tuple[float, float, float]
++contains_point(p : tuple[float, float, float]) bool
++intersects(other : AABB) bool
+}
+class Transform {
++translation : tuple[float, float, float]
++rotation : tuple[float, float, float, float]
++scale : tuple[float, float, float]
++matrix() list[list[float]]
+}
+Scene --> SceneNode : "包含"
+Scene --> SceneObject : "包含"
+SceneNode --> Transform : "使用"
+SceneObject --> AABB : "使用"
+```
+
+**图表来源**
+- [client/lib/client/src/py/scene.rs:19-211](file://client/lib/client/src/py/scene.rs#L19-L211)
+- [client/lib/client/src/py/scene_object.rs:13-218](file://client/lib/client/src/py/scene_object.rs#L13-L218)
+- [client/lib/client/src/py/aabb.rs:7-67](file://client/lib/client/src/py/aabb.rs#L7-L67)
+- [client/lib/client/src/py/transform.rs:7-70](file://client/lib/client/src/py/transform.rs#L7-L70)
+
+**章节来源**
+- [client/engine/scene.py:1-35](file://client/engine/scene.py#L1-L35)
+- [client/lib/client/src/py/scene.rs:1-211](file://client/lib/client/src/py/scene.rs#L1-L211)
+- [client/lib/client/src/py/scene_object.rs:1-218](file://client/lib/client/src/py/scene_object.rs#L1-L218)
+- [client/lib/client/src/py/aabb.rs:1-67](file://client/lib/client/src/py/aabb.rs#L1-L67)
+- [client/lib/client/src/py/transform.rs:1-70](file://client/lib/client/src/py/transform.rs#L1-L70)
+
+### 底层实现与绑定
+- 职责
+  - 通过 pyo3 将 Rust 实现的相机和场景模块暴露给 Python，提供高性能的几何计算和场景管理能力。
+- 模块组织
+  - camera.rs：实现 Frustum 和 Plane 类型
+  - scene.rs：实现 Scene 容器和相关操作
+  - scene_object.rs：实现 SceneNode 和 SceneObject 视图
+  - aabb.rs：实现 AABB 包围盒
+  - transform.rs：实现 Transform 变换
+  - mod.rs：统一导出所有类型
+
+**章节来源**
+- [client/lib/client/src/py/mod.rs:1-41](file://client/lib/client/src/py/mod.rs#L1-L41)
+- [client/lib/client/src/py/camera.rs:1-128](file://client/lib/client/src/py/camera.rs#L1-L128)
+- [client/lib/client/src/py/scene.rs:1-211](file://client/lib/client/src/py/scene.rs#L1-L211)
+- [client/lib/client/src/py/scene_object.rs:1-218](file://client/lib/client/src/py/scene_object.rs#L1-L218)
+- [client/lib/client/src/py/aabb.rs:1-67](file://client/lib/client/src/py/aabb.rs#L1-L67)
+- [client/lib/client/src/py/transform.rs:1-70](file://client/lib/client/src/py/transform.rs#L1-L70)
 
 ## 依赖分析
 - 模块内聚与耦合
   - app 作为中枢，聚合 context、conn_msg_handle、实体管理器与协程循环，耦合度较高但职责清晰。
   - player/subentity/receiver 共享 base_entity，降低重复代码，提升一致性。
   - callback 与实体解耦，通过 msg_cb_id 协同，便于扩展。
+  - 相机与场景API通过 camera.py 和 scene.py 提供薄封装，依赖底层 pyclient 模块。
 - 外部依赖
-  - 底层桥接：pyclient（ClientContext、ClientPump）
+  - 底层桥接：pyclient（ClientContext、ClientPump、相机/场景类型）
   - 编解码：msgpack（C 扩展或 fallback）
+  - 几何计算：cgmath（用于数学运算）
   - 并发：asyncio、Timer、线程
 
 ```mermaid
@@ -394,9 +574,13 @@ PMgr --> CB["callback.py"]
 SMgr --> CB
 Ctx --> MP["msgpack/__init__.py"]
 MP --> MPEx["msgpack/exceptions.py"]
+Cam["camera.py"] --> PyC
+Scn["scene.py"] --> PyC
+PyC --> CamMod["camera.rs"]
+PyC --> ScnMod["scene.rs"]
 ```
 
-图表来源
+**图表来源**
 - [client/engine/app.py:40-157](file://client/engine/app.py#L40-L157)
 - [client/engine/context.py:4-39](file://client/engine/context.py#L4-L39)
 - [client/engine/conn_msg_handle.py:6-86](file://client/engine/conn_msg_handle.py#L6-L86)
@@ -408,6 +592,9 @@ MP --> MPEx["msgpack/exceptions.py"]
 - [client/engine/msgpack/__init__.py:13-58](file://client/engine/msgpack/__init__.py#L13-L58)
 - [client/engine/msgpack/exceptions.py:1-49](file://client/engine/msgpack/exceptions.py#L1-L49)
 - [client/engine/pyclient/__init__.py:1-5](file://client/engine/pyclient/__init__.py#L1-L5)
+- [client/engine/camera.py:1-12](file://client/engine/camera.py#L1-L12)
+- [client/engine/scene.py:1-35](file://client/engine/scene.py#L1-L35)
+- [client/lib/client/src/py/mod.rs:28-40](file://client/lib/client/src/py/mod.rs#L28-L40)
 
 ## 性能考虑
 - 轮询节流
@@ -418,11 +605,16 @@ MP --> MPEx["msgpack/exceptions.py"]
   - 优先使用 C 扩展实现的 msgpack，必要时回退到纯 Python，减少序列化/反序列化成本。
 - 回调释放
   - callback 支持超时释放，避免长期挂起导致内存泄漏。
+- 场景管理优化
+  - Scene 使用 Arc<Mutex<Scene>> 保证线程安全，内部通过锁保护共享状态。
+  - 八叉树（Octree）作为场景内部数据结构，通过 visible_objects 和 all_objects 提供高效的查询接口。
+  - AABB 和 Transform 使用值拷贝视图，减少内存分配开销。
 
-章节来源
+**章节来源**
 - [client/engine/app.py:146-157](file://client/engine/app.py#L146-L157)
 - [client/engine/callback.py:17-23](file://client/engine/callback.py#L17-L23)
 - [client/engine/msgpack/__init__.py:13-19](file://client/engine/msgpack/__init__.py#L13-L19)
+- [client/lib/client/src/py/scene.rs:30-34](file://client/lib/client/src/py/scene.rs#L30-L34)
 
 ## 故障排查指南
 - 连接问题
@@ -440,15 +632,21 @@ MP --> MPEx["msgpack/exceptions.py"]
   - 使用 callback.timeout 设置合理超时时间，避免长时间阻塞。
 - 编解码异常
   - 捕获 msgpack.exceptions 中的异常类型，定位格式或数据问题。
+- 相机与场景API问题
+  - 确认矩阵参数格式正确（行主序 vs 列主序）。
+  - 检查 GLTF 文件路径和格式，确保文件可读且符合标准。
+  - 验证八叉树参数（max_objects、max_depth）设置合理，避免内存溢出。
 
-章节来源
+**章节来源**
 - [client/engine/conn_msg_handle.py:36-82](file://client/engine/conn_msg_handle.py#L36-L82)
 - [client/engine/player.py:26-53](file://client/engine/player.py#L26-L53)
 - [client/engine/subentity.py:31-45](file://client/engine/subentity.py#L31-L45)
 - [client/engine/msgpack/exceptions.py:1-49](file://client/engine/msgpack/exceptions.py#L1-L49)
+- [client/lib/client/src/py/camera.rs:60-89](file://client/lib/client/src/py/camera.rs#L60-L89)
+- [client/lib/client/src/py/scene.rs:42-50](file://client/lib/client/src/py/scene.rs#L42-L50)
 
 ## 结论
-geese Python 客户端以 app 为核心，结合 context、实体管理与消息处理器，形成清晰的事件驱动架构。通过统一的 RPC/通知模型与回调封装，开发者可以快速实现登录、服务请求、实体生命周期管理与全局方法处理。配合示例应用与完善的错误处理机制，能够满足大多数游戏客户端的网络通信需求。
+geese Python 客户端以 app 为核心，结合 context、实体管理与消息处理器，形成清晰的事件驱动架构。通过统一的 RPC/通知模型与回调封装，开发者可以快速实现登录、服务请求、实体生命周期管理与全局方法处理。新增的相机与场景API进一步增强了客户端的图形处理能力，提供了完整的几何计算和场景管理功能。配合示例应用与完善的错误处理机制，能够满足大多数游戏客户端的网络通信和图形渲染需求。
 
 ## 附录
 
@@ -459,10 +657,16 @@ geese Python 客户端以 app 为核心，结合 context、实体管理与消息
   - 在需要批量创建实体或处理大量通知时，可结合生成器简化迭代。
 - 上下文管理器
   - 建议在退出时调用 app.close，确保资源释放与线程安全停止。
+- 相机与场景API使用建议
+  - 使用 Frustum.from_view_projection 时确保传入正确的行主序矩阵。
+  - Scene.import_gltf 支持自定义八叉树参数，根据场景复杂度调整 max_objects 和 max_depth。
+  - 利用 SceneObject 的轻量视图特性，避免不必要的数据复制。
 
-章节来源
+**章节来源**
 - [client/engine/app.py:30-37](file://client/engine/app.py#L30-L37)
 - [client/engine/app.py:134-139](file://client/engine/app.py#L134-L139)
+- [client/lib/client/src/py/camera.rs:60-89](file://client/lib/client/src/py/camera.rs#L60-L89)
+- [client/lib/client/src/py/scene.rs:42-50](file://client/lib/client/src/py/scene.rs#L42-L50)
 
 ### API 一览（按模块）
 - 应用（app）
@@ -493,8 +697,20 @@ geese Python 客户端以 app 为核心，结合 context、实体管理与消息
   - on_call_rpc、on_call_rsp、on_call_err、on_call_ntf、on_call_global
 - 消息编解码（msgpack）
   - pack/dump/dumps、unpack/loads、异常类型
+- 相机API（camera）
+  - Plane.new、Plane.normal、Plane.distance、Plane.distance_to_point
+  - Frustum.from_view_projection、Frustum.from_view_projection_column_major
+  - Frustum.contains_point、Frustum.contains_sphere、Frustum.contains_aabb
+  - Frustum.intersects_aabb、Frustum.planes
+- 场景API（scene）
+  - Scene.import_gltf、Scene.get_node、Scene.get_object、Scene.visible_objects
+  - Scene.update_world_transforms、Scene.rebuild_octree、Scene.update_animation
+  - SceneNode.base_transform、SceneNode.local_transform、SceneNode.world_transform
+  - SceneObject.aabb、SceneObject.local_aabb、SceneObject.model_matrix
+  - AABB.new、AABB.min、AABB.max、AABB.center、AABB.intersects
+  - Transform.translation、Transform.rotation、Transform.scale、Transform.matrix
 
-章节来源
+**章节来源**
 - [client/engine/app.py:60-157](file://client/engine/app.py#L60-L157)
 - [client/engine/context.py:8-39](file://client/engine/context.py#L8-L39)
 - [client/engine/player.py:22-88](file://client/engine/player.py#L22-L88)
@@ -503,3 +719,10 @@ geese Python 客户端以 app 为核心，结合 context、实体管理与消息
 - [client/engine/callback.py:13-23](file://client/engine/callback.py#L13-L23)
 - [client/engine/conn_msg_handle.py:7-86](file://client/engine/conn_msg_handle.py#L7-L86)
 - [client/engine/msgpack/__init__.py:22-58](file://client/engine/msgpack/__init__.py#L22-L58)
+- [client/engine/camera.py:9](file://client/engine/camera.py#L9)
+- [client/engine/scene.py:32](file://client/engine/scene.py#L32)
+- [client/lib/client/src/py/camera.rs:14-127](file://client/lib/client/src/py/camera.rs#L14-L127)
+- [client/lib/client/src/py/scene.rs:36-211](file://client/lib/client/src/py/scene.rs#L36-L211)
+- [client/lib/client/src/py/scene_object.rs:25-218](file://client/lib/client/src/py/scene_object.rs#L25-L218)
+- [client/lib/client/src/py/aabb.rs:13-67](file://client/lib/client/src/py/aabb.rs#L13-L67)
+- [client/lib/client/src/py/transform.rs:19-70](file://client/lib/client/src/py/transform.rs#L19-L70)
