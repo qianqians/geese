@@ -22,3 +22,4 @@ camera = { path = "../../../crates/camera", version = "0.1.0" }
 math = { path = "../../../crates/math", version = "0.1.0" }
 render = { path = "../../../crates/render", version = "0.1.0" }
 scene = { path = "../../../crates/scene", version = "0.1.0" }
+avatar = { path = "../../../crates/avatar", version = "0.1.0" }
