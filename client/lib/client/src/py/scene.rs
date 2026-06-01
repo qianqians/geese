@@ -8,7 +8,8 @@ use std::sync::{Arc, Mutex};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
-use scene::{AnimationPlayer, Scene, import_scene};
+use scene::{Scene, import_scene};
+use avatar::AnimationPlayer;
 
 use super::aabb::PyAABB;
 use super::camera::PyFrustum;
