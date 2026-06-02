@@ -1,10 +1,11 @@
-//! 俯视角摄像机。
+//! 俯视角摄像机（斜 45 度等距，魔兽/暗黑风格）。
 //!
-//! 摄像机固定在角色正上方，垂直向下俯视，平滑跟随角色移动。
+//! 摄像机固定角度跟随角色，斜 45 度向下俯视，平滑跟随。
+//! 摄像机位置 = 角色位置 + 偏移（上方 + 后方）。
 
 use cgmath::{Matrix4, Point3, Rad, Vector3};
 
-/// 俯视角摄像机控制器。
+/// 俯视角摄像机控制器（等距视角）。
 pub struct TopDownCamera {
     /// 摄像机世界位置
     pub position: Point3<f32>,
@@ -14,27 +15,31 @@ pub struct TopDownCamera {
     pub z_near: f32,
     /// 远裁剪面
     pub z_far: f32,
-    /// 距离地面的高度
-    pub height: f32,
+    /// 相对于角色的偏移（上方 + 后方）
+    pub offset: Vector3<f32>,
     /// 跟随平滑系数
     pub follow_smooth: f32,
 }
 
 impl TopDownCamera {
-    pub fn new(fov: f32, z_near: f32, z_far: f32, height: f32) -> Self {
+    pub fn new(fov: f32, z_near: f32, z_far: f32, offset: Vector3<f32>) -> Self {
         Self {
-            position: Point3::new(0.0, height, 0.0),
+            position: Point3::new(
+                offset.x,
+                offset.y,
+                offset.z,
+            ),
             fov,
             z_near,
             z_far,
-            height,
+            offset,
             follow_smooth: 0.05,
         }
     }
 
     /// 更新摄像机位置，平滑跟随角色。
     pub fn update(&mut self, player_pos: Point3<f32>) {
-        let target_pos = Point3::new(player_pos.x, self.height, player_pos.z);
+        let target_pos = player_pos + self.offset;
 
         let smooth = self.follow_smooth.clamp(0.0, 1.0);
         self.position.x += (target_pos.x - self.position.x) * smooth;
@@ -42,12 +47,12 @@ impl TopDownCamera {
         self.position.z += (target_pos.z - self.position.z) * smooth;
     }
 
-    /// 上方向量（前向，用于 LookAt）。
+    /// 上方向量。
     pub fn up(&self) -> Vector3<f32> {
-        Vector3::new(0.0, 0.0, -1.0)
+        Vector3::new(0.0, 1.0, 0.0)
     }
 
-    /// 构建视图矩阵，垂直向下看向角色。
+    /// 构建视图矩阵，斜向下看向角色地面位置。
     pub fn view_matrix(&self, look_target: Point3<f32>) -> Matrix4<f32> {
         let target = Point3::new(look_target.x, 0.0, look_target.z);
         Matrix4::look_at_rh(self.position, target, self.up())

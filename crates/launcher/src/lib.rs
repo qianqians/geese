@@ -1,7 +1,7 @@
 //! Geese Launcher - 项目模板选择与工程生成。
 //!
 //! 入口流程：
-//! 1. 首页展示可用模板卡片（FPS / 第三人称固定视角）
+//! 1. 首页展示可用模板卡片（FPS / 第三人称轨道 / 俯视角）
 //! 2. 选择模板后配置项目名称和路径
 //! 3. 点击"创建工程"生成完整可运行的 Rust 项目
 //! 4. 成功后可打开编辑器
@@ -291,7 +291,7 @@ impl Launcher {
                     let cam_type = match camera_type {
                         crate::templates::CameraType::Empty => "自由模式",
                         crate::templates::CameraType::FirstPerson => "第一人称 (FPS)",
-                        crate::templates::CameraType::ThirdPersonFixed => "第三人称固定",
+                        crate::templates::CameraType::ThirdPerson => "第三人称 (轨道)",
                         crate::templates::CameraType::TopDown => "俯视角 (Top-Down)",
                     };
                     ui.label(format!("摄像机类型: {}", cam_type));
@@ -563,15 +563,16 @@ mod tests {
     }
 
     #[test]
-    fn third_person_template_has_fixed_camera() {
+    fn third_person_template_has_orbit_camera() {
         let tp = templates::third_person_template();
         assert_eq!(
             tp.camera_config.camera_type,
-            crate::templates::CameraType::ThirdPersonFixed
+            crate::templates::CameraType::ThirdPerson
         );
         let (_ox, oy, oz) = tp.camera_config.follow_offset;
         assert!(oy > 0.0, "camera should be above player");
         assert!(oz > 0.0, "camera should be behind player");
+        assert!(tp.player_config.mouse_sensitivity > 0.0, "orbit camera needs mouse sensitivity");
     }
 
     #[test]
@@ -592,7 +593,8 @@ mod tests {
             td.camera_config.camera_type,
             crate::templates::CameraType::TopDown
         );
-        assert!(td.camera_config.follow_offset.1 > 10.0, "camera should be high above");
+        assert!(td.camera_config.follow_offset.1 > 10.0, "camera should be above");
+        assert!(td.camera_config.follow_offset.2 > 10.0, "camera should be behind (isometric)");
         assert_eq!(td.player_config.jump_impulse, 0.0, "top-down has no jump");
         assert!(td.files.len() >= 2);
     }

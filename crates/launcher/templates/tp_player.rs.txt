@@ -1,6 +1,7 @@
 //! 第三人称角色控制器。
 //!
-//! WASD 驱动角色在世界坐标系 XZ 平面移动，Space 跳跃。
+//! WASD 驱动角色在摄像机相对方向上移动，Space 跳跃。
+//! 移动方向始终相对于摄像机朝向。
 
 use cgmath::{Point3, Vector3, InnerSpace};
 use input::{InputState, KeyCode};
@@ -39,21 +40,23 @@ impl ThirdPersonPlayer {
         }
     }
 
-    /// 处理输入并在世界坐标系中更新速度。
-    pub fn handle_input(&mut self, input: &InputState) {
+    /// 处理输入，根据摄像机朝向更新速度。
+    /// `cam_forward`: 摄像机在 XZ 平面上的前向方向。
+    /// `cam_right`: 摄像机在 XZ 平面上的右向方向。
+    pub fn handle_input(&mut self, input: &InputState, cam_forward: Vector3<f32>, cam_right: Vector3<f32>) {
         let mut move_dir = Vector3::new(0.0, 0.0, 0.0);
 
         if input.is_key_down(KeyCode::W) {
-            move_dir.z -= 1.0; // 世界前方（-Z）
+            move_dir += cam_forward; // 摄像机前方
         }
         if input.is_key_down(KeyCode::S) {
-            move_dir.z += 1.0;
-        }
-        if input.is_key_down(KeyCode::A) {
-            move_dir.x -= 1.0;
+            move_dir -= cam_forward; // 摄像机后方
         }
         if input.is_key_down(KeyCode::D) {
-            move_dir.x += 1.0;
+            move_dir += cam_right; // 摄像机右侧
+        }
+        if input.is_key_down(KeyCode::A) {
+            move_dir -= cam_right; // 摄像机左侧
         }
 
         if move_dir.magnitude2() > 0.0 {

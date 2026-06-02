@@ -2,7 +2,7 @@
 //!
 //! 每个模板包含：
 //! - 基本信息（id, name, description）
-//! - 摄像机配置（FPS 或 第三人称固定）
+//! - 摄像机配置（FPS / 第三人称轨道 / 俯视角）
 //! - 输入映射
 //! - 物理配置
 //! - 场景定义
@@ -21,9 +21,9 @@ pub enum CameraType {
     Empty,
     /// 第一人称：绑定在角色眼睛位置，鼠标控制旋转。
     FirstPerson,
-    /// 第三人称固定：固定在角色后方上方，平滑跟随。
-    ThirdPersonFixed,
-    /// 俯视角：摄像机垂直俯视，2D 平面移动。
+    /// 第三人称：轨道摄像机，鼠标旋转/缩放，平滑跟随（类似原神）。
+    ThirdPerson,
+    /// 俯视角：斜 45 度等距视角，摄像机固定角度跟随（类似魔兽/暗黑）。
     TopDown,
 }
 
@@ -39,22 +39,22 @@ pub struct CameraConfig {
     pub z_far: f32,
     /// 角色眼睛高度偏移（仅 FPS）
     pub eye_height: f32,
-    /// 摄像机相对角色偏移（仅 ThirdPersonFixed）
+    /// 摄像机相对角色偏移（第三人称/俯视角）
     pub follow_offset: (f32, f32, f32),
-    /// 跟随平滑系数（仅 ThirdPersonFixed）
+    /// 跟随平滑系数（第三人称/俯视角）
     pub follow_smooth: f32,
 }
 
 impl Default for CameraConfig {
     fn default() -> Self {
         Self {
-            camera_type: CameraType::ThirdPersonFixed,
+            camera_type: CameraType::ThirdPerson,
             fov: 60.0,
             z_near: 0.1,
             z_far: 1000.0,
             eye_height: 1.7,
-            follow_offset: (0.0, 5.0, 8.0),
-            follow_smooth: 0.1,
+            follow_offset: (0.0, 2.5, 6.0),
+            follow_smooth: 0.05,
         }
     }
 }
@@ -446,27 +446,27 @@ pub fn fps_template() -> ProjectTemplate {
     }
 }
 
-/// 第三人称固定视角模板
+/// 第三人称轨道摄像机模板（原神风格）
 pub fn third_person_template() -> ProjectTemplate {
     ProjectTemplate {
         id: "third_person".into(),
-        name: "第三人称固定视角".into(),
-        description: "开阔室外场景，摄像机固定在角色后方上方，WASD 世界坐标移动。适合动作冒险、RPG 类游戏。".into(),
+        name: "第三人称视角".into(),
+        description: "原神风格轨道摄像机，鼠标控制视角旋转与缩放，WASD 摄像机相对移动。适合动作 RPG、开放世界游戏。".into(),
         camera_config: CameraConfig {
-            camera_type: CameraType::ThirdPersonFixed,
+            camera_type: CameraType::ThirdPerson,
             fov: 60.0,
             z_near: 0.1,
             z_far: 1000.0,
             eye_height: 1.7,
-            follow_offset: (0.0, 6.0, 10.0),
-            follow_smooth: 0.08,
+            follow_offset: (0.0, 2.5, 6.0),
+            follow_smooth: 0.05,
         },
         player_config: PlayerConfig {
             move_speed: 5.0,
             jump_impulse: 8.0,
             capsule_radius: 0.3,
             capsule_height: 1.7,
-            mouse_sensitivity: 0.0, // 第三人称不用鼠标
+            mouse_sensitivity: 0.003, // 轨道摄像机鼠标灵敏度
         },
         input_mappings: vec![
             InputMapping { action: "move_forward".into(), key: "W".into() },
@@ -480,19 +480,19 @@ pub fn third_person_template() -> ProjectTemplate {
     }
 }
 
-/// 俯视角模板
+/// 俯视角模板（斜 45 度等距，魔兽/暗黑风格）
 pub fn topdown_template() -> ProjectTemplate {
     ProjectTemplate {
         id: "topdown".into(),
-        name: "俯视角 (Top-Down)".into(),
-        description: "摄像机垂直俯视，WASD 平面移动。适合 RTS、MOBA、Roguelike 等游戏。".into(),
+        name: "俯视角 (Isometric)".into(),
+        description: "斜 45 度等距视角，摄像机固定角度平滑跟随，WASD 平面移动。适合 RTS、ARPG（暗黑/魔兽风格）。".into(),
         camera_config: CameraConfig {
             camera_type: CameraType::TopDown,
             fov: 50.0,
             z_near: 0.1,
             z_far: 1000.0,
             eye_height: 0.0,
-            follow_offset: (0.0, 20.0, 0.0),
+            follow_offset: (0.0, 15.0, 15.0),
             follow_smooth: 0.05,
         },
         player_config: PlayerConfig {
@@ -602,7 +602,7 @@ pub fn main_rs_content(template: &ProjectTemplate) -> String {
     let camera_type = match template.camera_config.camera_type {
         CameraType::Empty => "Free",
         CameraType::FirstPerson => "FirstPerson",
-        CameraType::ThirdPersonFixed => "ThirdPersonFixed",
+        CameraType::ThirdPerson => "ThirdPerson",
         CameraType::TopDown => "TopDown",
     };
 
@@ -652,7 +652,7 @@ pub fn project_config_content(template: &ProjectTemplate) -> String {
     let cam_type_str = match cam.camera_type {
         CameraType::Empty => "Free",
         CameraType::FirstPerson => "FirstPerson",
-        CameraType::ThirdPersonFixed => "ThirdPersonFixed",
+        CameraType::ThirdPerson => "ThirdPerson",
         CameraType::TopDown => "TopDown",
     };
 
