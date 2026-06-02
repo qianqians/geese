@@ -1,10 +1,11 @@
-//! 第三人称固定摄像机。
+//! 第三人称轨道摄像机（原神风格）。
 //!
-//! 摄像机固定在角色后方上方，平滑跟随角色移动。
+//! 摄像机围绕角色旋转，鼠标拖拽控制水平/垂直角度，
+//! 滚轮控制距离。平滑跟随角色移动。
 
 use cgmath::{InnerSpace, Matrix4, Point3, Rad, Vector3};
 
-/// 第三人称固定摄像机控制器。
+/// 第三人称轨道摄像机控制器。
 pub struct ThirdPersonCamera {
     /// 摄像机世界位置
     pub position: Point3<f32>,
@@ -14,39 +15,101 @@ pub struct ThirdPersonCamera {
     pub z_near: f32,
     /// 远裁剪面
     pub z_far: f32,
-    /// 相对于角色的偏移
-    pub follow_offset: Vector3<f32>,
+    /// 水平旋转角（弧度），围绕角色 Y 轴
+    pub yaw: f32,
+    /// 俯仰角（弧度），向上为正
+    pub pitch: f32,
+    /// 摄像机到角色的距离
+    pub distance: f32,
     /// 跟随平滑系数（0=即时跟随，1=不平滑）
     pub follow_smooth: f32,
+    /// 鼠标旋转灵敏度
+    pub orbit_sensitivity: f32,
+    /// 缩放灵敏度
+    pub zoom_sensitivity: f32,
+    /// 最小俯仰角
+    pub min_pitch: f32,
+    /// 最大俯仰角
+    pub max_pitch: f32,
+    /// 最小距离
+    pub min_distance: f32,
+    /// 最大距离
+    pub max_distance: f32,
+    /// 平滑后的摄像机目标位置（用于插值）
+    target_position: Point3<f32>,
 }
 
 impl ThirdPersonCamera {
-    pub fn new(fov: f32, z_near: f32, z_far: f32, offset: Vector3<f32>) -> Self {
+    pub fn new(fov: f32, z_near: f32, z_far: f32, distance: f32) -> Self {
+        let default_pos = Point3::new(0.0, distance * 0.4, distance);
         Self {
-            position: Point3::new(offset.x, offset.y, offset.z),
+            position: default_pos,
             fov,
             z_near,
             z_far,
-            follow_offset: offset,
-            follow_smooth: 0.08,
+            yaw: 0.0,
+            pitch: 0.4, // 约 23 度俯视
+            distance,
+            follow_smooth: 0.05,
+            orbit_sensitivity: 0.003,
+            zoom_sensitivity: 5.0,
+            min_pitch: -0.3,
+            max_pitch: 1.2,
+            min_distance: 2.0,
+            max_distance: 30.0,
+            target_position: default_pos,
         }
     }
 
-    /// 更新摄像机位置，平滑跟随角色。
+    /// 计算摄像机在球坐标系下的理想位置。
+    fn compute_ideal_position(&self, player_pos: Point3<f32>) -> Point3<f32> {
+        let cos_pitch = self.pitch.cos();
+        let x = self.distance * self.yaw.sin() * cos_pitch;
+        let y = self.distance * self.pitch.sin();
+        let z = self.distance * self.yaw.cos() * cos_pitch;
+
+        Point3::new(player_pos.x + x, player_pos.y + y, player_pos.z + z)
+    }
+
+    /// 更新摄像机，平滑跟随角色。
     /// `player_pos`: 角色位置（底部）。
     pub fn update(&mut self, player_pos: Point3<f32>) {
-        let target_pos = player_pos + self.follow_offset;
+        self.target_position = self.compute_ideal_position(player_pos);
 
-        // 平滑插值跟随
         let smooth = self.follow_smooth.clamp(0.0, 1.0);
-        self.position.x += (target_pos.x - self.position.x) * smooth;
-        self.position.y += (target_pos.y - self.position.y) * smooth;
-        self.position.z += (target_pos.z - self.position.z) * smooth;
+        self.position.x += (self.target_position.x - self.position.x) * smooth;
+        self.position.y += (self.target_position.y - self.position.y) * smooth;
+        self.position.z += (self.target_position.z - self.position.z) * smooth;
+    }
+
+    /// 处理鼠标拖拽旋转摄像机。
+    /// `mouse_delta`: 两帧间的鼠标位移（像素）。
+    pub fn orbit(&mut self, mouse_delta: (f32, f32)) {
+        self.yaw -= mouse_delta.0 * self.orbit_sensitivity;
+        self.pitch += mouse_delta.1 * self.orbit_sensitivity;
+        self.pitch = self.pitch.clamp(self.min_pitch, self.max_pitch);
+    }
+
+    /// 处理滚轮缩放。
+    /// `scroll_delta`: 正值放大（拉近），负值缩小（拉远）。
+    pub fn zoom(&mut self, scroll_delta: f32) {
+        self.distance -= scroll_delta * self.zoom_sensitivity;
+        self.distance = self.distance.clamp(self.min_distance, self.max_distance);
     }
 
     /// 上方向量。
     pub fn up(&self) -> Vector3<f32> {
         Vector3::new(0.0, 1.0, 0.0)
+    }
+
+    /// 获取摄像机在 XZ 平面上的前向方向（用于角色移动）。
+    pub fn forward_xz(&self) -> Vector3<f32> {
+        Vector3::new(-self.yaw.sin(), 0.0, -self.yaw.cos())
+    }
+
+    /// 获取摄像机在 XZ 平面上的右向方向（用于角色移动）。
+    pub fn right_xz(&self) -> Vector3<f32> {
+        Vector3::new(self.yaw.cos(), 0.0, -self.yaw.sin())
     }
 
     /// 构建视图矩阵，看向角色位置。
