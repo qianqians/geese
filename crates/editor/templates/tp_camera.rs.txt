@@ -1,0 +1,71 @@
+//! 第三人称固定摄像机。
+//!
+//! 摄像机固定在角色后方上方，平滑跟随角色移动。
+
+use cgmath::{InnerSpace, Matrix4, Point3, Rad, Vector3};
+
+/// 第三人称固定摄像机控制器。
+pub struct ThirdPersonCamera {
+    /// 摄像机世界位置
+    pub position: Point3<f32>,
+    /// 视场角（度）
+    pub fov: f32,
+    /// 近裁剪面
+    pub z_near: f32,
+    /// 远裁剪面
+    pub z_far: f32,
+    /// 相对于角色的偏移
+    pub follow_offset: Vector3<f32>,
+    /// 跟随平滑系数（0=即时跟随，1=不平滑）
+    pub follow_smooth: f32,
+}
+
+impl ThirdPersonCamera {
+    pub fn new(fov: f32, z_near: f32, z_far: f32, offset: Vector3<f32>) -> Self {
+        Self {
+            position: Point3::new(offset.x, offset.y, offset.z),
+            fov,
+            z_near,
+            z_far,
+            follow_offset: offset,
+            follow_smooth: 0.08,
+        }
+    }
+
+    /// 更新摄像机位置，平滑跟随角色。
+    /// `player_pos`: 角色位置（底部）。
+    pub fn update(&mut self, player_pos: Point3<f32>) {
+        let target_pos = player_pos + self.follow_offset;
+
+        // 平滑插值跟随
+        let smooth = self.follow_smooth.clamp(0.0, 1.0);
+        self.position.x += (target_pos.x - self.position.x) * smooth;
+        self.position.y += (target_pos.y - self.position.y) * smooth;
+        self.position.z += (target_pos.z - self.position.z) * smooth;
+    }
+
+    /// 上方向量。
+    pub fn up(&self) -> Vector3<f32> {
+        Vector3::new(0.0, 1.0, 0.0)
+    }
+
+    /// 构建视图矩阵，看向角色位置。
+    pub fn view_matrix(&self, look_target: Point3<f32>) -> Matrix4<f32> {
+        Matrix4::look_at_rh(self.position, look_target, self.up())
+    }
+
+    /// 构建透视投影矩阵。
+    pub fn projection_matrix(&self, aspect_ratio: f32) -> Matrix4<f32> {
+        cgmath::perspective(
+            Rad(self.fov.to_radians()),
+            aspect_ratio,
+            self.z_near,
+            self.z_far,
+        )
+    }
+
+    /// 构建 view-projection 矩阵。
+    pub fn view_projection(&self, look_target: Point3<f32>, aspect_ratio: f32) -> Matrix4<f32> {
+        self.projection_matrix(aspect_ratio) * self.view_matrix(look_target)
+    }
+}

@@ -1,0 +1,107 @@
+//! 第一人称摄像机。
+//!
+//! 摄像机绑定在角色眼睛位置，鼠标控制 yaw/pitch 旋转。
+
+use cgmath::{InnerSpace, Matrix4, Point3, Vector3, Rad};
+
+/// 第一人称摄像机控制器。
+pub struct FirstPersonCamera {
+    /// 摄像机世界位置
+    pub position: Point3<f32>,
+    /// 偏航角（绕 Y 轴，弧度）
+    pub yaw: f32,
+    /// 俯仰角（绕 X 轴，弧度），限制在 ±89°
+    pub pitch: f32,
+    /// 视场角（度）
+    pub fov: f32,
+    /// 近裁剪面
+    pub z_near: f32,
+    /// 远裁剪面
+    pub z_far: f32,
+    /// 鼠标灵敏度
+    pub sensitivity: f32,
+}
+
+impl FirstPersonCamera {
+    pub fn new(fov: f32, z_near: f32, z_far: f32) -> Self {
+        Self {
+            position: Point3::new(0.0, 1.7, 0.0),
+            yaw: 0.0,
+            pitch: 0.0,
+            fov,
+            z_near,
+            z_far,
+            sensitivity: 0.002,
+        }
+    }
+
+    /// 根据鼠标增量旋转视角。
+    /// `dx`: 鼠标水平移动量，`dy`: 鼠标垂直移动量。
+    pub fn rotate(&mut self, dx: f32, dy: f32) {
+        self.yaw -= dx * self.sensitivity;
+        self.pitch -= dy * self.sensitivity;
+        // 限制俯仰角防止翻转
+        let max_pitch = 89.0_f32.to_radians();
+        self.pitch = self.pitch.clamp(-max_pitch, max_pitch);
+    }
+
+    /// 将摄像机位置绑定到角色位置。
+    /// `player_pos`: 角色底部位置（胶囊体中心），`eye_height`: 眼睛高度偏移。
+    pub fn update_position(&mut self, player_pos: Point3<f32>, eye_height: f32) {
+        self.position = Point3::new(player_pos.x, player_pos.y + eye_height, player_pos.z);
+    }
+
+    /// 前方向量（水平面投影）。
+    pub fn forward(&self) -> Vector3<f32> {
+        Vector3::new(
+            self.yaw.sin(),
+            0.0,
+            -self.yaw.cos(),
+        )
+    }
+
+    /// 右方向量（水平面投影）。
+    pub fn right(&self) -> Vector3<f32> {
+        Vector3::new(
+            self.yaw.cos(),
+            0.0,
+            self.yaw.sin(),
+        )
+    }
+
+    /// 上方向量。
+    pub fn up(&self) -> Vector3<f32> {
+        Vector3::new(0.0, 1.0, 0.0)
+    }
+
+    /// 视线方向（含 pitch）。
+    pub fn look_direction(&self) -> Vector3<f32> {
+        Vector3::new(
+            self.yaw.cos() * self.pitch.cos(),
+            self.pitch.sin(),
+            -self.yaw.sin() * self.pitch.cos(),
+        )
+        .normalize()
+    }
+
+    /// 构建视图矩阵。
+    pub fn view_matrix(&self) -> Matrix4<f32> {
+        let target = self.position + self.look_direction();
+        Matrix4::look_at_rh(self.position, target, self.up())
+    }
+
+    /// 构建透视投影矩阵。
+    pub fn projection_matrix(&self, aspect_ratio: f32) -> Matrix4<f32> {
+        cgmath::perspective(
+            Rad(self.fov.to_radians()),
+            aspect_ratio,
+            self.z_near,
+            self.z_far,
+        )
+    }
+
+    /// 构建 view-projection 矩阵。
+    pub fn view_projection(&self, aspect_ratio: f32) -> Matrix4<f32> {
+        self.projection_matrix(aspect_ratio) * self.view_matrix()
+    }
+}
