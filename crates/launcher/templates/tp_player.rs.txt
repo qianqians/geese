@@ -1,0 +1,102 @@
+//! 第三人称角色控制器。
+//!
+//! WASD 驱动角色在世界坐标系 XZ 平面移动，Space 跳跃。
+
+use cgmath::{Point3, Vector3, InnerSpace};
+use input::{InputState, KeyCode};
+
+/// 第三人称角色控制器。
+pub struct ThirdPersonPlayer {
+    /// 角色底部位置（胶囊体中心）
+    pub position: Point3<f32>,
+    /// 当前速度
+    pub velocity: Vector3<f32>,
+    /// 角色朝向（yaw 弧度）
+    pub yaw: f32,
+    /// 移动速度 (m/s)
+    pub move_speed: f32,
+    /// 跳跃冲量
+    pub jump_impulse: f32,
+    /// 是否在地面上
+    pub is_grounded: bool,
+    /// 摩擦系数
+    friction: f32,
+    /// 加速度
+    acceleration: f32,
+}
+
+impl ThirdPersonPlayer {
+    pub fn new(position: Point3<f32>) -> Self {
+        Self {
+            position,
+            velocity: Vector3::new(0.0, 0.0, 0.0),
+            yaw: 0.0,
+            move_speed: 5.0,
+            jump_impulse: 8.0,
+            is_grounded: false,
+            friction: 10.0,
+            acceleration: 50.0,
+        }
+    }
+
+    /// 处理输入并在世界坐标系中更新速度。
+    pub fn handle_input(&mut self, input: &InputState) {
+        let mut move_dir = Vector3::new(0.0, 0.0, 0.0);
+
+        if input.is_key_down(KeyCode::W) {
+            move_dir.z -= 1.0; // 世界前方（-Z）
+        }
+        if input.is_key_down(KeyCode::S) {
+            move_dir.z += 1.0;
+        }
+        if input.is_key_down(KeyCode::A) {
+            move_dir.x -= 1.0;
+        }
+        if input.is_key_down(KeyCode::D) {
+            move_dir.x += 1.0;
+        }
+
+        if move_dir.magnitude2() > 0.0 {
+            move_dir = move_dir.normalize();
+            // 更新朝向到移动方向
+            self.yaw = move_dir.x.atan2(-move_dir.z);
+        }
+
+        let target_velocity_xz = move_dir * self.move_speed;
+        let accel = self.acceleration;
+
+        self.velocity.x += (target_velocity_xz.x - self.velocity.x) * accel.min(1.0);
+        self.velocity.z += (target_velocity_xz.z - self.velocity.z) * accel.min(1.0);
+
+        // 跳跃
+        if input.is_key_down(KeyCode::Space) && self.is_grounded {
+            self.velocity.y = self.jump_impulse;
+            self.is_grounded = false;
+        }
+    }
+
+    /// 每帧物理更新。
+    pub fn update(&mut self, dt: f32) {
+        // 应用重力
+        self.velocity.y -= 9.81 * dt;
+
+        // 更新位置
+        self.position.x += self.velocity.x * dt;
+        self.position.y += self.velocity.y * dt;
+        self.position.z += self.velocity.z * dt;
+
+        // 地面检测
+        if self.position.y <= 1.0 {
+            self.position.y = 1.0;
+            self.velocity.y = 0.0;
+            self.is_grounded = true;
+        }
+
+        // 摩擦力
+        if self.is_grounded {
+            let friction_force = self.friction * dt;
+            self.velocity.x *= (1.0 - friction_force).max(0.0);
+            self.velocity.z *= (1.0 - friction_force).max(0.0);
+        }
+    }
+}

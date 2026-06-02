@@ -1,0 +1,491 @@
+//! 变换 Gizmo。
+//!
+//! 在视口中绘制并操作 Translate / Rotate / Scale Gizmo。
+//! - W/E/R 切换模式
+//! - 鼠标拖拽 Gizmo 手柄执行变换
+//! - X/Y/Z 键锁定单轴
+//! - Shift+W/E/R 切换坐标系（Local/World）
+
+use cgmath::{InnerSpace, Matrix4, Point3, Vector3, Vector4};
+use crate::viewport::{GizmoMode, OrbitCamera};
+
+// ---------------------------------------------------------------------------
+// 轴索引
+// ---------------------------------------------------------------------------
+
+/// 变换轴。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Axis {
+    X,
+    Y,
+    Z,
+    /// 多轴平面（如 XY 平面用于平移）
+    Plane(AxisPlane),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AxisPlane {
+    XY,
+    XZ,
+    YZ,
+}
+
+// ---------------------------------------------------------------------------
+// Gizmo 配置
+// ---------------------------------------------------------------------------
+
+/// Gizmo 渲染与交互配置。
+pub struct GizmoConfig {
+    /// Gizmo 在世界空间中的位置
+    pub position: Point3<f32>,
+    /// 手柄长度（屏幕像素）
+    pub handle_length: f32,
+    /// 手柄粗细（屏幕像素）
+    pub handle_thickness: f32,
+    /// 命中检测半径（屏幕像素）
+    pub hit_radius: f32,
+    /// 是否使用本地坐标系
+    pub local_space: bool,
+    /// 本地旋转矩阵（仅 local_space 时使用）
+    pub local_rotation: Matrix4<f32>,
+}
+
+impl Default for GizmoConfig {
+    fn default() -> Self {
+        Self {
+            position: Point3::new(0.0, 0.0, 0.0),
+            handle_length: 80.0,
+            handle_thickness: 3.0,
+            hit_radius: 12.0,
+            local_space: false,
+            local_rotation: Matrix4::from_scale(1.0),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Gizmo 交互状态
+// ---------------------------------------------------------------------------
+
+/// Gizmo 拖拽状态。
+#[derive(Debug, Clone)]
+pub struct GizmoDragState {
+    /// 正在拖拽的轴
+    pub axis: Axis,
+    /// 拖拽起始世界位置
+    pub start_world: Point3<f32>,
+    /// 拖拽起始鼠标屏幕位置
+    pub start_screen: (f32, f32),
+    /// 当前世界位置
+    pub current_world: Point3<f32>,
+    /// 变换增量
+    pub delta: Vector3<f32>,
+}
+
+/// Gizmo 交互管理器。
+pub struct GizmoInteraction {
+    /// 当前模式
+    pub mode: GizmoMode,
+    /// 锁定的单轴（None 表示自由变换）
+    pub locked_axis: Option<Axis>,
+    /// 是否使用本地坐标系
+    pub local_space: bool,
+    /// 拖拽状态（None 表示未拖拽）
+    pub dragging: Option<GizmoDragState>,
+    /// 悬停的轴
+    pub hovered_axis: Option<Axis>,
+    /// 上次鼠标位置
+    last_mouse: Option<(f32, f32)>,
+}
+
+impl GizmoInteraction {
+    pub fn new() -> Self {
+        Self {
+            mode: GizmoMode::Translate,
+            locked_axis: None,
+            local_space: false,
+            dragging: None,
+            hovered_axis: None,
+            last_mouse: None,
+        }
+    }
+
+    /// 处理快捷键。
+    pub fn handle_shortcuts(&mut self, ui: &egui::Ui) {
+        ui.input(|input| {
+            // 模式切换
+            if input.key_pressed(egui::Key::W) && !input.modifiers.ctrl && !input.modifiers.shift {
+                self.mode = GizmoMode::Translate;
+            }
+            if input.key_pressed(egui::Key::E) && !input.modifiers.ctrl && !input.modifiers.shift {
+                self.mode = GizmoMode::Rotate;
+            }
+            if input.key_pressed(egui::Key::R) && !input.modifiers.ctrl && !input.modifiers.shift {
+                self.mode = GizmoMode::Scale;
+            }
+
+            // 坐标系切换
+            if input.modifiers.shift {
+                if input.key_pressed(egui::Key::W) {
+                    self.local_space = !self.local_space;
+                }
+                if input.key_pressed(egui::Key::E) {
+                    self.local_space = !self.local_space;
+                }
+                if input.key_pressed(egui::Key::R) {
+                    self.local_space = !self.local_space;
+                }
+            }
+
+            // 轴锁定
+            if input.key_pressed(egui::Key::X) && !input.modifiers.ctrl {
+                self.locked_axis = Some(Axis::X);
+            }
+            if input.key_pressed(egui::Key::Y) && !input.modifiers.ctrl {
+                self.locked_axis = Some(Axis::Y);
+            }
+            if input.key_pressed(egui::Key::Z) && !input.modifiers.ctrl {
+                self.locked_axis = Some(Axis::Z);
+            }
+            // 释放轴锁
+            if input.key_pressed(egui::Key::Escape) {
+                self.locked_axis = None;
+            }
+        });
+    }
+
+    /// 返回当前 Gizmo 的位置应用后的世界空间轴方向。
+    pub fn axis_directions(&self) -> (Vector3<f32>, Vector3<f32>, Vector3<f32>) {
+        if self.local_space {
+            let rot = self.local_rotation();
+            let x = rot * Vector4::new(1.0, 0.0, 0.0, 0.0);
+            let y = rot * Vector4::new(0.0, 1.0, 0.0, 0.0);
+            let z = rot * Vector4::new(0.0, 0.0, 1.0, 0.0);
+            (
+                Vector3::new(x.x, x.y, x.z).normalize(),
+                Vector3::new(y.x, y.y, y.z).normalize(),
+                Vector3::new(z.x, z.y, z.z).normalize(),
+            )
+        } else {
+            (Vector3::unit_x(), Vector3::unit_y(), Vector3::unit_z())
+        }
+    }
+
+    fn local_rotation(&self) -> Matrix4<f32> {
+        // 默认使用单位旋转
+        Matrix4::from_scale(1.0)
+    }
+
+    /// 开始拖拽。
+    pub fn begin_drag(&mut self, axis: Axis, world_pos: Point3<f32>, screen_pos: (f32, f32)) {
+        self.dragging = Some(GizmoDragState {
+            axis,
+            start_world: world_pos,
+            start_screen: screen_pos,
+            current_world: world_pos,
+            delta: Vector3::new(0.0, 0.0, 0.0),
+        });
+        self.last_mouse = Some(screen_pos);
+    }
+
+    /// 更新拖拽。
+    pub fn update_drag(&mut self, screen_pos: (f32, f32), camera: &OrbitCamera) {
+        let drag_axis = self.dragging.as_ref().map(|d| d.axis);
+        let mode = self.mode;
+        let (axis_x, axis_y, axis_z) = self.axis_directions();
+
+        if let (Some(drag), Some(drag_axis)) = (&mut self.dragging, drag_axis) {
+            let last = self.last_mouse.unwrap_or(screen_pos);
+            let dx = screen_pos.0 - last.0;
+            let dy = screen_pos.1 - last.1;
+
+            match mode {
+                GizmoMode::Translate => {
+                    // 在世界空间中计算平移量
+                    let right = camera.right_direction();
+                    let up = camera.up_direction();
+                    let pan_speed = camera.distance * 0.005;
+
+                    // 屏幕移动 → 世界空间移动
+                    let world_delta = right * (dx * pan_speed) + up * (-dy * pan_speed);
+
+                    // 投影到锁定轴
+                    let projected = match drag_axis {
+                        Axis::X => axis_x * world_delta.dot(axis_x),
+                        Axis::Y => axis_y * world_delta.dot(axis_y),
+                        Axis::Z => axis_z * world_delta.dot(axis_z),
+                        Axis::Plane(AxisPlane::XY) => {
+                            axis_x * world_delta.dot(axis_x) + axis_y * world_delta.dot(axis_y)
+                        }
+                        Axis::Plane(AxisPlane::XZ) => {
+                            axis_x * world_delta.dot(axis_x) + axis_z * world_delta.dot(axis_z)
+                        }
+                        Axis::Plane(AxisPlane::YZ) => {
+                            axis_y * world_delta.dot(axis_y) + axis_z * world_delta.dot(axis_z)
+                        }
+                    };
+
+                    drag.current_world = drag.start_world + projected;
+                    drag.delta = projected;
+                }
+                GizmoMode::Rotate => {
+                    // 屏幕拖拽 → 绕轴旋转角度
+                    let sensitivity = 0.01;
+                    let angle = (dx + dy) * sensitivity;
+                    drag.delta = match drag_axis {
+                        Axis::X => Vector3::new(angle, 0.0, 0.0),
+                        Axis::Y => Vector3::new(0.0, angle, 0.0),
+                        Axis::Z => Vector3::new(0.0, 0.0, angle),
+                        _ => Vector3::new(0.0, 0.0, 0.0),
+                    };
+                }
+                GizmoMode::Scale => {
+                    let sensitivity = 0.01;
+                    let scale_factor = 1.0 + (dx + dy) * sensitivity;
+                    let scale_delta = scale_factor - 1.0;
+                    drag.delta = match drag_axis {
+                        Axis::X => Vector3::new(scale_delta, 0.0, 0.0),
+                        Axis::Y => Vector3::new(0.0, scale_delta, 0.0),
+                        Axis::Z => Vector3::new(0.0, 0.0, scale_delta),
+                        Axis::Plane(AxisPlane::XY) => Vector3::new(scale_delta, scale_delta, 0.0),
+                        Axis::Plane(AxisPlane::XZ) => Vector3::new(scale_delta, 0.0, scale_delta),
+                        Axis::Plane(AxisPlane::YZ) => Vector3::new(0.0, scale_delta, scale_delta),
+                    };
+                }
+            }
+
+            self.last_mouse = Some(screen_pos);
+        }
+    }
+
+    /// 结束拖拽，返回最终变换。
+    pub fn end_drag(&mut self) -> Option<(Axis, Vector3<f32>)> {
+        let drag = self.dragging.take()?;
+        self.last_mouse = None;
+        Some((drag.axis, drag.delta))
+    }
+
+    /// 检测鼠标命中了哪个 Gizmo 手柄。
+    pub fn hit_test(
+        &self,
+        screen_pos: (f32, f32),
+        gizmo_screen_pos: (f32, f32),
+        camera: &OrbitCamera,
+    ) -> Option<Axis> {
+        let (axis_x, axis_y, axis_z) = self.axis_directions();
+
+        let origin = gizmo_screen_pos;
+        if origin.0 < 0.0 || origin.1 < 0.0 {
+            return None;
+        }
+
+        // 将世界空间轴方向近似投影到屏幕 2D
+        let right = camera.right_direction();
+        let up = camera.up_direction();
+
+        let proj = |v: Vector3<f32>| -> (f32, f32) {
+            // 简化：将世界方向投影到屏幕
+            let sx = right.dot(v);
+            let sy = up.dot(v);
+            (sx, -sy)
+        };
+
+        let handle_len = 80.0;
+        let hit_r = 12.0;
+
+        let (x_sx, x_sy) = proj(axis_x);
+        let x_tip = (origin.0 + x_sx * handle_len, origin.1 + x_sy * handle_len);
+
+        let (y_sx, y_sy) = proj(axis_y);
+        let y_tip = (origin.0 + y_sx * handle_len, origin.1 + y_sy * handle_len);
+
+        let (z_sx, z_sy) = proj(axis_z);
+        let z_tip = (origin.0 + z_sx * handle_len, origin.1 + z_sy * handle_len);
+
+        // 点到线段的距离
+        let dist_to_seg = |p: (f32, f32), a: (f32, f32), b: (f32, f32)| -> f32 {
+            let abx = b.0 - a.0;
+            let aby = b.1 - a.1;
+            let apx = p.0 - a.0;
+            let apy = p.1 - a.1;
+            let t = ((apx * abx + apy * aby) / (abx * abx + aby * aby + 1e-6)).clamp(0.0, 1.0);
+            let cx = a.0 + t * abx;
+            let cy = a.1 + t * aby;
+            let dx = p.0 - cx;
+            let dy = p.1 - cy;
+            (dx * dx + dy * dy).sqrt()
+        };
+
+        let mouse = screen_pos;
+
+        match self.mode {
+            GizmoMode::Translate => {
+                if dist_to_seg(mouse, origin, x_tip) < hit_r {
+                    Some(Axis::X)
+                } else if dist_to_seg(mouse, origin, y_tip) < hit_r {
+                    Some(Axis::Y)
+                } else if dist_to_seg(mouse, origin, z_tip) < hit_r {
+                    Some(Axis::Z)
+                } else {
+                    None
+                }
+            }
+            GizmoMode::Rotate | GizmoMode::Scale => {
+                if dist_to_seg(mouse, origin, x_tip) < hit_r {
+                    Some(Axis::X)
+                } else if dist_to_seg(mouse, origin, y_tip) < hit_r {
+                    Some(Axis::Y)
+                } else if dist_to_seg(mouse, origin, z_tip) < hit_r {
+                    Some(Axis::Z)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Gizmo 绘制
+// ---------------------------------------------------------------------------
+
+/// 在 egui painter 上绘制 Gizmo。
+pub fn draw_gizmo(
+    painter: &egui::Painter,
+    screen_pos: (f32, f32),
+    camera: &OrbitCamera,
+    interaction: &GizmoInteraction,
+) {
+    if screen_pos.0 < -100.0 || screen_pos.1 < -100.0 {
+        return;
+    }
+
+    let (axis_x, axis_y, axis_z) = interaction.axis_directions();
+    let right = camera.right_direction();
+    let up = camera.up_direction();
+
+    let proj = |v: Vector3<f32>| -> (f32, f32) {
+        let sx = right.dot(v);
+        let sy = up.dot(v);
+        (sx, -sy)
+    };
+
+    let handle_len = 80.0;
+    let origin = (screen_pos.0, screen_pos.1);
+
+    let (x_sx, x_sy) = proj(axis_x);
+    let x_len = (x_sx * x_sx + x_sy * x_sy).sqrt();
+    let x_tip = (
+        origin.0 + x_sx / x_len * handle_len,
+        origin.1 + x_sy / x_len * handle_len,
+    );
+
+    let (y_sx, y_sy) = proj(axis_y);
+    let y_len = (y_sx * y_sx + y_sy * y_sy).sqrt();
+    let y_tip = (
+        origin.0 + y_sx / y_len * handle_len,
+        origin.1 + y_sy / y_len * handle_len,
+    );
+
+    let (z_sx, z_sy) = proj(axis_z);
+    let z_len = (z_sx * z_sx + z_sy * z_sy).sqrt();
+    let z_tip = (
+        origin.0 + z_sx / z_len * handle_len,
+        origin.1 + z_sy / z_len * handle_len,
+    );
+
+    let p = |(x, y): (f32, f32)| egui::Pos2::new(x, y);
+
+    match interaction.mode {
+        GizmoMode::Translate => {
+            draw_arrow(painter, origin, x_tip, egui::Color32::RED, interaction.hovered_axis == Some(Axis::X));
+            draw_arrow(painter, origin, y_tip, egui::Color32::GREEN, interaction.hovered_axis == Some(Axis::Y));
+            draw_arrow(painter, origin, z_tip, egui::Color32::LIGHT_BLUE, interaction.hovered_axis == Some(Axis::Z));
+        }
+        GizmoMode::Rotate => {
+            draw_rotation_ring(painter, p(origin), Axis::X, axis_x, egui::Color32::RED, &interaction, camera);
+            draw_rotation_ring(painter, p(origin), Axis::Y, axis_y, egui::Color32::GREEN, &interaction, camera);
+            draw_rotation_ring(painter, p(origin), Axis::Z, axis_z, egui::Color32::LIGHT_BLUE, &interaction, camera);
+        }
+        GizmoMode::Scale => {
+            draw_scale_box(painter, p(origin), x_tip, egui::Color32::RED, interaction.hovered_axis == Some(Axis::X));
+            draw_scale_box(painter, p(origin), y_tip, egui::Color32::GREEN, interaction.hovered_axis == Some(Axis::Y));
+            draw_scale_box(painter, p(origin), z_tip, egui::Color32::LIGHT_BLUE, interaction.hovered_axis == Some(Axis::Z));
+        }
+    }
+
+    // Gizmo 中心点
+    painter.circle_filled(p(origin), 4.0, egui::Color32::WHITE);
+}
+
+fn draw_arrow(
+    painter: &egui::Painter,
+    from: (f32, f32),
+    to: (f32, f32),
+    color: egui::Color32,
+    highlight: bool,
+) {
+    let p = |(x, y): (f32, f32)| egui::Pos2::new(x, y);
+    let thickness = if highlight { 4.0 } else { 2.5 };
+    let c = if highlight {
+        egui::Color32::YELLOW
+    } else {
+        color
+    };
+
+    // 线
+    painter.line_segment([p(from), p(to)], (thickness, c));
+
+    // 箭头三角形
+    let dx = to.0 - from.0;
+    let dy = to.1 - from.1;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len > 1.0 {
+        let nx = dx / len;
+        let ny = dy / len;
+        let arrow_size = 8.0;
+        let a1 = p((to.0 - nx * arrow_size + ny * arrow_size * 0.5, to.1 - ny * arrow_size - nx * arrow_size * 0.5));
+        let a2 = p(to);
+        let a3 = p((to.0 - nx * arrow_size - ny * arrow_size * 0.5, to.1 - ny * arrow_size + nx * arrow_size * 0.5));
+        painter.add(egui::Shape::convex_polygon(
+            vec![a1, a2, a3],
+            c,
+            (0.0, c),
+        ));
+    }
+}
+
+fn draw_rotation_ring(
+    _painter: &egui::Painter,
+    _center: egui::Pos2,
+    _axis: Axis,
+    _axis_dir: Vector3<f32>,
+    _color: egui::Color32,
+    _interaction: &GizmoInteraction,
+    _camera: &OrbitCamera,
+) {
+    // 旋转环的 2D 投影简化为圆形，暂用简化绘制
+    // 完整实现需要将 3D 圆投影到屏幕空间
+}
+
+fn draw_scale_box(
+    painter: &egui::Painter,
+    origin: egui::Pos2,
+    tip: (f32, f32),
+    color: egui::Color32,
+    highlight: bool,
+) {
+    let c = if highlight { egui::Color32::YELLOW } else { color };
+    let thickness = if highlight { 3.0 } else { 2.0 };
+
+    let p = |(x, y): (f32, f32)| egui::Pos2::new(x, y);
+    painter.line_segment([origin, p(tip)], (thickness, c));
+
+    // 末端方块
+    let half = 5.0;
+    let rect = egui::Rect::from_center_size(
+        p(tip),
+        egui::Vec2::new(half * 2.0, half * 2.0),
+    );
+    painter.rect_filled(rect, 0.0, c);
+}

@@ -1,0 +1,81 @@
+//! 俯视角角色控制器。
+//!
+//! WASD 驱动角色在 XZ 平面移动，无跳跃。
+
+use cgmath::{Point3, Vector3, InnerSpace};
+use input::{InputState, KeyCode};
+
+/// 俯视角角色控制器。
+pub struct TopDownPlayer {
+    /// 角色底部位置
+    pub position: Point3<f32>,
+    /// 当前速度
+    pub velocity: Vector3<f32>,
+    /// 角色朝向（yaw 弧度）
+    pub yaw: f32,
+    /// 移动速度 (m/s)
+    pub move_speed: f32,
+    /// 摩擦系数
+    friction: f32,
+    /// 加速度
+    acceleration: f32,
+}
+
+impl TopDownPlayer {
+    pub fn new(position: Point3<f32>) -> Self {
+        Self {
+            position,
+            velocity: Vector3::new(0.0, 0.0, 0.0),
+            yaw: 0.0,
+            move_speed: 4.0,
+            friction: 10.0,
+            acceleration: 50.0,
+        }
+    }
+
+    /// 处理输入并在世界坐标系中更新速度（仅 XZ 平面）。
+    pub fn handle_input(&mut self, input: &InputState) {
+        let mut move_dir = Vector3::new(0.0, 0.0, 0.0);
+
+        if input.is_key_down(KeyCode::W) {
+            move_dir.z -= 1.0; // 屏幕上方向对应世界 -Z
+        }
+        if input.is_key_down(KeyCode::S) {
+            move_dir.z += 1.0;
+        }
+        if input.is_key_down(KeyCode::A) {
+            move_dir.x -= 1.0;
+        }
+        if input.is_key_down(KeyCode::D) {
+            move_dir.x += 1.0;
+        }
+
+        if move_dir.magnitude2() > 0.0 {
+            move_dir = move_dir.normalize();
+            // 朝向始终面向移动方向
+            self.yaw = move_dir.x.atan2(-move_dir.z);
+        }
+
+        let target_velocity = move_dir * self.move_speed;
+        let accel = self.acceleration;
+
+        self.velocity.x += (target_velocity.x - self.velocity.x) * accel.min(1.0);
+        self.velocity.z += (target_velocity.z - self.velocity.z) * accel.min(1.0);
+    }
+
+    /// 每帧物理更新（仅 XZ 平面）。
+    pub fn update(&mut self, dt: f32) {
+        // 更新位置
+        self.position.x += self.velocity.x * dt;
+        self.position.z += self.velocity.z * dt;
+
+        // 地面锁定（Y 始终为固定高度）
+        self.position.y = 1.0;
+        self.velocity.y = 0.0;
+
+        // 摩擦力
+        let friction_force = self.friction * dt;
+        self.velocity.x *= (1.0 - friction_force).max(0.0);
+        self.velocity.z *= (1.0 - friction_force).max(0.0);
+    }
+}
