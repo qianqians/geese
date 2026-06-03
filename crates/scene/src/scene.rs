@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use camera::frustum::Frustum;
 use cgmath::InnerSpace;
+use cgmath::{Matrix, SquareMatrix};
 use math::AABB;
 use render::MaterialLibrary;
 use render::{RenderQueue, SceneRenderer};
@@ -25,7 +26,7 @@ pub struct Scene {
     static_indices: Vec<usize>,
     /// 动态对象索引——会被动画驱动，每帧线性参与 frustum 测试，不进 octree 以避免每帧重建。
     dynamic_indices: Vec<usize>,
-    bounds: AABB,
+    pub bounds: AABB,
     max_objects: usize,
     max_depth: usize,
 }
@@ -288,6 +289,195 @@ impl Scene {
                 (joint_world * *inverse_bind).into()
             })
             .collect()
+    }
+
+    // -----------------------------------------------------------------------
+    // 动态对象 CRUD
+    // -----------------------------------------------------------------------
+
+    /// 添加一个静态对象（进八叉树，适合不动的场景物）。
+    /// 返回 entity_id。
+    pub fn add_static_object(
+        &mut self,
+        mesh: render::ModelMesh,
+        translation: cgmath::Vector3<f32>,
+        rotation: cgmath::Quaternion<f32>,
+        scale: cgmath::Vector3<f32>,
+    ) -> String {
+        let entity_id = self.add_object_internal(mesh, translation, rotation, scale, true);
+        self.rebuild_octree();
+        entity_id
+    }
+
+    /// 添加一个动态对象（线性检测，适合经常移动的对象）。
+    pub fn add_dynamic_object(
+        &mut self,
+        mesh: render::ModelMesh,
+        translation: cgmath::Vector3<f32>,
+        rotation: cgmath::Quaternion<f32>,
+        scale: cgmath::Vector3<f32>,
+    ) -> String {
+        let entity_id = self.add_object_internal(mesh, translation, rotation, scale, false);
+        entity_id
+    }
+
+    /// 按 entity_id 移除对象。
+    pub fn remove_object(&mut self, entity_id: &str) -> Result<(), String> {
+        let obj_idx = self
+            .objects
+            .iter()
+            .position(|o| o.entity_id == entity_id)
+            .ok_or_else(|| format!("object not found: {}", entity_id))?;
+        let node_idx = self.objects[obj_idx].node;
+
+        // swap_remove 对象
+        self.objects.swap_remove(obj_idx);
+        // 更新被移动对象的 node 关联
+        self.fix_moved_object_node(obj_idx, self.objects.len());
+
+        // swap_remove 节点（孤立节点：无父子约束）
+        self.nodes.swap_remove(node_idx);
+        // 修正受影响的对象 node 字段
+        self.fix_moved_node_references(node_idx, self.nodes.len());
+
+        // 重建分类索引和八叉树
+        self.rebuild_object_indices();
+        self.rebuild_octree();
+        Ok(())
+    }
+
+    /// 更新动态对象的世界变换。
+    pub fn update_object_transform(
+        &mut self,
+        entity_id: &str,
+        translation: cgmath::Vector3<f32>,
+        rotation: cgmath::Quaternion<f32>,
+    ) -> Result<(), String> {
+        let obj = self
+            .objects
+            .iter()
+            .find(|o| o.entity_id == entity_id)
+            .ok_or_else(|| format!("object not found: {}", entity_id))?;
+        let node_idx = obj.node;
+
+        self.nodes[node_idx].local_transform.translation = translation;
+        self.nodes[node_idx].local_transform.rotation = rotation;
+        // 仅更新该节点及其子树
+        self.update_node_world(node_idx, cgmath::Matrix4::identity());
+        Ok(())
+    }
+
+    /// 批量添加静态对象（仅最后重建一次 octree）。
+    pub fn add_static_objects_batch(
+        &mut self,
+        items: Vec<(render::ModelMesh, cgmath::Vector3<f32>, cgmath::Quaternion<f32>, cgmath::Vector3<f32>)>,
+    ) -> Vec<String> {
+        let ids: Vec<String> = items
+            .into_iter()
+            .map(|(mesh, t, r, s)| self.add_object_internal(mesh, t, r, s, true))
+            .collect();
+        self.rebuild_octree();
+        ids
+    }
+
+    /// 批量移除对象。
+    pub fn remove_objects_batch(&mut self, entity_ids: &[&str]) -> Result<(), String> {
+        for id in entity_ids {
+            self.remove_object(id)?;
+        }
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // 内部辅助方法
+    // -----------------------------------------------------------------------
+
+    /// 创建一个孤立 SceneNode + SceneObject 并添加到场景。
+    fn add_object_internal(
+        &mut self,
+        mesh: render::ModelMesh,
+        translation: cgmath::Vector3<f32>,
+        rotation: cgmath::Quaternion<f32>,
+        scale: cgmath::Vector3<f32>,
+        is_static: bool,
+    ) -> String {
+        use uuid::Uuid;
+
+        let entity_id = Uuid::new_v4().to_string();
+        let node_id = self.nodes.len();
+        let object_index = self.objects.len();
+
+        let transform = avatar::Transform {
+            translation,
+            rotation,
+            scale,
+        };
+        let mut node = SceneNode::new(node_id, None, transform);
+        node.objects = vec![object_index];
+        self.nodes.push(node);
+
+        let half = cgmath::Vector3::new(0.5, 0.5, 0.5);
+        let local_aabb = AABB::new(
+            cgmath::Point3::new(-half.x, -half.y, -half.z),
+            cgmath::Point3::new(half.x, half.y, half.z),
+        );
+        let model_matrix = transform.matrix();
+
+        self.objects.push(SceneObject {
+            entity_id: entity_id.clone(),
+            node: node_id,
+            local_aabb,
+            aabb: local_aabb,
+            center: cgmath::Point3::new(0.0, 0.0, 0.0),
+            mesh,
+            model_matrix: model_matrix.into(),
+            normal_matrix: model_matrix
+                .invert()
+                .unwrap_or(cgmath::Matrix4::identity())
+                .transpose()
+                .into(),
+            joint_matrices: vec![],
+        });
+
+        if is_static {
+            self.static_indices.push(object_index);
+        } else {
+            self.dynamic_indices.push(object_index);
+        }
+
+        self.update_node_world(node_id, cgmath::Matrix4::identity());
+        entity_id
+    }
+
+    /// swap_remove 后，被移动对象的 node 引用需要调整。
+    fn fix_moved_object_node(&mut self, removed_idx: usize, old_len: usize) {
+        if removed_idx < self.objects.len() {
+            let moved_node = self.objects[removed_idx].node;
+            // 更新节点中对该对象的引用
+            if moved_node < self.nodes.len() {
+                // 节点原来引用 old_len-1，现在引用 removed_idx
+                if let Some(pos) = self.nodes[moved_node].objects.iter().position(|&i| i == old_len - 1) {
+                    self.nodes[moved_node].objects[pos] = removed_idx;
+                }
+            }
+        }
+    }
+
+    /// swap_remove 节点后，所有引用被移动节点的对象需修正 node 字段。
+    fn fix_moved_node_references(&mut self, removed_node_idx: usize, new_len: usize) {
+        if removed_node_idx < self.nodes.len() {
+            for obj in self.objects.iter_mut() {
+                if obj.node == removed_node_idx + new_len {
+                    obj.node = removed_node_idx;
+                }
+            }
+        }
+    }
+
+    /// 重新构建 static_indices / dynamic_indices。
+    fn rebuild_object_indices(&mut self) {
+        (self.static_indices, self.dynamic_indices) =
+            classify_objects(&self.nodes, &self.objects, &self.animations);
     }
 }
 
