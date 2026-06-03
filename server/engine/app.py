@@ -14,7 +14,7 @@ import asyncio
 
 from .redis import *
 
-from .pyhub import HubConnMsgPump, HubDBMsgPump
+from .pyhub import HubConnMsgPump, HubDBMsgPump, PhysicsWorld
 from .context import context
 from .dbproxy_msg_handle import dbproxy_msg_handle
 from .conn_msg_handle import conn_msg_handle
@@ -64,6 +64,9 @@ class app(object):
         self.__conn_pump__ = None
         self.__db_pump__ = None
         self.__physics_tick__:Callable[[float], None] = None
+        self.physics_world:PhysicsWorld = None
+        self.scene_id:int = 0
+        self.scene_bodies:dict = {}
         
         self.is_idle = True
         self.config:dict = None
@@ -127,6 +130,34 @@ class app(object):
         默认 dt 与主循环 tick 节奏一致（0.033s）。
         """
         self.__physics_tick__ = tick
+        return self
+
+    def build_scene_physics(self, manifest_path: str):
+        """
+        初始化物理世界并从 .scene.json 加载场景碰撞体。
+
+        调用时机：在 ``build()`` 之后、``run()`` 之前。
+        """
+        from .scene_physics import load_scene_collision_from_manifest
+
+        self.physics_world = PhysicsWorld()
+        self.scene_id = self.physics_world.create_scene((0.0, -9.81, 0.0))
+
+        self.scene_bodies = load_scene_collision_from_manifest(
+            self.physics_world,
+            self.scene_id,
+            manifest_path,
+        )
+
+        self.register_physics_tick(
+            lambda dt: self.physics_world.step(self.scene_id, dt)
+        )
+
+        self.info(
+            "scene physics loaded: {} bodies from '{}'",
+            len(self.scene_bodies),
+            manifest_path,
+        )
         return self
 
     def register(self, entity_type:str, creator:Callable[[str, str, dict]]):

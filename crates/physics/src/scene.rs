@@ -166,6 +166,45 @@ impl PhysicsScene {
         ))
     }
 
+    /// 批量添加静态三角网格碰撞体（feature = "scene-builder"）。
+    ///
+    /// 顶点已通过 GLTF 节点世界变换预转换，`transform` 为额外的
+    /// manifest 层变换（如平移/旋转/缩放）。
+    /// 每个网格创建独立的 `Fixed` 刚体。
+    #[cfg(feature = "scene-builder")]
+    pub fn add_static_trimeshes(
+        &mut self,
+        meshes: &[crate::scene_builder::TrimeshData],
+        transform: Iso3,
+        friction: f32,
+        restitution: f32,
+    ) -> Result<Vec<(BodyHandle, ColliderHandle)>, String> {
+        let mut handles = Vec::new();
+        for mesh in meshes {
+            if mesh.vertices.is_empty() || mesh.indices.is_empty() {
+                continue;
+            }
+            let transformed_verts: Vec<[f32; 3]> = mesh
+                .vertices
+                .iter()
+                .map(|v| {
+                    let p = transform * Vec3::new(v[0], v[1], v[2]);
+                    [p.x, p.y, p.z]
+                })
+                .collect();
+            let shape = ShapeDesc::trimesh(transformed_verts, mesh.indices.clone());
+            let desc = BodyDesc {
+                kind: BodyKind::Fixed,
+                position: Iso3::identity(),
+                friction,
+                restitution,
+                ..Default::default()
+            };
+            handles.push(self.add_body(desc, shape)?);
+        }
+        Ok(handles)
+    }
+
     /// 移除刚体（连同所有 collider 与 joint）。
     pub fn remove_body(&mut self, handle: BodyHandle) -> bool {
         if handle.scene != self.id {

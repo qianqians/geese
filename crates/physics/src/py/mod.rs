@@ -10,6 +10,9 @@ pub mod query;
 pub mod shape;
 pub mod world;
 
+#[cfg(feature = "scene-builder")]
+pub mod scene_builder;
+
 pub use body::PyBody;
 pub use query::PyRayHit;
 pub use shape::PyShape;
@@ -23,5 +26,7 @@ pub fn add_to_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyRayHit>()?;
     m.add_class::<PyCollisionEvent>()?;
     m.add_function(wrap_pyfunction!(query::cast_ray, m)?)?;
+    #[cfg(feature = "scene-builder")]
+    scene_builder::add_to_module(m)?;
     Ok(())
 }
