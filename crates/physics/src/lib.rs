@@ -15,5 +15,8 @@ pub use scene::{CollisionEvent, ContactForceEvent, PhysicsScene, RayHit};
 pub use shapes::ShapeDesc;
 pub use world::{BodyDesc, BodyKind, PhysicsWorld};
 
+#[cfg(feature = "scene-builder")]
+pub mod scene_builder;
+
 #[cfg(feature = "pyo3")]
 pub mod py;
