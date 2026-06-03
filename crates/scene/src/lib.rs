@@ -2,6 +2,9 @@ mod material;
 pub mod octree;
 mod scene;
 pub mod scene_object;
+pub mod manifest;
+pub mod loader;
+pub mod net;
 
 pub use avatar::{AnimationClip, AnimationPlayer, SceneNode, Skin, Transform};
 pub use avatar::{

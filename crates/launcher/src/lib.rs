@@ -582,7 +582,7 @@ mod tests {
             empty.camera_config.camera_type,
             crate::templates::CameraType::Empty
         );
-        assert!(empty.files.is_empty());
+        assert!(empty.files.len() == 1); // only scene.json
         assert!(empty.input_mappings.is_empty());
     }
 

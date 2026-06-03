@@ -7,6 +7,8 @@ edition = "2024"
 cgmath = "0.18"
 uuid = { version = "1.3.3", features = ["v4"] }
 gltf = {version = "1.4.1", features = ["extras", "names"]}
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 math = { path = "../math", version = "0.1.0" }
 camera = { path = "../camera", version = "0.1.0" }
 asset = { path = "../asset", version = "0.1.0" }

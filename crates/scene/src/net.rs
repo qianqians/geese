@@ -1,0 +1,191 @@
+//! 场景对象网络复制消息格式。
+//!
+//! 利用现有 Thrift 协议中的 `create_remote_entity` / `delete_remote_entity`
+//! 消息，通过 `entity_type` 区分场景对象类型，`argvs` 承载具体数据。
+//!
+//! ## Entity Type 常量
+//!
+//! - `"scene_object_static"`  — 静态场景对象（加载场景时批量创建）
+//! - `"scene_object_dynamic"` — 动态场景对象（运行时创建/销毁）
+//!
+//! ## argvs 格式
+//!
+//! argvs 为 JSON 序列化的 `SceneObjectNetMsg`，包含：
+//! - `entity_id`: 场景对象唯一 ID
+//! - `object_type`: 对象类型 ("mesh_ref" | "plane" | "cube")
+//! - `transform`: 世界变换
+//! - `mesh_ref`: 指向 GLTF 文件中某个 mesh 的引用（仅 object_type="mesh_ref"）
+//! - `color`: RGB 颜色（仅程序化对象）
+//! - `dimensions`: 尺寸（仅程序化对象）
+
+use serde::{Deserialize, Serialize};
+
+/// 静态场景对象的 entity_type 常量。
+pub const ENTITY_TYPE_STATIC: &str = "scene_object_static";
+
+/// 动态场景对象的 entity_type 常量。
+pub const ENTITY_TYPE_DYNAMIC: &str = "scene_object_dynamic";
+
+/// 场景对象网络消息——填充在 `create_remote_entity.argvs` 中。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SceneObjectNetMsg {
+    /// 场景对象唯一 ID
+    pub entity_id: String,
+    /// 对象类型
+    #[serde(rename = "type")]
+    pub object_type: SceneObjectNetType,
+    /// 世界变换
+    pub transform: NetTransform,
+    /// 网格引用（仅 "mesh_ref" 类型）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mesh_ref: Option<MeshRef>,
+    /// 程序化对象的颜色 (0-1)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<[f32; 3]>,
+    /// 程序化对象的尺寸
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dimensions: Option<[f32; 3]>,
+}
+
+/// 场景对象的网络类型。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneObjectNetType {
+    /// 引用 GLTF 模型中的 mesh
+    MeshRef,
+    /// 程序化平面
+    Plane,
+    /// 程序化立方体
+    Cube,
+}
+
+/// 网格引用——指向 GLTF 文件中的特定 mesh。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MeshRef {
+    /// GLTF 文件相对路径
+    pub gltf_path: String,
+    /// GLTF 场景中的 mesh 名称（可选，默认加载全部）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mesh_name: Option<String>,
+}
+
+/// 网络变换。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetTransform {
+    /// 位移 (x, y, z)
+    pub translation: [f32; 3],
+    /// 欧拉角旋转（度）(yaw, pitch, roll)
+    pub rotation: [f32; 3],
+    /// 缩放 (x, y, z)
+    #[serde(default = "default_scale")]
+    pub scale: [f32; 3],
+}
+
+fn default_scale() -> [f32; 3] {
+    [1.0, 1.0, 1.0]
+}
+
+impl SceneObjectNetMsg {
+    /// 为 GLTF 网格引用创建消息。
+    pub fn mesh_ref(
+        entity_id: &str,
+        gltf_path: &str,
+        mesh_name: Option<&str>,
+        translation: [f32; 3],
+        rotation: [f32; 3],
+        scale: [f32; 3],
+    ) -> Self {
+        Self {
+            entity_id: entity_id.to_string(),
+            object_type: SceneObjectNetType::MeshRef,
+            transform: NetTransform { translation, rotation, scale },
+            mesh_ref: Some(MeshRef {
+                gltf_path: gltf_path.to_string(),
+                mesh_name: mesh_name.map(|s| s.to_string()),
+            }),
+            color: None,
+            dimensions: None,
+        }
+    }
+
+    /// 为程序化对象创建消息。
+    pub fn procedural(
+        entity_id: &str,
+        obj_type: SceneObjectNetType,
+        translation: [f32; 3],
+        rotation: [f32; 3],
+        scale: [f32; 3],
+        color: [f32; 3],
+        dimensions: [f32; 3],
+    ) -> Self {
+        Self {
+            entity_id: entity_id.to_string(),
+            object_type: obj_type,
+            transform: NetTransform { translation, rotation, scale },
+            mesh_ref: None,
+            color: Some(color),
+            dimensions: Some(dimensions),
+        }
+    }
+
+    /// 序列化为 argvs 二进制（JSON）。
+    pub fn to_argvs(&self) -> Result<Vec<u8>, serde_json::Error> {
+        serde_json::to_vec(self)
+    }
+
+    /// 从 argvs 二进制反序列化。
+    pub fn from_argvs(data: &[u8]) -> Result<Self, serde_json::Error> {
+        serde_json::from_slice(data)
+    }
+}
+
+/// 场景对象销毁消息——填入 `delete_remote_entity.argvs`（通常不需要额外数据）。
+/// 仅需 entity_id 即可，已在 `delete_remote_entity` 结构体中包含。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SceneObjectDestroyMsg {
+    pub entity_id: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serialize_mesh_ref_msg() {
+        let msg = SceneObjectNetMsg::mesh_ref(
+            "obj-001",
+            "assets/models/house.gltf",
+            Some("Wall"),
+            [10.0, 0.0, 5.0],
+            [0.0, 45.0, 0.0],
+            [1.0, 1.0, 1.0],
+        );
+        let json = serde_json::to_string(&msg).unwrap();
+        let decoded: SceneObjectNetMsg = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.entity_id, "obj-001");
+        assert!(matches!(decoded.object_type, SceneObjectNetType::MeshRef));
+    }
+
+    #[test]
+    fn serialize_procedural_msg() {
+        let msg = SceneObjectNetMsg::procedural(
+            "obj-002",
+            SceneObjectNetType::Cube,
+            [0.0, 0.5, 0.0],
+            [0.0, 0.0, 0.0],
+            [2.0, 1.0, 2.0],
+            [0.8, 0.3, 0.3],
+            [2.0, 1.0, 2.0],
+        );
+        let argvs = msg.to_argvs().unwrap();
+        let decoded = SceneObjectNetMsg::from_argvs(&argvs).unwrap();
+        assert_eq!(decoded.entity_id, "obj-002");
+        assert_eq!(decoded.color.unwrap(), [0.8, 0.3, 0.3]);
+    }
+
+    #[test]
+    fn entity_type_constants() {
+        assert_eq!(ENTITY_TYPE_STATIC, "scene_object_static");
+        assert_eq!(ENTITY_TYPE_DYNAMIC, "scene_object_dynamic");
+    }
+}

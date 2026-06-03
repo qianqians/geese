@@ -523,7 +523,12 @@ pub fn all_templates() -> Vec<ProjectTemplate> {
 // ---------------------------------------------------------------------------
 
 fn empty_template_files() -> Vec<TemplateFile> {
-    vec![]
+    vec![
+        TemplateFile {
+            relative_path: "assets/scenes/default.scene.json".into(),
+            content: scene_json_content("空项目".into(), &empty_objects()),
+        },
+    ]
 }
 
 fn fps_template_files() -> Vec<TemplateFile> {
@@ -539,6 +544,10 @@ fn fps_template_files() -> Vec<TemplateFile> {
         TemplateFile {
             relative_path: "src/scene_builder.rs".into(),
             content: include_str!("../templates/scene_builder.rs.txt").to_string(),
+        },
+        TemplateFile {
+            relative_path: "assets/scenes/default.scene.json".into(),
+            content: scene_json_content("FPS".into(), &fps_objects()),
         },
     ]
 }
@@ -557,6 +566,10 @@ fn third_person_template_files() -> Vec<TemplateFile> {
             relative_path: "src/scene_builder.rs".into(),
             content: include_str!("../templates/scene_builder.rs.txt").to_string(),
         },
+        TemplateFile {
+            relative_path: "assets/scenes/default.scene.json".into(),
+            content: scene_json_content("ThirdPerson".into(), &third_person_objects()),
+        },
     ]
 }
 
@@ -570,12 +583,92 @@ fn topdown_template_files() -> Vec<TemplateFile> {
             relative_path: "src/player.rs".into(),
             content: include_str!("../templates/td_player.rs.txt").to_string(),
         },
+        TemplateFile {
+            relative_path: "assets/scenes/default.scene.json".into(),
+            content: scene_json_content("TopDown".into(), &topdown_objects()),
+        },
     ]
 }
 
 // ---------------------------------------------------------------------------
 // 公共模板文件（Cargo.toml, main.rs, project.toml）
 // ---------------------------------------------------------------------------
+
+/// 根据模板名称和场景对象列表生成 .scene.json 内容。
+fn scene_json_content(scene_name: String, objects: &[SceneObjectDesc]) -> String {
+    use std::collections::HashMap;
+
+    // 分离普通对象、灯光、出生点
+    let mut scene_objects: Vec<HashMap<String, serde_json::Value>> = vec![];
+    let mut spawn_points: Vec<HashMap<String, serde_json::Value>> = vec![];
+    let mut directional_lights: Vec<HashMap<String, serde_json::Value>> = vec![];
+
+    for obj in objects {
+        match obj.object_type.as_str() {
+            "player_spawn" => {
+                let mut sp = HashMap::new();
+                sp.insert("name".into(), serde_json::json!("player_start"));
+                sp.insert("position".into(), serde_json::json!(obj.position));
+                sp.insert(
+                    "rotation".into(),
+                    serde_json::json!(obj.rotation_euler.unwrap_or((0.0, 0.0, 0.0))),
+                );
+                spawn_points.push(sp);
+            }
+            "directional_light" => {
+                let mut light = HashMap::new();
+                let dir = obj.rotation_euler.unwrap_or((-0.6, 0.4, 0.0));
+                // 欧拉角转为方向向量（简化：yaw 影响 XZ，pitch 影响 Y）
+                let (yaw_sin, yaw_cos) = (dir.1.to_radians().sin(), dir.1.to_radians().cos());
+                let (pitch_sin, pitch_cos) = (dir.0.to_radians().sin(), dir.0.to_radians().cos());
+                light.insert(
+                    "direction".into(),
+                    serde_json::json!([-yaw_sin * pitch_cos, -pitch_sin, -yaw_cos * pitch_cos]),
+                );
+                light.insert(
+                    "color".into(),
+                    serde_json::json!(obj.color.unwrap_or((1.0, 0.95, 0.85))),
+                );
+                light.insert("intensity".into(), serde_json::json!(1.0));
+                directional_lights.push(light);
+            }
+            _ => {
+                let mut so = HashMap::new();
+                so.insert("object_type".into(), serde_json::json!(obj.object_type));
+                so.insert("position".into(), serde_json::json!(obj.position));
+                so.insert("scale".into(), serde_json::json!(obj.scale));
+                so.insert(
+                    "color".into(),
+                    serde_json::json!(obj.color.unwrap_or((0.5, 0.5, 0.5))),
+                );
+                if let Some(rot) = obj.rotation_euler {
+                    so.insert("rotation_euler".into(), serde_json::json!(rot));
+                }
+                so.insert("tag".into(), serde_json::json!(null));
+                scene_objects.push(so);
+            }
+        }
+    }
+
+    let ambient = match scene_name.as_str() {
+        "空项目" => [0.15, 0.15, 0.15],
+        _ => [0.1, 0.1, 0.12],
+    };
+
+    let manifest = serde_json::json!({
+        "version": "1.0",
+        "name": scene_name,
+        "models": [],
+        "environment": {
+            "ambient": ambient,
+            "directional_lights": directional_lights
+        },
+        "spawn_points": spawn_points,
+        "objects": scene_objects
+    });
+
+    serde_json::to_string_pretty(&manifest).unwrap_or_else(|_| "{}".into())
+}
 
 /// 生成 Cargo.toml 模板内容（根据模板类型插入不同的 crate 依赖）
 pub fn cargo_toml_content(project_name: &str) -> String {
@@ -663,6 +756,7 @@ pub fn project_config_content(template: &ProjectTemplate) -> String {
 [project]
 name = "{project_name}"
 template = "{template_id}"
+scene = "assets/scenes/default.scene.json"
 
 [camera]
 type = "{cam_type}"
