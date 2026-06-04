@@ -4,9 +4,11 @@
 
 use crate::asset_browser::AssetBrowser;
 use crate::commands::CommandHistory;
+use crate::editor_mode::EditorMode;
 use crate::hierarchy::HierarchyPanel;
 use crate::inspector::InspectorPanel;
-use crate::panels::{EditorLayout, EditorState};
+use crate::panel_layer::PanelLayerManager;
+use crate::panels::{EditorLayout, EditorPanel, EditorState};
 use crate::play_mode::PlayMode;
 use crate::viewport::{GizmoMode, ViewportPanel};
 
@@ -16,6 +18,8 @@ pub struct Editor {
     pub state: EditorState,
     /// Undo/Redo 命令历史
     pub command_history: CommandHistory,
+    /// 面板层级管理器
+    pub panel_layer: PanelLayerManager,
     /// Play/Stop 模式管理器
     play_mode: PlayMode,
     /// 层级面板
@@ -36,6 +40,7 @@ impl Editor {
         Self {
             state,
             command_history: CommandHistory::default(),
+            panel_layer: PanelLayerManager::default(),
             play_mode: PlayMode::new(),
             hierarchy: HierarchyPanel::new(),
             viewport: ViewportPanel::new(),
@@ -46,30 +51,24 @@ impl Editor {
 
     /// 每帧调用，渲染完整的编辑器 UI。
     pub fn update(&mut self, ctx: &egui::Context) {
-        // 顶部菜单栏
-        self.show_menu_bar(ctx);
-
-        // 工具栏
-        self.show_toolbar(ctx);
-
-        // 快捷键处理
+        // 1. 快捷键始终生效
         self.handle_shortcuts(ctx);
 
-        // 面板布局
-        EditorLayout::render(
-            ctx,
-            &mut self.state,
-            &mut self.hierarchy,
-            &mut self.viewport,
-            &mut self.inspector,
-            &mut self.asset_browser,
-        );
+        // 2. 全屏视口（场景渲染纹理填充整个窗口）
+        self.show_fullscreen_viewport(ctx);
+
+        // 3. 浮动面板（在全屏视口之上，egui::Window 渲染）
+        if self.state.ui_visible || !self.state.mode.is_playing() {
+            self.show_floating_panels(ctx);
+            self.show_toolbar(ctx);
+        }
     }
 
     // -------------------------------------------------------------------
     // 菜单栏
     // -------------------------------------------------------------------
 
+    #[allow(dead_code)]
     fn show_menu_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("editor_menu_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
@@ -152,47 +151,62 @@ impl Editor {
     }
 
     // -------------------------------------------------------------------
+    // 全屏视口
+    // -------------------------------------------------------------------
+
+    /// 渲染全屏沉浸式视口（场景渲染纹理填充整个窗口）。
+    fn show_fullscreen_viewport(&mut self, ctx: &egui::Context) {
+        EditorLayout::render_fullscreen(ctx, &mut self.state, &mut self.viewport);
+    }
+
+    // -------------------------------------------------------------------
     // 工具栏
     // -------------------------------------------------------------------
 
     fn show_toolbar(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::top("editor_toolbar").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                // Play/Stop 按钮
-                let (label, color) = self.play_mode.button_ui();
+        let alpha = self.state.panel_alpha;
+        let bg_fill = egui::Color32::from_rgba_unmultiplied(20, 22, 30, (alpha * 220.0) as u8);
+        let frame = egui::Frame::window(&ctx.style())
+            .fill(bg_fill)
+            .rounding(egui::Rounding::same(6.0));
 
-                if ui
-                    .add_sized(
-                        [60.0, 24.0],
-                        egui::Button::new(
-                            egui::RichText::new(label).color(color),
-                        ),
-                    )
-                    .clicked()
-                {
-                    self.toggle_play_mode();
-                }
+        egui::Window::new("##floating_toolbar")
+            .title_bar(false)
+            .resizable(false)
+            .collapsible(false)
+            .anchor(egui::Align2::CENTER_TOP, egui::Vec2::new(0.0, 8.0))
+            .frame(frame)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    // Play/Stop 按钮
+                    let (label, color) = self.play_mode.button_ui();
+                    if ui
+                        .add_sized(
+                            [60.0, 24.0],
+                            egui::Button::new(
+                                egui::RichText::new(label).color(color),
+                            ),
+                        )
+                        .clicked()
+                    {
+                        self.toggle_play_mode();
+                    }
 
-                ui.separator();
+                    ui.separator();
 
-                // Gizmo 模式
-                ui.label("Gizmo:");
-                ui.selectable_value(&mut self.viewport.gizmo_mode, GizmoMode::Translate, "W");
-                ui.selectable_value(&mut self.viewport.gizmo_mode, GizmoMode::Rotate, "E");
-                ui.selectable_value(&mut self.viewport.gizmo_mode, GizmoMode::Scale, "R");
+                    // Gizmo 模式
+                    ui.selectable_value(&mut self.viewport.gizmo_mode, GizmoMode::Translate, "W");
+                    ui.selectable_value(&mut self.viewport.gizmo_mode, GizmoMode::Rotate, "E");
+                    ui.selectable_value(&mut self.viewport.gizmo_mode, GizmoMode::Scale, "R");
 
-                ui.separator();
+                    ui.separator();
 
-                // 选中的实体
-                if let Some(ref entity) = self.state.selected_entity {
-                    ui.label(format!("Selected: {}", entity));
-                }
-
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(format!("Project: {}", self.state.project_path));
+                    // 面板显隐总控按钮
+                    if ui.button("👁").clicked() {
+                        self.state.ui_visible = !self.state.ui_visible;
+                    }
                 });
             });
-        });
     }
 
     // -------------------------------------------------------------------
@@ -204,6 +218,7 @@ impl Editor {
         let mut toggle_hierarchy = false;
         let mut toggle_inspector = false;
         let mut toggle_asset_browser = false;
+        let mut toggle_ui = false;
         let mut undo = false;
         let mut redo = false;
         let mut save = false;
@@ -217,6 +232,10 @@ impl Editor {
             }
             if input.modifiers.ctrl && input.key_pressed(egui::Key::B) {
                 toggle_asset_browser = true;
+            }
+            // Tab 切换所有非 pinned 面板
+            if input.key_pressed(egui::Key::Tab) && !input.modifiers.ctrl {
+                toggle_ui = true;
             }
             // Undo/Redo
             if input.modifiers.ctrl && input.key_pressed(egui::Key::Z) {
@@ -242,6 +261,14 @@ impl Editor {
         if toggle_asset_browser {
             self.state.panel_visibility.toggle_asset_browser();
         }
+        if toggle_ui {
+            self.panel_layer.toggle_all();
+            // 同步到 PanelVisibility（保持兼容）
+            let all_visible = self.panel_layer.is_visible(&crate::panel_layer::PanelLayer::Hierarchy);
+            self.state.panel_visibility.hierarchy = all_visible;
+            self.state.panel_visibility.inspector = all_visible;
+            self.state.panel_visibility.asset_browser = all_visible;
+        }
         if undo {
             self.command_history.undo();
         }
@@ -253,17 +280,68 @@ impl Editor {
         }
     }
 
+    // -------------------------------------------------------------------
+    // 浮动面板
+    // -------------------------------------------------------------------
+
+    /// 渲染浮动半透明面板（在全屏视口之上）。
+    fn show_floating_panels(&mut self, ctx: &egui::Context) {
+        let alpha = self.state.panel_alpha;
+        let bg_fill = egui::Color32::from_rgba_unmultiplied(28, 30, 38, (alpha * 220.0) as u8);
+        let frame = egui::Frame::window(&ctx.style())
+            .fill(bg_fill)
+            .rounding(egui::Rounding::same(6.0));
+
+        // 左侧 - Hierarchy 面板
+        if self.state.panel_visibility.hierarchy {
+            egui::Window::new("Hierarchy")
+                .resizable(true)
+                .collapsible(true)
+                .default_width(250.0)
+                .frame(frame)
+                .show(ctx, |ui| {
+                    self.hierarchy.show(ui, &mut self.state);
+                });
+        }
+
+        // 右侧 - Inspector 面板
+        if self.state.panel_visibility.inspector {
+            egui::Window::new("Inspector")
+                .resizable(true)
+                .collapsible(true)
+                .default_width(300.0)
+                .frame(frame)
+                .show(ctx, |ui| {
+                    self.inspector.show(ui, &mut self.state);
+                });
+        }
+
+        // 底部 - Asset Browser 面板
+        if self.state.panel_visibility.asset_browser {
+            egui::Window::new("Asset Browser")
+                .resizable(true)
+                .collapsible(true)
+                .default_height(200.0)
+                .frame(frame)
+                .show(ctx, |ui| {
+                    self.asset_browser.show(ui, &mut self.state);
+                });
+        }
+    }
+
     /// 切换 Play/Stop 模式。
     fn toggle_play_mode(&mut self) {
         if self.play_mode.is_playing {
             // Stop: 恢复编辑模式
-            if let Some(snapshot) = self.play_mode.stop() {
-                self.state.selected_entity = snapshot.selected_entity;
+            if let Some(mut snapshot) = self.play_mode.stop() {
+                PlayMode::restore_panel_state(&snapshot, &mut self.state);
                 self.viewport.camera.yaw = snapshot.camera_yaw;
                 self.viewport.camera.pitch = snapshot.camera_pitch;
                 self.viewport.camera.distance = snapshot.camera_distance;
+                self.state.selected_entity = snapshot.selected_entity.take();
             }
-            self.state.is_playing = false;
+            self.state.mode = EditorMode::Edit;
+            self.panel_layer.set_edit_alpha();
         } else {
             // Play: 进入播放模式
             self.play_mode.play(
@@ -272,8 +350,10 @@ impl Editor {
                 self.viewport.camera.pitch,
                 self.viewport.camera.distance,
             );
-            self.state.is_playing = true;
+            self.state.mode = EditorMode::Play;
             self.state.selected_entity = None;
+            self.panel_layer.set_play_alpha();
+            self.state.panel_alpha = self.panel_layer.global_alpha;
         }
     }
 }

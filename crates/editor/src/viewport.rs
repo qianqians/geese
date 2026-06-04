@@ -6,6 +6,7 @@
 //! - 射线拾取（Ray Picking）：屏幕坐标 → 世界空间射线
 //! - 编辑器网格和世界坐标轴指示器
 
+use crate::editor_mode::EditorMode;
 use crate::gizmo::{GizmoInteraction, draw_gizmo};
 use crate::panels::{EditorPanel, EditorState};
 use cgmath::{EuclideanSpace, InnerSpace, Matrix4, Point3, SquareMatrix, Vector3, Vector4, perspective, Rad};
@@ -286,7 +287,17 @@ impl ViewportPanel {
     }
 
     /// 处理视口内的鼠标输入。
-    fn handle_input(&mut self, ui: &egui::Ui, response: &egui::Response) {
+    fn handle_input(&mut self, ui: &egui::Ui, response: &egui::Response, state: &EditorState) {
+        // 播放模式下不处理编辑器摄像机输入
+        if state.mode == EditorMode::Play {
+            return;
+        }
+
+        // 浮动窗口遮挡检测：有窗口在鼠标下方时跳过场景交互
+        if ui.ctx().wants_pointer_input() && !response.hovered() {
+            return;
+        }
+
         let pointer_pos = ui.input(|input| {
             input.pointer.hover_pos().map(|p| (p.x, p.y))
         });
@@ -388,8 +399,12 @@ impl ViewportPanel {
         &mut self,
         ui: &egui::Ui,
         response: &egui::Response,
-        _state: &EditorState,
+        state: &EditorState,
     ) {
+        // 播放模式下不处理 Gizmo
+        if state.mode == EditorMode::Play {
+            return;
+        }
         let pointer_pos = ui.input(|input| {
             input.pointer.hover_pos().map(|p| (p.x, p.y))
         });
@@ -558,6 +573,15 @@ impl EditorPanel for ViewportPanel {
         let (rect_response, _painter) =
             ui.allocate_painter(egui::Vec2::new(available.x, available.y), egui::Sense::click_and_drag());
 
+        // 右键上下文菜单：切换面板显隐
+        rect_response.clone().context_menu(|ui| {
+            ui.label("Panels");
+            ui.separator();
+            ui.checkbox(&mut state.panel_visibility.hierarchy, "Hierarchy");
+            ui.checkbox(&mut state.panel_visibility.inspector, "Inspector");
+            ui.checkbox(&mut state.panel_visibility.asset_browser, "Asset Browser");
+        });
+
         self.viewport_size = (rect.width(), rect.height());
         self.camera.aspect_ratio = rect.width() / rect.height().max(1.0);
 
@@ -566,8 +590,8 @@ impl EditorPanel for ViewportPanel {
         self.gizmo_interaction.handle_shortcuts(ui);
         self.gizmo_mode = self.gizmo_interaction.mode;
 
-        // 处理 Gizmo 快捷键
-        self.handle_input(ui, &rect_response);
+        // 处理 Gizmo 快捷键和摄像机输入
+        self.handle_input(ui, &rect_response, state);
 
         // 处理 Gizmo 鼠标交互
         self.handle_gizmo_input(ui, &rect_response, state);
