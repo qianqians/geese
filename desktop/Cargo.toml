@@ -1,0 +1,15 @@
+[package]
+name = "pydesktop"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "pydesktop"
+crate-type = ["cdylib"]
+
+[dependencies]
+eframe = "0.29"
+egui = "0.29"
+pyo3 = { version = "0.26.0", features = ["extension-module"] }
+launcher = { path = "../crates/launcher" }
+editor = { path = "../crates/editor" }

@@ -8,14 +8,18 @@
 pub mod asset_browser;
 pub mod commands;
 pub mod editor;
+pub mod editor_mode;
 pub mod gizmo;
 pub mod hierarchy;
 pub mod inspector;
+pub mod panel_layer;
 pub mod panels;
 pub mod play_mode;
 pub mod viewport;
 
 pub use commands::{CommandHistory, SceneSerializer, SerializedEntity};
 pub use editor::Editor;
+pub use editor_mode::EditorMode;
+pub use panel_layer::{PanelLayer, PanelLayerManager};
 pub use play_mode::PlayMode;
 pub use viewport::{GizmoMode, OrbitCamera, ViewportPanel, ray_aabb_intersection};

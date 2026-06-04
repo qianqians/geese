@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+"""测试启动 Geese Launcher"""
+
+import sys
+import os
+
+# 添加 pydesktop 动态库路径
+desktop_lib_path = os.path.join(os.path.dirname(__file__), 'desktop', 'target', 'debug')
+sys.path.insert(0, desktop_lib_path)
+
+try:
+    from pydesktop import launch
+    print("正在启动 Geese Launcher...")
+    project_path = launch()
+    
+    if project_path:
+        print(f"\n✅ 用户选择了项目: {project_path}")
+        print("可以调用 open_editor(project_path) 打开编辑器")
+    else:
+        print("\n❌ 用户关闭了 Launcher，未选择项目")
+        
+except ImportError as e:
+    print(f"❌ 无法导入 pydesktop 模块: {e}")
+    print(f"请确保已编译 desktop crate: cd desktop && cargo build")
+except Exception as e:
+    print(f"❌ 启动失败: {e}")
+    import traceback
+    traceback.print_exc()

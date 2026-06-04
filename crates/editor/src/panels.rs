@@ -6,6 +6,8 @@
 //! - [`PanelVisibility`]：面板显隐状态管理
 //! - [`EditorLayout`]：面板布局渲染器
 
+use crate::editor_mode::EditorMode;
+
 // ---------------------------------------------------------------------------
 // EditorState - 编辑器全局状态
 // ---------------------------------------------------------------------------
@@ -17,8 +19,12 @@ pub struct EditorState {
     pub project_path: String,
     /// 当前选中的实体 ID
     pub selected_entity: Option<String>,
-    /// 是否处于播放模式
-    pub is_playing: bool,
+    /// 编辑器运行模式
+    pub mode: EditorMode,
+    /// 浮动面板总开关
+    pub ui_visible: bool,
+    /// 全局面板不透明度（0.0-1.0）
+    pub panel_alpha: f32,
     /// 面板可见性
     pub panel_visibility: PanelVisibility,
 }
@@ -28,7 +34,9 @@ impl EditorState {
         Self {
             project_path,
             selected_entity: None,
-            is_playing: false,
+            mode: EditorMode::Edit,
+            ui_visible: true,
+            panel_alpha: 0.85,
             panel_visibility: PanelVisibility::default(),
         }
     }
@@ -84,11 +92,12 @@ impl PanelVisibility {
 // EditorLayout - 面板布局渲染器
 // ---------------------------------------------------------------------------
 
-/// 编辑器布局渲染器。每帧调用 `render` 渲染所有面板。
+/// 编辑器布局渲染器。每帧调用 `render_fullscreen` 渲染全屏视口。
 pub struct EditorLayout;
 
 impl EditorLayout {
-    /// 渲染完整的编辑器布局：左侧 Hierarchy + 中央 Viewport + 右侧 Inspector + 底部 Asset Browser。
+    /// 渲染传统的编辑器布局：左侧 Hierarchy + 中央 Viewport + 右侧 Inspector + 底部 Asset Browser。
+    #[allow(dead_code)]
     pub fn render(
         ctx: &egui::Context,
         state: &mut EditorState,
@@ -129,6 +138,19 @@ impl EditorLayout {
 
         // 中央视口（最后创建，占据剩余空间）
         egui::CentralPanel::default().show(ctx, |ui| {
+            viewport.show(ui, state);
+        });
+    }
+
+    /// 渲染全屏沉浸式视口：单个 CentralPanel 占满整个窗口，场景渲染纹理填充整个区域。
+    pub fn render_fullscreen(
+        ctx: &egui::Context,
+        state: &mut EditorState,
+        viewport: &mut dyn EditorPanel,
+    ) {
+        // 全屏中央面板（占满整个窗口）
+        egui::CentralPanel::default().show(ctx, |ui| {
+            // 视口使用整个可用空间
             viewport.show(ui, state);
         });
     }

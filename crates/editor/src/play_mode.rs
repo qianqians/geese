@@ -33,6 +33,18 @@ pub struct PlayModeSnapshot {
     pub camera_yaw: f32,
     pub camera_pitch: f32,
     pub camera_distance: f32,
+    /// 面板状态快照
+    pub panel_state: PanelStateSnapshot,
+}
+
+/// 面板状态快照，Play 时保存 UI 状态、Stop 时恢复。
+#[derive(Debug, Clone)]
+pub struct PanelStateSnapshot {
+    pub panel_alpha: f32,
+    pub ui_visible: bool,
+    pub hierarchy_visible: bool,
+    pub inspector_visible: bool,
+    pub asset_browser_visible: bool,
 }
 
 impl PlayMode {
@@ -58,6 +70,13 @@ impl PlayMode {
             camera_yaw,
             camera_pitch,
             camera_distance,
+            panel_state: PanelStateSnapshot {
+                panel_alpha: state.panel_alpha,
+                ui_visible: state.ui_visible,
+                hierarchy_visible: state.panel_visibility.hierarchy,
+                inspector_visible: state.panel_visibility.inspector,
+                asset_browser_visible: state.panel_visibility.asset_browser,
+            },
         });
 
         self.is_playing = true;
@@ -78,6 +97,15 @@ impl PlayMode {
         self.elapsed = 0.0;
 
         self.snapshot.take()
+    }
+
+    /// 从快照恢复面板状态到 EditorState。
+    pub fn restore_panel_state(snapshot: &PlayModeSnapshot, state: &mut EditorState) {
+        state.panel_alpha = snapshot.panel_state.panel_alpha;
+        state.ui_visible = snapshot.panel_state.ui_visible;
+        state.panel_visibility.hierarchy = snapshot.panel_state.hierarchy_visible;
+        state.panel_visibility.inspector = snapshot.panel_state.inspector_visible;
+        state.panel_visibility.asset_browser = snapshot.panel_state.asset_browser_visible;
     }
 
     /// 更新播放模式时间。

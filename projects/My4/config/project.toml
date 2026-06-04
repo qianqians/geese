@@ -1,0 +1,25 @@
+# My4 项目配置
+# 由 Geese Launcher 自动生成
+
+[project]
+name = "My4"
+template = "empty"
+scene = "assets/scenes/default.scene.json"
+
+[camera]
+type = "Free"
+fov = 60
+z_near = 0.1
+z_far = 1000
+eye_height = 1.7
+follow_offset = [0, 5, 8]
+follow_smooth = 0.1
+
+[player]
+move_speed = 5
+jump_impulse = 8
+capsule_radius = 0.3
+capsule_height = 1.7
+mouse_sensitivity = 0.002
+
+[[input_mappings]]

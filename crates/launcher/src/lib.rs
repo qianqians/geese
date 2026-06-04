@@ -7,10 +7,12 @@
 //! 4. 成功后可打开编辑器
 
 pub mod templates;
+mod history;
 
 use std::io::Write;
 
 use crate::templates::ProjectTemplate;
+use crate::history::ProjectHistory;
 
 /// Launcher 页面状态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,11 +41,18 @@ pub struct Launcher {
     status_message: Option<String>,
     /// 是否为错误消息
     is_error: bool,
+    /// 用户请求打开的项目路径（由外部读取后重置）
+    open_requested: Option<String>,
+    /// 项目历史记录
+    project_history: ProjectHistory,
 }
 
 impl Launcher {
     pub fn new() -> Self {
         let templates = templates::all_templates();
+        let mut history = ProjectHistory::load();
+        history.validate_projects();  // 清理无效路径
+        
         Self {
             page: LauncherPage::Home,
             templates,
@@ -52,19 +61,39 @@ impl Launcher {
             project_path: String::from("./projects"),
             status_message: None,
             is_error: false,
+            open_requested: None,
+            project_history: history,
         }
     }
 
+    /// 取出用户请求打开的项目路径（如果有），读取后重置为 None。
+    pub fn take_open_request(&mut self) -> Option<String> {
+        self.open_requested.take()
+    }
+
+    /// 设置底部状态栏消息。
+    pub fn set_status(&mut self, msg: String, is_error: bool) {
+        self.status_message = Some(msg);
+        self.is_error = is_error;
+    }
+
+    /// 重置到首页。
+    pub fn reset_to_home(&mut self) {
+        self.page = LauncherPage::Home;
+        self.selected_index = None;
+        self.status_message = None;
+        self.is_error = false;
+    }
+
     /// 每帧调用，渲染 Launcher UI。
-    /// 返回 `true` 表示 Launcher 已完成（用户关闭或进入编辑器）。
-    pub fn show(&mut self, ctx: &egui::Context) -> bool {
+    /// 项目打开请求通过 [`take_open_request`] 取出。
+    pub fn show(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
             match self.page {
                 LauncherPage::Home => self.show_home(ui),
                 LauncherPage::Config => self.show_config(ui),
                 LauncherPage::Success => {
                     self.show_success(ui);
-                    // 用户点击"打开编辑器"后返回 done
                 }
             }
         });
@@ -82,8 +111,6 @@ impl Launcher {
                 });
             });
         }
-
-        false
     }
 
     // -----------------------------------------------------------------------
@@ -108,16 +135,42 @@ impl Launcher {
             );
             ui.add_space(30.0);
 
-            // 模板卡片区域
-            let template_count = self.templates.len();
-            ui.horizontal(|ui| {
+            // 显示历史项目（可折叠）
+            if !self.project_history.projects.is_empty() {
+                ui.collapsing("📂 最近项目", |ui| {
+                    egui::ScrollArea::vertical()
+                        .max_height(200.0)
+                        .show(ui, |ui| {
+                            for project in self.project_history.projects.clone().iter() {
+                                self.show_history_entry(ui, project);
+                            }
+                        });
+                });
                 ui.add_space(20.0);
-                for i in 0..template_count {
-                    let selected = self.selected_index == Some(i);
-                    self.show_template_card(ui, i, selected);
-                    ui.add_space(20.0);
-                }
-            });
+            }
+
+            // 模板卡片标题
+            ui.heading(
+                egui::RichText::new("🎮 选择模板")
+                    .size(18.0)
+                    .color(egui::Color32::from_rgb(150, 180, 220)),
+            );
+            ui.add_space(10.0);
+
+            // 模板卡片区域（垂直排列，带滚动）
+            let template_count = self.templates.len();
+            egui::ScrollArea::vertical()
+                .max_height(400.0)
+                .show(ui, |ui| {
+                    ui.vertical(|ui| {
+                        ui.add_space(10.0);
+                        for i in 0..template_count {
+                            let selected = self.selected_index == Some(i);
+                            self.show_template_card(ui, i, selected);
+                            ui.add_space(12.0);
+                        }
+                    });
+                });
 
             ui.add_space(30.0);
 
@@ -164,7 +217,7 @@ impl Launcher {
             .rounding(egui::Rounding::same(8.0))
             .inner_margin(egui::Margin::same(16.0))
             .show(ui, |ui| {
-                ui.set_width(240.0);
+                ui.set_min_width(240.0);
 
                 // 图标
                 let icon_text = match template.id.as_str() {
@@ -387,9 +440,12 @@ impl Launcher {
                     )
                     .clicked()
                 {
-                    // TODO: 阶段二实现 - 启动编辑器
-                    self.status_message = Some("编辑器功能将在下一阶段实现".into());
-                    self.is_error = false;
+                    let full_path = format!(
+                        "{}/{}",
+                        self.project_path.trim_end_matches('/'),
+                        self.project_name
+                    );
+                    self.open_requested = Some(full_path);
                 }
             });
         });
@@ -415,9 +471,19 @@ impl Launcher {
 
         match self.generate_project(template, name, &full_path) {
             Ok(()) => {
-                self.page = LauncherPage::Success;
-                self.status_message = Some(format!("工程已生成: {}", full_path));
-                self.is_error = false;
+                // 保存历史记录
+                self.project_history.add_project(
+                    name.to_string(),
+                    full_path.clone(),
+                    template.id.clone(),
+                );
+                if let Err(e) = self.project_history.save() {
+                    // 非关键错误，仅记录
+                    eprintln!("保存项目历史失败: {}", e);
+                }
+
+                // 设置打开请求，由外部处理（隐藏 launcher 打开 editor）
+                self.open_requested = Some(full_path.clone());
             }
             Err(e) => {
                 self.status_message = Some(format!("生成失败: {}", e));
@@ -504,6 +570,37 @@ impl Launcher {
         name.chars()
             .filter(|c| c.is_ascii_alphanumeric())
             .collect()
+    }
+
+    /// 渲染单个历史项目条目
+    fn show_history_entry(&mut self, ui: &mut egui::Ui, entry: &crate::history::RecentProject) {
+        egui::Frame::none()
+            .fill(egui::Color32::from_rgb(35, 35, 45))
+            .rounding(egui::Rounding::same(6.0))
+            .inner_margin(egui::Margin::same(12.0))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(
+                            egui::RichText::new(&entry.name)
+                                .size(14.0)
+                                .strong(),
+                        );
+                        ui.label(
+                            egui::RichText::new(&entry.path)
+                                .size(11.0)
+                                .color(egui::Color32::GRAY),
+                        );
+                    });
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("打开").clicked() {
+                            self.open_requested = Some(entry.path.clone());
+                        }
+                    });
+                });
+            });
+        ui.add_space(6.0);
     }
 }
 
