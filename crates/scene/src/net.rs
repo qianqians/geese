@@ -10,7 +10,7 @@
 //!
 //! ## argvs 格式
 //!
-//! argvs 为 JSON 序列化的 `SceneObjectNetMsg`，包含：
+//! argvs 为 msgpack 序列化的 `SceneObjectNetMsg`，包含：
 //! - `entity_id`: 场景对象唯一 ID
 //! - `object_type`: 对象类型 ("mesh_ref" | "plane" | "cube")
 //! - `transform`: 世界变换
@@ -18,7 +18,7 @@
 //! - `color`: RGB 颜色（仅程序化对象）
 //! - `dimensions`: 尺寸（仅程序化对象）
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// 静态场景对象的 entity_type 常量。
 pub const ENTITY_TYPE_STATIC: &str = "scene_object_static";
@@ -48,8 +48,7 @@ pub struct SceneObjectNetMsg {
 }
 
 /// 场景对象的网络类型。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone)]
 pub enum SceneObjectNetType {
     /// 引用 GLTF 模型中的 mesh
     MeshRef,
@@ -57,6 +56,28 @@ pub enum SceneObjectNetType {
     Plane,
     /// 程序化立方体
     Cube,
+}
+
+impl Serialize for SceneObjectNetType {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::MeshRef => serializer.serialize_str("mesh_ref"),
+            Self::Plane => serializer.serialize_str("plane"),
+            Self::Cube => serializer.serialize_str("cube"),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for SceneObjectNetType {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        match s.as_str() {
+            "mesh_ref" => Ok(Self::MeshRef),
+            "plane" => Ok(Self::Plane),
+            "cube" => Ok(Self::Cube),
+            _ => Err(serde::de::Error::unknown_variant(&s, &["mesh_ref", "plane", "cube"])),
+        }
+    }
 }
 
 /// 网格引用——指向 GLTF 文件中的特定 mesh。
@@ -136,14 +157,16 @@ impl SceneObjectNetMsg {
         }
     }
 
-    /// 序列化为 argvs 二进制（JSON）。
-    pub fn to_argvs(&self) -> Result<Vec<u8>, serde_json::Error> {
-        serde_json::to_vec(self)
+    /// 序列化为 argvs 二进制（msgpack，struct-as-map 模式兼容 Python msgpack）。
+    pub fn to_argvs(&self) -> Result<Vec<u8>, rmp_serde::encode::Error> {
+        let mut buf = Vec::new();
+        self.serialize(&mut rmp_serde::encode::Serializer::new(&mut buf).with_struct_map())?;
+        Ok(buf)
     }
 
     /// 从 argvs 二进制反序列化。
-    pub fn from_argvs(data: &[u8]) -> Result<Self, serde_json::Error> {
-        serde_json::from_slice(data)
+    pub fn from_argvs(data: &[u8]) -> Result<Self, rmp_serde::decode::Error> {
+        rmp_serde::from_slice(data)
     }
 }
 
@@ -168,8 +191,8 @@ mod tests {
             [0.0, 45.0, 0.0],
             [1.0, 1.0, 1.0],
         );
-        let json = serde_json::to_string(&msg).unwrap();
-        let decoded: SceneObjectNetMsg = serde_json::from_str(&json).unwrap();
+        let argvs = msg.to_argvs().unwrap();
+        let decoded: SceneObjectNetMsg = SceneObjectNetMsg::from_argvs(&argvs).unwrap();
         assert_eq!(decoded.entity_id, "obj-001");
         assert!(matches!(decoded.object_type, SceneObjectNetType::MeshRef));
     }
