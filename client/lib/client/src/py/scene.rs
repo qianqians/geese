@@ -208,4 +208,45 @@ impl PyScene {
             scene.skins.len(),
         ))
     }
+
+    /// 收集本帧脏对象并清零脏标记。
+    ///
+    /// Returns: ``list[tuple[str, int]]`` ——每个元素为 (entity_id, dirty_flags_bits)
+    fn collect_dirty_objects(&self) -> PyResult<Vec<(String, u8)>> {
+        let mut scene = lock_scene(&self.inner)?;
+        Ok(scene.collect_dirty_objects())
+    }
+
+    /// 返回本帧已移除对象的 entity_id 列表（消费式取出）。
+    fn drain_deleted_ids(&self) -> PyResult<Vec<String>> {
+        let mut scene = lock_scene(&self.inner)?;
+        Ok(scene.drain_deleted_ids())
+    }
+
+    /// 获取对象的当前世界变换，按 entity_id 查找。
+    ///
+    /// Returns: ``(translation, rotation_quat, scale)`` 各为 [x, y, z] 或 [x, y, z, w]
+    /// rotation 为四元数 ``(x, y, z, w)``；translation / scale 为 ``[x, y, z]``。
+    /// 未找到返回 None。
+    fn get_object_transform(
+        &self,
+        entity_id: &str,
+    ) -> PyResult<Option<(Vec<f32>, Vec<f32>, Vec<f32>)>> {
+        let scene = lock_scene(&self.inner)?;
+        let obj = scene.objects.iter().find(|o| o.entity_id == entity_id);
+        match obj {
+            None => Ok(None),
+            Some(o) => {
+                let node = &scene.nodes[o.node];
+                let t = &node.local_transform.translation;
+                let r = &node.local_transform.rotation;
+                let s = &node.local_transform.scale;
+                Ok(Some((
+                    vec![t.x, t.y, t.z],
+                    vec![r.v.x, r.v.y, r.v.z, r.s],
+                    vec![s.x, s.y, s.z],
+                )))
+            }
+        }
+    }
 }

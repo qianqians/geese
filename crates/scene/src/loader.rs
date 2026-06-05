@@ -17,6 +17,7 @@ use uuid::Uuid;
 use crate::manifest::{SceneManifest, TransformDef};
 use crate::scene::Scene;
 use crate::scene_object::SceneObject;
+use crate::scene_object::DirtyFlags;
 use crate::import_scene;
 use avatar::{SceneNode, Transform};
 
@@ -320,6 +321,7 @@ fn add_procedural_object(
         model_matrix: model_matrix.into(),
         normal_matrix: model_matrix.invert().unwrap_or(Matrix4::identity()).transpose().into(),
         joint_matrices: vec![],
+        dirty: DirtyFlags::all(),
     });
 }
 

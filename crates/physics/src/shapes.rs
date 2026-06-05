@@ -8,11 +8,11 @@ use crate::math::Vec3;
 /// 与 pyo3 / 业务层无关的形状描述。
 #[derive(Debug, Clone)]
 pub enum ShapeDesc {
-    /// 立方体；半边长 (hx, hy, hz)。
+    /// 立方体;半边长 (hx, hy, hz)。
     Cuboid { half_extents: Vec3 },
-    /// 球；半径。
+    /// 球;半径。
     Ball { radius: f32 },
-    /// 胶囊：沿 Y 轴；half_height 为圆柱段半高。
+    /// 胶囊：沿 Y 轴;half_height 为圆柱段半高。
     Capsule { half_height: f32, radius: f32 },
     /// 圆柱：沿 Y 轴。
     Cylinder { half_height: f32, radius: f32 },

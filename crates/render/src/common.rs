@@ -164,7 +164,7 @@ impl MaterialUniform {
             metallic_roughness_normal_occlusion: [
                 material.metallic_factor,
                 material.roughness_factor,
-                1.0, // normal_scale（GLTF 默认 1.0；当前 Material 未存值，用默认）
+                1.0, // normal_scale（GLTF 默认 1.0;当前 Material 未存值，用默认）
                 1.0, // occlusion_strength
             ],
             flags: [texture_flags, alpha_mode, 0, 0],
@@ -473,7 +473,7 @@ impl DefaultTextures {
     }
 }
 
-/// 解析单个 PBR 槽位：若 Material 携带 handle 则上传贴图并返回新 view；否则返回 None。
+/// 解析单个 PBR 槽位：若 Material 携带 handle 则上传贴图并返回新 view;否则返回 None。
 pub struct UploadedTexture {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,

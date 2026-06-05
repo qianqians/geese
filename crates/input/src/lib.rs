@@ -186,7 +186,7 @@ impl InputState {
                 self.gamepad_axes.insert((id, axis), value);
             }
             InputEvent::GamepadConnected(_) | InputEvent::GamepadDisconnected(_) => {
-                // 业务层自行处理；状态层无副作用。
+                // 业务层自行处理;状态层无副作用。
             }
             InputEvent::FocusLost => {
                 // 防卡键：失焦时清空所有 down 状态。
@@ -248,7 +248,7 @@ impl InputState {
 
 /// 输入后端 trait：负责把原生输入翻译成 [`InputEvent`]。
 ///
-/// 真实实现会包装 winit/sdl2/gilrs 等库；骨架阶段提供 [`NullBackend`]。
+/// 真实实现会包装 winit/sdl2/gilrs 等库;骨架阶段提供 [`NullBackend`]。
 pub trait InputBackend {
     /// 拉取自上次调用以来产生的事件追加到 `sink`。
     fn poll_events(&mut self, sink: &mut Vec<InputEvent>);
@@ -301,7 +301,7 @@ impl ActionMap {
         list.iter().any(|b| match *b {
             InputBinding::Key(k) => state.is_key_down(k),
             InputBinding::Mouse(m) => state.is_mouse_down(m),
-            // 手柄绑定需要指定 gamepad id；默认查询 id=0（单人本地）。
+            // 手柄绑定需要指定 gamepad id;默认查询 id=0（单人本地）。
             InputBinding::GamepadButton(g) => state.is_gamepad_button_down(0, g),
         })
     }

@@ -27,7 +27,7 @@ fn free_fall_after_one_second() {
     }
     let iso = scene.body_isometry(body).expect("isometry available");
     let dropped = start_y - iso.translation.y;
-    // 解析解 0.5 * g * t^2 ≈ 4.905；rapier 半隐式积分会稍有偏差。
+    // 解析解 0.5 * g * t^2 ≈ 4.905;rapier 半隐式积分会稍有偏差。
     assert_relative_eq!(dropped, 4.905, epsilon = 0.4);
 }
 

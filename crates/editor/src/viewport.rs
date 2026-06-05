@@ -600,7 +600,7 @@ impl EditorPanel for ViewportPanel {
         let bg_color = egui::Color32::from_gray(25);
         ui.painter().rect_filled(rect, 0.0, bg_color);
 
-        // 如果有渲染纹理，绘制纹理；否则绘制网格
+        // 如果有渲染纹理，绘制纹理;否则绘制网格
         if let Some(tex_id) = self.rendered_texture {
             ui.painter().image(
                 tex_id,

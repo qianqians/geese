@@ -139,7 +139,7 @@ impl Theme {
 
 /// egui::Context 的薄包装：管理主题、提供 `run(input, build_ui) -> FullOutput`。
 ///
-/// 业务侧每帧调用 [`UiContext::run`]，在闭包里直接写 egui 代码；返回的
+/// 业务侧每帧调用 [`UiContext::run`]，在闭包里直接写 egui 代码;返回的
 /// [`FullOutput`] 包含 shapes + textures_delta，交给渲染后端消费。
 pub struct UiContext {
     ctx: egui::Context,
@@ -183,7 +183,7 @@ impl UiContext {
 
     /// 由中立的 [`PointerState`] + 视口尺寸生成 [`egui::RawInput`]。
     ///
-    /// 仅处理鼠标位置与左键 press/release 事件，足够覆盖 HUD/调试面板的基本交互；
+    /// 仅处理鼠标位置与左键 press/release 事件，足够覆盖 HUD/调试面板的基本交互;
     /// 复杂场景请直接构造 `egui::RawInput`（键盘/IME/手势等）。
     pub fn raw_input_from(pointer: PointerState, viewport: Vec2) -> RawInput {
         let mut input = RawInput::default();

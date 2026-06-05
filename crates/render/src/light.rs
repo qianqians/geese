@@ -100,7 +100,7 @@ impl GpuLight {
 
 /// 全局光源数组的 GPU 上传结构（uniform 布局）。
 ///
-/// `count.x` 表示有效光源数；`lights[count.x..]` 内容未定义。
+/// `count.x` 表示有效光源数;`lights[count.x..]` 内容未定义。
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub struct LightStorage {

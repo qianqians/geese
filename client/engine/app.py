@@ -14,6 +14,7 @@ from .conn_msg_handle import conn_msg_handle
 from .player import *
 from .subentity import *
 from .receiver import *
+from .scene_object_receiver import create_scene_object, scene_object_manager
 
 def __handle_poll_coroutine_thread__(_app:app):
     _app.poll_coroutine_thread()
@@ -51,6 +52,7 @@ class app(object):
         self.player_mgr:player_manager = None
         self.subentity_mgr:subentity_manager = None
         self.receiver_mgr:receiver_manager = None
+        self.scene_object_mgr:scene_object_manager = None
 
         self.__hub_global_callback__:dict[str, Callable[[str, bytes]]] = {}
         self.__loop__ = asyncio.new_event_loop()
@@ -66,6 +68,10 @@ class app(object):
         self.player_mgr = player_manager()
         self.subentity_mgr = subentity_manager()
         self.receiver_mgr = receiver_manager()
+        self.scene_object_mgr = scene_object_manager()
+        
+        self.register("scene_object_static", create_scene_object)
+        self.register("scene_object_dynamic", create_scene_object)
         
         self.heartbeats()
         return self
@@ -116,17 +122,22 @@ class app(object):
         
     def create_entity(self, entity_type:str, entity_id:str, argvs: dict):
         _creator = self.__entity_create_method__[entity_type]
-        _creator(entity_id, argvs)
+        _receiver = _creator(entity_id, argvs)
+        # scene_object receiver 需要单独跟踪
+        if entity_type in ("scene_object_static", "scene_object_dynamic"):
+            self.scene_object_mgr.add(_receiver)
         
     def update_entity(self, entity_type:str, entity_id:str, argvs: dict):
         self.player_mgr.update_player(entity_id, argvs)
         self.subentity_mgr.update_subentity(entity_id, argvs)
         self.receiver_mgr.update_receiver(entity_id, argvs)
+        self.scene_object_mgr.update(entity_id, argvs)
 
     def delete_entity(self, entity_id:str):
         self.player_mgr.del_player(entity_id)
         self.subentity_mgr.del_subentity(entity_id)
         self.receiver_mgr.del_receiver(entity_id)
+        self.scene_object_mgr.remove(entity_id)
     
     def run_coroutine_async(self, coro):
         asyncio.run_coroutine_threadsafe(coro, self.__loop__)

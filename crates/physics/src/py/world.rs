@@ -1,6 +1,6 @@
 //! `PyPhysicsWorld`：物理世界 pyo3 包装。
 //!
-//! 内部用 `Arc<Mutex<PhysicsWorld>>` 串行化访问；多个 `PyBody` 共享同一引用。
+//! 内部用 `Arc<Mutex<PhysicsWorld>>` 串行化访问;多个 `PyBody` 共享同一引用。
 
 use std::sync::{Arc, Mutex};
 

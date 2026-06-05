@@ -1,11 +1,11 @@
 //! 基于 [rodio](https://github.com/RustAudio/rodio) 的真实音频后端。
 //!
 //! - 解码：默认启用 `wav` + `vorbis`，按需扩展 `mp3`/`flac`/`mp4`。
-//! - 设备：`OutputStream::try_default()` 自动选择系统默认输出设备；headless 或
+//! - 设备：`OutputStream::try_default()` 自动选择系统默认输出设备;headless 或
 //!   无声卡环境会返回 [`AudioError::BackendUnavailable`]，方便单测软跳过。
 //! - 单实例播放：每个 [`Sound`] 持一个独占 `rodio::Sink`，pause/play/stop/volume
 //!   一一对应。
-//! - 3D 空间化：当前版本只做软件 distance attenuation 接口占位；后续可升级到
+//! - 3D 空间化：当前版本只做软件 distance attenuation 接口占位;后续可升级到
 //!   `rodio::SpatialSink` 做真正的双耳定位。
 
 use super::*;

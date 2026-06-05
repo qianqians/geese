@@ -6,7 +6,7 @@
 //! - [`AssetCache`]：按 `(TypeId, path)` 去重的缓存，避免重复解码。
 //! - [`LoadError`]：统一错误类型。
 //!
-//! 骨架阶段实现同步加载；后续“可用级”将加入异步加载（tokio）、文件热重载
+//! 骨架阶段实现同步加载;后续“可用级”将加入异步加载（tokio）、文件热重载
 //! （notify）、KTX2/Basis 纹理解码、meshopt 顶点优化等。
 
 use std::any::{Any, TypeId};
@@ -37,7 +37,7 @@ pub fn load(
 // Handle
 // ---------------------------------------------------------------------------
 
-/// 资源句柄。`Clone` 廉价；释放最后一份会触发底层数据 drop（但不会从 cache 中
+/// 资源句柄。`Clone` 廉价;释放最后一份会触发底层数据 drop（但不会从 cache 中
 /// 移除——缓存以 `Arc` 强引用，需显式 `AssetCache::evict` 清理）。
 #[derive(Debug)]
 pub struct Handle<T: ?Sized> {
@@ -134,7 +134,7 @@ where
 /// 按 `(TypeId, path)` 去重的强引用缓存。
 ///
 /// 主要 API：
-/// - [`AssetCache::get_or_load`]：命中即返回 Handle；未命中调用 loader。
+/// - [`AssetCache::get_or_load`]：命中即返回 Handle;未命中调用 loader。
 /// - [`AssetCache::insert`]：手动注入（适合测试或运行时生成的资源）。
 /// - [`AssetCache::get`]：仅查询，不触发加载。
 /// - [`AssetCache::evict`] / [`AssetCache::clear`]：释放缓存中的强引用。

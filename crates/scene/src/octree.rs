@@ -138,7 +138,7 @@ impl OctreeNode {
             return;
         }
 
-        // 已细分：尝试下沉到能完全包住 entry.aabb 的 child；否则留在本节点
+        // 已细分：尝试下沉到能完全包住 entry.aabb 的 child;否则留在本节点
         if let Some(children) = &mut self.children {
             for child in children.iter_mut() {
                 if aabb_contains_aabb(&child.bounds, &entry.aabb) {
