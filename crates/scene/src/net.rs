@@ -12,9 +12,9 @@
 //!
 //! argvs 为 msgpack 序列化的 `SceneObjectNetMsg`，包含：
 //! - `entity_id`: 场景对象唯一 ID
-//! - `object_type`: 对象类型 ("mesh_ref" | "plane" | "cube")
+//! - `type`: 对象类型 ("mesh_ref" | "plane" | "cube")
 //! - `transform`: 世界变换
-//! - `mesh_ref`: 指向 GLTF 文件中某个 mesh 的引用（仅 object_type="mesh_ref"）
+//! - `mesh_ref`: 指向 GLTF 文件中某个 mesh 的引用（仅 type="mesh_ref"）
 //! - `color`: RGB 颜色（仅程序化对象）
 //! - `dimensions`: 尺寸（仅程序化对象）
 
