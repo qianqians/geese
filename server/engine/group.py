@@ -7,6 +7,8 @@ class group(object):
         self.clients:list[tuple[str, str]] = [] 
         self.entities:dict[str, entity] = {}
         self.players:dict[str, player] = {}
+        self.scene_object_ids:set[str] = set()
+        self.scene_manifest_path:str|None = None
 
     def join(self, client:tuple[str, str]):
         self.clients.append(client)
@@ -16,6 +18,11 @@ class group(object):
             _e.create_remote_entity(gate_name, [conn_id])
         for _p in self.players.values():
             _p.create_remote_entity(gate_name, [conn_id])
+
+        # 场景对象：重新同步给新客户端
+        if self.scene_object_ids and self.scene_manifest_path:
+            from scene_physics import sync_scene_to_group
+            sync_scene_to_group(self.scene_manifest_path, self, gate_name, [conn_id])
 
     def leave(self, client:tuple[str, str]):
         cli_gate_name, cli_conn_id = client
@@ -29,6 +36,8 @@ class group(object):
                     app().ctx.hub_call_client_remove_remote_entity(cli_gate_name, _e.entity_id, cli_conn_id)
                 for _p in self.players.values():
                     app().ctx.hub_call_client_remove_remote_entity(cli_gate_name, _p.entity_id, cli_conn_id)
+                for _sid in self.scene_object_ids:
+                    app().ctx.hub_call_client_remove_remote_entity(cli_gate_name, _sid, cli_conn_id)
                 break
     
     def create_remote_entity(self, _e:entity):

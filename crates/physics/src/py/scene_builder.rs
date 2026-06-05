@@ -10,7 +10,7 @@ use crate::shapes::ShapeDesc;
 
 /// 从 GLTF 文件提取碰撞三角网格形状。
 ///
-/// 仅读取顶点位置与三角形索引；忽略纹理、材质、法线等渲染数据。
+/// 仅读取顶点位置与三角形索引;忽略纹理、材质、法线等渲染数据。
 /// 顶点的 GLTF 节点世界变换已预先应用。
 ///
 /// 返回 `List[PhysicsShape]`，每个元素对应 GLTF 的一个 mesh primitive。

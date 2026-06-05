@@ -1,7 +1,7 @@
 //! 音频子系统（骨架）。
 //!
 //! 提供 2D/3D 音效与 BGM 的统一抽象。骨架阶段不绑定具体后端（rodio / oddio +
-//! cpal）；定义 trait 与数据结构，业务层即可按接口编码，后续“可用级”阶段再
+//! cpal）;定义 trait 与数据结构，业务层即可按接口编码，后续“可用级”阶段再
 //! 接入 rodio 实播 wav/ogg、3D 衰减、混音通道。
 //!
 //! 设计要点：
@@ -94,7 +94,7 @@ impl Default for SoundConfig {
 
 /// 加载好但未播放的音频源（PCM/解码后的数据 + 元信息）。
 ///
-/// 骨架阶段只用一个不透明 id 标识；真实 backend 会内部维护 id → 解码数据 的表。
+/// 骨架阶段只用一个不透明 id 标识;真实 backend 会内部维护 id → 解码数据 的表。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SourceId(pub u64);
 
@@ -270,7 +270,7 @@ impl AudioSystem {
         Self::new(Box::new(NullBackend::new()))
     }
 
-    /// 尝试创建 rodio 后端的 AudioSystem；headless / 无声卡环境返回
+    /// 尝试创建 rodio 后端的 AudioSystem;headless / 无声卡环境返回
     /// [`AudioError::BackendUnavailable`]。
     pub fn try_with_rodio() -> Result<Self, AudioError> {
         let backend = RodioBackend::try_new()?;

@@ -1,6 +1,6 @@
 //! Physics crate: rapier3d 的多场景物理世界封装。
 //!
-//! 不对外暴露 nalgebra 类型；外部只接触本 crate 的 `Vec3` / `Quat` 别名与
+//! 不对外暴露 nalgebra 类型;外部只接触本 crate 的 `Vec3` / `Quat` 别名与
 //! 元组形式（pyo3 feature 下）。
 
 pub mod handles;

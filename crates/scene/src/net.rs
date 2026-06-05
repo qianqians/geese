@@ -170,13 +170,6 @@ impl SceneObjectNetMsg {
     }
 }
 
-/// 场景对象销毁消息——填入 `delete_remote_entity.argvs`（通常不需要额外数据）。
-/// 仅需 entity_id 即可，已在 `delete_remote_entity` 结构体中包含。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SceneObjectDestroyMsg {
-    pub entity_id: String,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

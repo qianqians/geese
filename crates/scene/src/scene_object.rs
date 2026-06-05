@@ -4,6 +4,18 @@ use cgmath::{
 use math::AABB;
 use render::{ModelMesh, RenderObject};
 
+bitflags::bitflags! {
+    /// 场景对象脏标记——网络增量同步使用。
+    /// 新创建的对象默认全脏（DirtyFlags::all()），由 Scene 每帧 collect 后清零。
+    #[derive(Clone, Debug)]
+    pub struct DirtyFlags: u8 {
+        /// 位置 / 缩放 / 旋转变化
+        const TRANSFORM = 0b001;
+        /// Mesh 引用发生变化（切换模型）
+        const MESH     = 0b010;
+    }
+}
+
 // 场景对象 trait
 #[derive(Clone)]
 pub struct SceneObject {
@@ -16,6 +28,8 @@ pub struct SceneObject {
     pub model_matrix: [[f32; 4]; 4],
     pub normal_matrix: [[f32; 4]; 4],
     pub joint_matrices: Vec<[[f32; 4]; 4]>,
+    /// 脏标记：新创建对象全脏，collect_dirty 后清零。
+    pub dirty: DirtyFlags,
 }
 
 impl RenderObject for SceneObject {

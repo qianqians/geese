@@ -103,7 +103,7 @@ impl PhysicsScene {
         self.gravity = gravity;
     }
 
-    /// 步进物理；dt 单位秒。
+    /// 步进物理;dt 单位秒。
     pub fn step(&mut self, dt: f32) {
         self.integration_parameters.dt = dt.max(1e-6);
         let physics_hooks = ();

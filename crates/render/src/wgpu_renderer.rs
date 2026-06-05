@@ -135,4 +135,4 @@ impl WgpuSceneRenderer {
     }
 }
 
-// `WgpuRenderQueue` 已迁移至 `crate::common`；外部通过 `crate::WgpuRenderQueue` 访问。
+// `WgpuRenderQueue` 已迁移至 `crate::common`;外部通过 `crate::WgpuRenderQueue` 访问。

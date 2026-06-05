@@ -51,7 +51,7 @@ impl SnapshotBuffer {
     }
 
     pub fn push(&mut self, s: Snapshot) {
-        // 保持按 server_time 升序；乱序包丢弃
+        // 保持按 server_time 升序;乱序包丢弃
         if let Some(back) = self.buffer.back() {
             if s.server_time <= back.server_time { return; }
         }

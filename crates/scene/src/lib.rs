@@ -14,6 +14,7 @@ pub use avatar::{
 pub use octree::Octree;
 pub use scene::Scene;
 pub use scene_object::SceneObject;
+pub use scene_object::DirtyFlags;
 
 use asset::load;
 use std::collections::HashMap;
@@ -220,6 +221,7 @@ fn load_gltf_mesh(
             model_matrix: Matrix4::from_scale(1.0).into(),
             normal_matrix: Matrix4::from_scale(1.0).into(),
             joint_matrices: Vec::new(),
+            dirty: DirtyFlags::all(),
         });
         object_indices.push(object_index);
     }

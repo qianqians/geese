@@ -7,7 +7,7 @@
 //! - `ParticleSystem`：聚合多个 emitter，按 dt 推进
 //! - `BillboardKind`：Billboard 朝向模式
 //!
-//! 不依赖 wgpu，仅做模拟；后续接入时把粒子缓冲上传到 vertex/instance buffer。
+//! 不依赖 wgpu，仅做模拟;后续接入时把粒子缓冲上传到 vertex/instance buffer。
 
 use std::ops::Range;
 

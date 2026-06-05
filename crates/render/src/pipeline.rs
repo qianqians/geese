@@ -97,7 +97,7 @@ pub trait ScenePipeline {
     );
 
     /// 把本帧已 prepare 的内容编码到给定的 encoder，并最终输出到 `color_target`。
-    /// `depth_target` 在 Forward+ 必须提供；Deferred+ 内部使用自有 G-Buffer 深度，
+    /// `depth_target` 在 Forward+ 必须提供;Deferred+ 内部使用自有 G-Buffer 深度，
     /// 此参数可以忽略，但保持接口一致。
     fn render(
         &self,

@@ -3,7 +3,7 @@
 //! gilrs 是 Rust 生态最常用的跨平台手柄库（XInput / DirectInput / evdev /
 //! HID），与窗口库（winit/sdl2）独立，可与任意键鼠后端并存。
 //!
-//! 本后端只处理 **手柄** 事件；键鼠请用基于 winit 的 backend（M1 可用级阶段
+//! 本后端只处理 **手柄** 事件;键鼠请用基于 winit 的 backend（M1 可用级阶段
 //! 添加）。
 //!
 //! 用法：
@@ -57,7 +57,7 @@ impl GilrsBackend {
             G::East => GamepadButton::East,
             G::West => GamepadButton::West,
             G::North => GamepadButton::North,
-            // gilrs 命名：LeftTrigger=L1(bumper), LeftTrigger2=L2(扳机)；
+            // gilrs 命名：LeftTrigger=L1(bumper), LeftTrigger2=L2(扳机);
             // 我们的枚举：LeftBumper / LeftTrigger 分别对应物理 L1 / L2。
             G::LeftTrigger => GamepadButton::LeftBumper,
             G::LeftTrigger2 => GamepadButton::LeftTrigger,
@@ -137,7 +137,7 @@ mod tests {
         };
         let mut sink = Vec::new();
         backend.poll_events(&mut sink);
-        // 不强校验 sink 内容（依赖运行时是否插入手柄）；只确保 poll 不 panic。
+        // 不强校验 sink 内容（依赖运行时是否插入手柄）;只确保 poll 不 panic。
         let _ = backend.connected_count();
     }
 

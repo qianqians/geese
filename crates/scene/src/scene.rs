@@ -13,6 +13,7 @@ use avatar::{
 };
 use avatar::AnimationStateMachine;
 use crate::{Octree, SceneObject};
+use crate::scene_object::DirtyFlags;
 
 pub struct Scene {
     pub nodes: Vec<SceneNode>,
@@ -28,6 +29,8 @@ pub struct Scene {
     dynamic_indices: Vec<usize>,
     pub bounds: AABB,
     max_objects: usize,
+    /// 本帧内 remove_object 操作收集的 entity_id，由 drain_deleted_ids 消费。
+    deleted_ids: Vec<String>,
     max_depth: usize,
 }
 
@@ -62,6 +65,7 @@ impl Scene {
             bounds,
             max_objects,
             max_depth,
+            deleted_ids: Vec::new(),
         };
         scene.update_world_transforms();
         scene.rebuild_octree();
@@ -236,7 +240,7 @@ impl Scene {
         }
     }
 
-    /// 重建静态部分八叉树。仅当外部直接修改了静态对象的 aabb 时才需要调用；
+    /// 重建静态部分八叉树。仅当外部直接修改了静态对象的 aabb 时才需要调用;
     /// 动画驱动的动态对象不进 octree，因此动画更新无需调用本方法。
     pub fn rebuild_octree(&mut self) {
         self.octree = Octree::new(self.bounds, self.max_objects, self.max_depth);
@@ -343,6 +347,8 @@ impl Scene {
         // 重建分类索引和八叉树
         self.rebuild_object_indices();
         self.rebuild_octree();
+        // 记录到删除队列，供 drain_deleted_ids 消费
+        self.deleted_ids.push(entity_id.to_string());
         Ok(())
     }
 
@@ -355,9 +361,10 @@ impl Scene {
     ) -> Result<(), String> {
         let obj = self
             .objects
-            .iter()
+            .iter_mut()
             .find(|o| o.entity_id == entity_id)
             .ok_or_else(|| format!("object not found: {}", entity_id))?;
+        obj.dirty |= DirtyFlags::TRANSFORM;
         let node_idx = obj.node;
 
         self.nodes[node_idx].local_transform.translation = translation;
@@ -386,6 +393,26 @@ impl Scene {
             self.remove_object(id)?;
         }
         Ok(())
+    }
+
+    /// 收集本帧脏对象并清零脏标记。
+    ///
+    /// Returns: ``Vec<(entity_id, dirty_flags_bits)>``
+    pub fn collect_dirty_objects(&mut self) -> Vec<(String, u8)> {
+        self.objects
+            .iter_mut()
+            .filter(|o| !o.dirty.is_empty())
+            .map(|o| {
+                let bits = o.dirty.bits();
+                o.dirty = DirtyFlags::empty();
+                (o.entity_id.clone(), bits)
+            })
+            .collect()
+    }
+
+    /// 返回本帧已移除对象的 entity_id 列表（消费式取出）。
+    pub fn drain_deleted_ids(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.deleted_ids)
     }
 
     // -----------------------------------------------------------------------
@@ -437,6 +464,7 @@ impl Scene {
                 .transpose()
                 .into(),
             joint_matrices: vec![],
+            dirty: DirtyFlags::all(),
         });
 
         if is_static {
@@ -547,6 +575,7 @@ mod tests {
             model_matrix: Matrix4::from_scale(1.0).into(),
             normal_matrix: Matrix4::from_scale(1.0).into(),
             joint_matrices: Vec::new(),
+            dirty: DirtyFlags::all(),
         }
     }
 
@@ -556,7 +585,7 @@ mod tests {
 
     #[test]
     fn classify_marks_animated_subtree_and_skinned_as_dynamic() {
-        // 节点 0(root) → 1(child) → 2(grandchild)；节点 3(独立)
+        // 节点 0(root) → 1(child) → 2(grandchild);节点 3(独立)
         let mut nodes = vec![
             dummy_node(0, None),
             dummy_node(1, Some(0)),
