@@ -7,21 +7,27 @@
 """
 from __future__ import annotations
 
-from .receiver import receiver
+from .base_entity import base_entity
 
 
-class SceneObjectReceiver(receiver):
+class SceneObjectReceiver(base_entity):
     """
-    场景对象接收器——对应服务端下发的单个场景对象。
+    场景对象——对应服务端下发的单个场景对象。
 
-    收到 ``refresh_entity`` 时调用 :meth:`update_receiver` 更新变换等状态。
+    直接继承 base_entity,不经过 receiver。场景对象不需要
+    hub_notify_callback 和 receiver_mgr 注册。
+
+    refresh_entity 由 scene_object_mgr.update 分发到此。
     """
 
     def __init__(self, entity_type: str, entity_id: str, argvs: dict) -> None:
         super().__init__(entity_type, entity_id)
         self._parse_and_store(argvs)
 
-    def update_receiver(self, argvs: dict) -> None:
+        from app import app
+        app().scene_object_mgr.add(self)
+
+    def update(self, argvs: dict) -> None:
         """服务端 refresh_entity 时调用，更新对象状态。"""
         self._parse_and_store(argvs)
 
@@ -48,16 +54,14 @@ class SceneObjectReceiver(receiver):
 # factory
 # ---------------------------------------------------------------------------
 
-def create_scene_object(entity_id: str, argvs: dict) -> SceneObjectReceiver:
+def create_scene_object(entity_type: str, entity_id: str, argvs: dict) -> SceneObjectReceiver:
     """
     注册到 ``app.__entity_create_method__`` 的 creator。
 
-    ``argvs`` 已由 ``conn_msg_handle.on_create_remote_entity`` 通过
-    ``msgpack.loads`` 反序列化为 dict。
+    ``entity_type`` 由 ``conn_msg_handle.on_create_remote_entity`` 传入，
+    ``argvs`` 已通过 ``msgpack.loads`` 反序列化为 dict。
     """
-    entity_type = argvs.get("entity_type", "scene_object_static")
     return SceneObjectReceiver(entity_type, entity_id, argvs)
-
 
 # ---------------------------------------------------------------------------
 # manager（管理所有已创建的 scene_object receiver）
@@ -74,8 +78,9 @@ class scene_object_manager:
 
     def update(self, entity_id: str, argvs: dict) -> None:
         r = self._receivers.get(entity_id)
-        if r is not None:
-            r.update_receiver(argvs)
+        if r is None:
+            return
+        r.update(argvs)
 
     def remove(self, entity_id: str) -> None:
         self._receivers.pop(entity_id, None)

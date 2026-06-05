@@ -119,14 +119,14 @@ class app(object):
         _creator(entity_id, argvs)
         
     def update_entity(self, entity_type:str, entity_id:str, argvs: dict):
-        self.player_mgr.update_player(entity_id, argvs)
-        self.subentity_mgr.update_subentity(entity_id, argvs)
-        self.receiver_mgr.update_receiver(entity_id, argvs)
+        self.player_mgr.update(entity_id, argvs)
+        self.subentity_mgr.update(entity_id, argvs)
+        self.receiver_mgr.update(entity_id, argvs)
 
     def delete_entity(self, entity_id:str):
-        self.player_mgr.del_player(entity_id)
-        self.subentity_mgr.del_subentity(entity_id)
-        self.receiver_mgr.del_receiver(entity_id)
+        self.player_mgr.remove(entity_id)
+        self.subentity_mgr.remove(entity_id)
+        self.receiver_mgr.remove(entity_id)
     
     def run_coroutine_async(self, coro):
         asyncio.run_coroutine_threadsafe(coro, self.__loop__)

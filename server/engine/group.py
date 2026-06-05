@@ -9,6 +9,7 @@ class group(object):
         self.players:dict[str, player] = {}
         self.scene_object_ids:set[str] = set()
         self.scene_manifest_path:str|None = None
+        self.dynamic_cache: dict[str, bytes] = {}
 
     def join(self, client:tuple[str, str]):
         self.clients.append(client)
@@ -19,10 +20,25 @@ class group(object):
         for _p in self.players.values():
             _p.create_remote_entity(gate_name, [conn_id])
 
-        # 场景对象：重新同步给新客户端
+        # 静态场景对象：重新同步给新客户端
         if self.scene_object_ids and self.scene_manifest_path:
             from scene_physics import sync_scene_to_group
             sync_scene_to_group(self.scene_manifest_path, self, gate_name, [conn_id])
+
+        # 动态场景对象：重新同步给新客户端
+        if self.dynamic_cache:
+            from scene_physics import ENTITY_TYPE_DYNAMIC
+            from app import app
+            for entity_id, msg_bytes in self.dynamic_cache.items():
+                app().ctx.hub_call_client_create_remote_entity(
+                    gate_name,
+                    False,  # is_migrate
+                    [conn_id],
+                    "",  # main_conn_id
+                    entity_id,
+                    ENTITY_TYPE_DYNAMIC,
+                    msg_bytes,
+                )
 
     def leave(self, client:tuple[str, str]):
         cli_gate_name, cli_conn_id = client

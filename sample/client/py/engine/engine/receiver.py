@@ -11,10 +11,10 @@ class receiver(ABC, base_entity):
         self.hub_notify_callback:dict[str, Callable[[str, bytes],None]] = {}
 
         from app import app
-        app().receiver_mgr.add_receiver(self)
+        app().receiver_mgr.add(self)
 
     @abstractmethod
-    def update_receiver(self, argvs: dict):
+    def update(self, argvs: dict):
         pass
 
     def handle_hub_notify(self, method:str, hub_name:str, argvs:bytes):
@@ -31,18 +31,20 @@ class receiver_manager(object):
     def __init__(self):
         self.receivers:dict[str, receiver] = {}
         
-    def add_receiver(self, _receiver:receiver):
+    def add(self, _receiver:receiver):
         self.receivers[_receiver.entity_id] = _receiver
 
-    def update_receiver(self, entity_id:str, argvs: dict):
-        _receiver = self.get_receiver(entity_id)
-        _receiver.update_receiver(argvs)
+    def update(self, entity_id:str, argvs: dict):
+        _receiver = self.get(entity_id)
+        if _receiver == None:
+            return
+        _receiver.update(argvs)
 
-    def get_receiver(self, entity_id) -> receiver:
+    def get(self, entity_id) -> receiver:
         if entity_id in self.receivers:
             return self.receivers[entity_id]
         return None
     
-    def del_receiver(self, entity_id):
+    def remove(self, entity_id):
         if entity_id in self.receivers:
             del self.receivers[entity_id]

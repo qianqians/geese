@@ -281,10 +281,14 @@ def flush_scene_dirty(
     app_ctx,  # app().ctx
 ) -> None:
     """
-    轮询 Rust 侧脏对象并下发 Thrift refresh_entity / delete_remote_entity。
+    轮询 Rust 侧脏对象并下发 Thrift create_remote_entity / refresh_entity / delete_remote_entity。
 
     用于运行时的场景对象（add_dynamic_object / update_object_transform）
     增量同步。由服务端主循环按 tick 或操作后立即调用。
+
+    - 已删除对象 → ``delete_remote_entity``（全组广播）
+    - 首次出现的脏对象 → ``create_remote_entity``（batch conn_ids per gate）
+    - 已存在的脏对象 → ``refresh_entity``（逐客户端）
 
     Args:
         scene: pyo3 ``PyScene`` 实例（需持有 ``collect_dirty_objects`` /
@@ -298,10 +302,16 @@ def flush_scene_dirty(
         cache = getattr(group, "_scene_cache", {})
         if cache:
             cache.pop(entity_id, None)
+        group.dynamic_cache.pop(entity_id, None)
         for gate_name, _conn_id in group.clients:
             app_ctx.hub_call_client_delete_remote_entity(gate_name, entity_id)
 
-    # 2. 脏对象 → refresh_entity（每客户端逐一下发）
+    # 2. 脏对象：首次出现 → create_remote_entity；已存在 → refresh_entity
+    #    按 gate_name 聚合 conn_ids，batch 发送 create。
+    gate_conns: dict[str, list[str]] = {}
+    for gate_name, conn_id in group.clients:
+        gate_conns.setdefault(gate_name, []).append(conn_id)
+
     for entity_id, flags in scene.collect_dirty_objects():
         transform = scene.get_object_transform(entity_id)
         if transform is None:
@@ -311,6 +321,10 @@ def flush_scene_dirty(
         msg = {
             "entity_id": entity_id,
             "type": "mesh_ref",  # 运行时对象固定为 mesh_ref
+            # TODO: mesh_ref 字段（gltf_path/mesh_name）当前缺失，
+            # 因为 Rust SceneObject 不存储来源路径元数据。客户端目前只存
+            # 状态不渲染，短期无影响；后续需在 add_dynamic_object 时记录
+            # 路径到 group，创建时从 group 查询补全字段。
             "transform": {
                 "translation": list(translation),
                 "rotation": list(euler),
@@ -318,13 +332,31 @@ def flush_scene_dirty(
             },
         }
         msg_bytes = msgpack.dumps(msg)
-        for gate_name, conn_id in group.clients:
-            app_ctx.hub_call_client_refresh_entity(
-                gate_name,
-                False,  # is_migrate
-                conn_id,
-                False,  # is_main
-                entity_id,
-                ENTITY_TYPE_DYNAMIC,
-                msg_bytes,
-            )
+
+        is_new = entity_id not in group.scene_object_ids
+        if is_new:
+            group.scene_object_ids.add(entity_id)
+            group.dynamic_cache[entity_id] = msg_bytes
+            # 首次同步 → create_remote_entity（batch conn_ids）
+            for gate_name, conn_ids in gate_conns.items():
+                app_ctx.hub_call_client_create_remote_entity(
+                    gate_name,
+                    False,  # is_migrate
+                    conn_ids,
+                    "",  # main_conn_id
+                    entity_id,
+                    ENTITY_TYPE_DYNAMIC,
+                    msg_bytes,
+                )
+        else:
+            # 已有对象 → refresh_entity（逐客户端）
+            for gate_name, conn_id in group.clients:
+                app_ctx.hub_call_client_refresh_entity(
+                    gate_name,
+                    False,  # is_migrate
+                    conn_id,
+                    False,  # is_main
+                    entity_id,
+                    ENTITY_TYPE_DYNAMIC,
+                    msg_bytes,
+                )

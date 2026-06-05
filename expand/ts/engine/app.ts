@@ -128,15 +128,15 @@ export class app {
     }
 
     public update_entity(entity_type:string, entity_id:string, argvs: object) {
-        this.player_mgr.update_player(entity_id, argvs)
-        this.subentity_mgr.update_subentity(entity_id, argvs)
-        this.receiver_mgr.update_receiver(entity_id, argvs)
+        this.player_mgr.update(entity_id, argvs)
+        this.subentity_mgr.update(entity_id, argvs)
+        this.receiver_mgr.update(entity_id, argvs)
     }
 
     public delete_entity(entity_id:string) {
-        this.player_mgr.del_player(entity_id);
-        this.subentity_mgr.del_subentity(entity_id);
-        this.receiver_mgr.del_receiver(entity_id);
+        this.player_mgr.remove(entity_id);
+        this.subentity_mgr.remove(entity_id);
+        this.receiver_mgr.remove(entity_id);
     }
 
     public close() {

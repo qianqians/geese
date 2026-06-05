@@ -14,7 +14,7 @@ export abstract class receiver extends Base.base_entity {
         this.hub_notify_callback = new Map<string, (source:string, data:Uint8Array) => void>();
     }
 
-    abstract update_receiver(argvs: object): object; 
+    abstract update(argvs: object): object; 
 
     public handle_hub_notify(method:string, hub_name:string, argvs:Uint8Array) {
         let _callback = this.hub_notify_callback.get(method);
@@ -35,22 +35,22 @@ export class receiver_manager {
         this.receivers = new Map<string, receiver>();
     }
 
-    public add_receiver(_receiver:receiver) {
+    public add(_receiver:receiver) {
         this.receivers.set(_receiver.EntityID, _receiver);
     }
 
-    public update_receiver(entity_id:string, argvs: object) {
-        let _receiver = this.get_receiver(entity_id);
+    public update(entity_id:string, argvs: object) {
+        let _receiver = this.get(entity_id);
         if (_receiver) {
-            _receiver.update_receiver(argvs);
+            _receiver.update(argvs);
         }
     }
 
-    public get_receiver(entity_id:string) : receiver | undefined {
+    public get(entity_id:string) : receiver | undefined {
         return this.receivers.get(entity_id);
     }
 
-    public del_receiver(entity_id:string) {
+    public remove(entity_id:string) {
         this.receivers.delete(entity_id);
     }
 }
