@@ -16,10 +16,10 @@ class subentity(ABC, base_entity):
         self.hub_callback:dict[int, callback] = {}
 
         from app import app
-        app().subentity_mgr.add_subentity(self)
+        app().subentity_mgr.add(self)
 
     @abstractmethod
-    def update_subentity(self, argvs: dict):
+    def update(self, argvs: dict):
         pass
 
     def del_callback(self, msg_cb_id:int) -> bool:
@@ -72,18 +72,20 @@ class subentity_manager(object):
     def __init__(self):
         self.subentities:dict[str, subentity] = {}
         
-    def add_subentity(self, _entity:subentity):
+    def add(self, _entity:subentity):
         self.subentities[_entity.entity_id] = _entity
 
-    def update_subentity(self, entity_id:str, argvs: dict):
-        _subentity = self.get_subentity(entity_id)
-        _subentity.update_subentity(argvs)
+    def update(self, entity_id:str, argvs: dict):
+        _subentity = self.get(entity_id)
+        if _subentity == None:
+            return
+        _subentity.update(argvs)
 
-    def get_subentity(self, entity_id) -> subentity:
+    def get(self, entity_id) -> subentity:
         if entity_id in self.subentities:
             return self.subentities[entity_id]
         return None
     
-    def del_subentity(self, entity_id):
+    def remove(self, entity_id):
         if entity_id in self.subentities:
             del self.subentities[entity_id]

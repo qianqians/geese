@@ -36,20 +36,20 @@ export class conn_msg_handle {
     }
     
     public on_call_rpc(hub_name:string, entity_id:string, msg_cb_id:number, method:string, argvs:Uint8Array) {
-        let _player = app2.app.instance.player_mgr.get_player(entity_id);
+        let _player = app2.app.instance.player_mgr.get(entity_id);
         if (_player) {
             _player.handle_hub_request(method, hub_name, msg_cb_id, argvs);
         }
     }
     
     public on_call_rsp(entity_id:string, msg_cb_id:number, argvs:Uint8Array) {
-        let _player = app2.app.instance.player_mgr.get_player(entity_id);
+        let _player = app2.app.instance.player_mgr.get(entity_id);
         if (_player) {
             _player.handle_hub_response(msg_cb_id, argvs);
             return;
         }
 
-        let _subentity = app2.app.instance.subentity_mgr.get_subentity(entity_id);
+        let _subentity = app2.app.instance.subentity_mgr.get(entity_id);
         if (_subentity) {
             _subentity.handle_hub_response(msg_cb_id, argvs);
             return;
@@ -57,13 +57,13 @@ export class conn_msg_handle {
     }
     
     public on_call_err(entity_id:string, msg_cb_id:number, argvs:Uint8Array) {
-        let _player = app2.app.instance.player_mgr.get_player(entity_id);
+        let _player = app2.app.instance.player_mgr.get(entity_id);
         if (_player) {
             _player.handle_hub_response_error(msg_cb_id, argvs);
             return;
         }
 
-        let _subentity = app2.app.instance.subentity_mgr.get_subentity(entity_id);
+        let _subentity = app2.app.instance.subentity_mgr.get(entity_id);
         if (_subentity) {
             _subentity.handle_hub_response_error(msg_cb_id, argvs);
             return;
@@ -71,19 +71,19 @@ export class conn_msg_handle {
     }
     
     public on_call_ntf(hub_name:string, entity_id:string, method:string, argvs:Uint8Array) {
-        let _player = app2.app.instance.player_mgr.get_player(entity_id);
+        let _player = app2.app.instance.player_mgr.get(entity_id);
         if (_player) {
             _player.handle_hub_notify(method, hub_name, argvs);
             return;
         }
 
-        let _subentity = app2.app.instance.subentity_mgr.get_subentity(entity_id);
+        let _subentity = app2.app.instance.subentity_mgr.get(entity_id);
         if (_subentity) {
             _subentity.handle_hub_notify(method, hub_name, argvs);
             return;
         }
 
-        let _receiver = app2.app.instance.receiver_mgr.get_receiver(entity_id)
+        let _receiver = app2.app.instance.receiver_mgr.get(entity_id)
         if (_receiver) {
             _receiver.handle_hub_notify(method, hub_name, argvs);
             return

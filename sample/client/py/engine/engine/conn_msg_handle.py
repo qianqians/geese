@@ -35,7 +35,7 @@ class conn_msg_handle(object):
         
     def on_call_rpc(self, hub_name:str, entity_id:str, msg_cb_id:int, method:str, argvs:bytes):
         from app import app
-        _player = app().player_mgr.get_player(entity_id)
+        _player = app().player_mgr.get(entity_id)
         if _player != None:
             _player.handle_hub_request(method, hub_name, msg_cb_id, argvs)
             return
@@ -43,11 +43,11 @@ class conn_msg_handle(object):
 
     def on_call_rsp(self, entity_id:str, msg_cb_id:int, argvs:bytes):
         from app import app
-        _player = app().player_mgr.get_player(entity_id)
+        _player = app().player_mgr.get(entity_id)
         if _player != None:
             _player.handle_hub_response(msg_cb_id, argvs)
             return
-        _subentity = app().subentity_mgr.get_subentity(entity_id)
+        _subentity = app().subentity_mgr.get(entity_id)
         if _subentity != None:
             _subentity.handle_hub_response(msg_cb_id, argvs)
             return
@@ -55,11 +55,11 @@ class conn_msg_handle(object):
 
     def on_call_err(self, entity_id:str, msg_cb_id:int, argvs:bytes):
         from app import app
-        _player = app().player_mgr.get_player(entity_id)
+        _player = app().player_mgr.get(entity_id)
         if _player != None:
             _player.handle_hub_response_error(msg_cb_id, argvs)
             return
-        _subentity = app().subentity_mgr.get_subentity(entity_id)
+        _subentity = app().subentity_mgr.get(entity_id)
         if _subentity != None:
             _subentity.handle_hub_response_error(msg_cb_id, argvs)
             return
@@ -67,15 +67,15 @@ class conn_msg_handle(object):
 
     def on_call_ntf(self, hub_name:str, entity_id:str, method:str, argvs:bytes):
         from app import app
-        _player = app().player_mgr.get_player(entity_id)
+        _player = app().player_mgr.get(entity_id)
         if _player != None:
             _player.handle_hub_notify(method, hub_name, argvs)
             return
-        _subentity = app().subentity_mgr.get_subentity(entity_id)
+        _subentity = app().subentity_mgr.get(entity_id)
         if _subentity != None:
             _subentity.handle_hub_notify(method, hub_name, argvs)
             return
-        _receiver = app().receiver_mgr.get_receiver(entity_id)
+        _receiver = app().receiver_mgr.get(entity_id)
         if _receiver != None:
             _receiver.handle_hub_notify(method, hub_name, argvs)
             return

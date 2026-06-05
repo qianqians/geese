@@ -19,10 +19,10 @@ export abstract class subentity extends Base.base_entity {
         this.hub_notify_callback = new Map<string, (source:string, data:Uint8Array) => void>();
         this.hub_callback = new Map<number, CallBack.callback>();
 
-        app1.app.instance.subentity_mgr.add_subentity(this);
+        app1.app.instance.subentity_mgr.add(this);
     }
 
-    abstract update_subentity(argvs: object): object; 
+    abstract update(argvs: object): object; 
 
     public del_callback(msg_cb_id:number) : boolean {
         return this.hub_callback.delete(msg_cb_id);
@@ -82,22 +82,22 @@ export class subentity_manager {
         this.subentities = new Map<string, subentity>();
     }
 
-    public add_subentity(_entity:subentity) {
+    public add(_entity:subentity) {
         this.subentities.set(_entity.EntityID, _entity);
     }
 
-    public update_subentity(entity_id:string, argvs: object) {
-        let _subentity = this.get_subentity(entity_id);
+    public update(entity_id:string, argvs: object) {
+        let _subentity = this.get(entity_id);
         if (_subentity) {
-            _subentity.update_subentity(argvs);
+            _subentity.update(argvs);
         }
     }
 
-    public get_subentity(entity_id:string) : subentity | undefined{
+    public get(entity_id:string) : subentity | undefined{
         return this.subentities.get(entity_id);
     }
 
-    public del_subentity(entity_id:string) {
+    public remove(entity_id:string) {
         this.subentities.delete(entity_id);
     }
 }

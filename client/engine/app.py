@@ -70,8 +70,8 @@ class app(object):
         self.receiver_mgr = receiver_manager()
         self.scene_object_mgr = scene_object_manager()
         
-        self.register("scene_object_static", create_scene_object)
-        self.register("scene_object_dynamic", create_scene_object)
+        self.register("scene_object_static", lambda eid, argv: create_scene_object("scene_object_static", eid, argv))
+        self.register("scene_object_dynamic", lambda eid, argv: create_scene_object("scene_object_dynamic", eid, argv))
         
         self.heartbeats()
         return self
@@ -122,21 +122,18 @@ class app(object):
         
     def create_entity(self, entity_type:str, entity_id:str, argvs: dict):
         _creator = self.__entity_create_method__[entity_type]
-        _receiver = _creator(entity_id, argvs)
-        # scene_object receiver 需要单独跟踪
-        if entity_type in ("scene_object_static", "scene_object_dynamic"):
-            self.scene_object_mgr.add(_receiver)
+        _ = _creator(entity_id, argvs)
         
     def update_entity(self, entity_type:str, entity_id:str, argvs: dict):
-        self.player_mgr.update_player(entity_id, argvs)
-        self.subentity_mgr.update_subentity(entity_id, argvs)
-        self.receiver_mgr.update_receiver(entity_id, argvs)
+        self.player_mgr.update(entity_id, argvs)
+        self.subentity_mgr.update(entity_id, argvs)
+        self.receiver_mgr.update(entity_id, argvs)
         self.scene_object_mgr.update(entity_id, argvs)
 
     def delete_entity(self, entity_id:str):
-        self.player_mgr.del_player(entity_id)
-        self.subentity_mgr.del_subentity(entity_id)
-        self.receiver_mgr.del_receiver(entity_id)
+        self.player_mgr.remove(entity_id)
+        self.subentity_mgr.remove(entity_id)
+        self.receiver_mgr.remove(entity_id)
         self.scene_object_mgr.remove(entity_id)
     
     def run_coroutine_async(self, coro):

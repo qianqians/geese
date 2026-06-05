@@ -22,10 +22,10 @@ export abstract class player extends Base.base_entity {
 
         this.hub_callback = new Map<number, CallBack.callback>();
 
-        app.app.instance.player_mgr.add_player(this);
+        app.app.instance.player_mgr.add(this);
     }
 
-    abstract update_player(argvs: object): void; 
+    abstract update(argvs: object): void; 
 
     public handle_hub_request(method:string, hub_name:string, msg_cb_id:number, argvs:Uint8Array) {
         let _call_handle = this.hub_request_callback.get(method);
@@ -108,22 +108,22 @@ export class player_manager {
         this.players = new Map<string, player>();
     }
 
-    public add_player(_player:player) {
+    public add(_player:player) {
         this.players.set(_player.EntityID, _player);
     }
     
-    public update_player(entity_id:string, argvs: object) {
-        let _player = this.get_player(entity_id);
+    public update(entity_id:string, argvs: object) {
+        let _player = this.get(entity_id);
         if (_player) {
-            _player.update_player(argvs);
+            _player.update(argvs);
         }
     }
 
-    public get_player(entity_id:string) : player | undefined {
+    public get(entity_id:string) : player | undefined {
         return this.players.get(entity_id);
     }
 
-    public del_player(entity_id:string) {
+    public remove(entity_id:string) {
         this.players.delete(entity_id);
     }
 }

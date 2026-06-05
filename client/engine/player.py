@@ -17,10 +17,10 @@ class player(ABC, base_entity):
         self.hub_callback:dict[int, callback] = {}
     
         from app import app
-        app().player_mgr.add_player(self)
+        app().player_mgr.add(self)
 
     @abstractmethod
-    def update_player(self, argvs: dict):
+    def update(self, argvs: dict):
         pass
 
     def handle_hub_request(self, method:str, hub_name, msg_cb_id:int, argvs:bytes):
@@ -91,18 +91,20 @@ class player_manager(object):
     def __init__(self):
         self.players:dict[str, player] = {}
         
-    def add_player(self, _player:player):
+    def add(self, _player:player):
         self.players[_player.entity_id] = _player
         
-    def update_player(self, entity_id:str, argvs: dict):
-        _player = self.get_player(entity_id)
-        _player.update_player(argvs)
+    def update(self, entity_id:str, argvs: dict):
+        _player = self.get(entity_id)
+        if _player == None:
+            return
+        _player.update(argvs)
 
-    def get_player(self, entity_id:str) -> player:
+    def get(self, entity_id:str) -> player:
         if entity_id in self.players:
             return self.players[entity_id]
         return None
     
-    def del_player(self, entity_id:str):
+    def remove(self, entity_id:str):
         if entity_id in self.players:
             del self.players[entity_id]
