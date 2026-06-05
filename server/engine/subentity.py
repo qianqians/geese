@@ -70,9 +70,9 @@ class subentity(base_entity):
     def call_hub_notify(self, method:str, argvs:bytes):
         from app import app
         if not self.is_migrate:
-            app().ctx.hub_call_hub_ntf(self.source_hub_name, method, argvs)
+            app().ctx.hub_call_hub_ntf(self.source_hub_name, self.entity_id, method, argvs)
         else:
-            self.cache_msg.append(lambda source_hub_name: app().ctx.hub_call_hub_ntf(source_hub_name, method, argvs))
+            self.cache_msg.append(lambda source_hub_name: app().ctx.hub_call_hub_ntf(source_hub_name, self.entity_id, method, argvs))
 
     def do_cache_msg(self, hub_name:str):
         self.is_migrate = False

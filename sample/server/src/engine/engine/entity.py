@@ -103,7 +103,7 @@ class entity(ABC, base_entity):
             self.error("unhandle request method:{}, source:{}".format(method, source_hub))
 
     def handle_hub_notify(self, source_hub:str, method:str, argvs:bytes):
-        _call_handle = self.hub_request_callback[method]
+        _call_handle = self.hub_notify_callback[method]
         if _call_handle != None:
             _call_handle(source_hub, argvs)
         else:
@@ -126,7 +126,7 @@ class entity(ABC, base_entity):
     def call_hub_notify(self, method:str, argvs:bytes):
         from app import app
         for hub_name in self.conn_hub_server:
-            app().ctx.hub_call_hub_ntf(hub_name, method, argvs)
+            app().ctx.hub_call_hub_ntf(hub_name, self.entity_id, method, argvs)
 
     def handle_client_request(self, gate_name:str, conn_id:str, method:str, msg_cb_id:int, argvs:bytes):
         _call_handle = self.client_request_callback[method]
@@ -159,7 +159,7 @@ class entity(ABC, base_entity):
     def call_client_mutilcast(self, method:str, argvs:bytes):
         from app import app
         for gate_name in self.conn_client_gate:
-            app().ctx.hub_call_client_ntf(gate_name, None, method, argvs)
+            app().ctx.hub_call_client_ntf(gate_name, None, self.entity_id, method, argvs)
     
 class entity_manager(object):
     def __init__(self):
@@ -169,8 +169,8 @@ class entity_manager(object):
         self.entities[_entity.entity_id] = _entity
 
     def update_entity_conn(self, entity_id:str, is_reconnect:bool, gate_name:str, conn_id:str) -> bool:
-        _entity = self.entities[entity_id]
-        if not _entity:
+        _entity = self.entities.get(entity_id)
+        if _entity is None:
             return False
         
         if gate_name not in _entity.conn_client_gate:
@@ -178,9 +178,9 @@ class entity_manager(object):
         
         from app import app
         if is_reconnect:
-            app().ctx.hub_call_client_refresh_entity(gate_name, _entity.is_migrate, conn_id, False, _entity.entity_id, _entity.entity_type, msgpack.dumps(_entity.info()))
+            app().ctx.hub_call_client_refresh_entity(gate_name, _entity.is_migrate, conn_id, False, _entity.entity_id, _entity.entity_type, msgpack.dumps(_entity.client_info()))
         else:
-            app().ctx.hub_call_client_create_remote_entity(gate_name, _entity.is_migrate, [conn_id], None, _entity.entity_id, _entity.entity_type, msgpack.dumps(_entity.info()))
+            app().ctx.hub_call_client_create_remote_entity(gate_name, _entity.is_migrate, [conn_id], "", _entity.entity_id, _entity.entity_type, msgpack.dumps(_entity.client_info()))
                 
         return True
         
