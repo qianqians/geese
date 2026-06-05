@@ -109,6 +109,10 @@ impl SceneObjectNetMsg {
     }
 
     /// 为程序化对象创建消息。
+    ///
+    /// # Panics
+    ///
+    /// 在 debug 构建中，如果传入 `MeshRef` 类型会触发断言失败。
     pub fn procedural(
         entity_id: &str,
         obj_type: SceneObjectNetType,
@@ -118,6 +122,10 @@ impl SceneObjectNetMsg {
         color: [f32; 3],
         dimensions: [f32; 3],
     ) -> Self {
+        debug_assert!(
+            !matches!(obj_type, SceneObjectNetType::MeshRef),
+            "procedural() called with MeshRef type; use mesh_ref() instead"
+        );
         Self {
             entity_id: entity_id.to_string(),
             object_type: obj_type,

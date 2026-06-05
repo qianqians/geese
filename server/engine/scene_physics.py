@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import math
+import msgpack
 import os
 import uuid
 from typing import Any
@@ -174,9 +175,10 @@ def sync_scene_to_group(
             gate_name,
             False,  # is_migrate
             conn_ids,
+            "",  # main_conn_id（场景对象无主连接）
             entity_id,
             ENTITY_TYPE_STATIC,
-            json.dumps(msg).encode("utf-8"),
+            msgpack.dumps(msg),
         )
         entity_ids.append(entity_id)
 
@@ -207,11 +209,12 @@ def sync_scene_to_group(
         from app import app
         app().ctx.hub_call_client_create_remote_entity(
             gate_name,
-            False,
+            False,  # is_migrate
             conn_ids,
+            "",  # main_conn_id（场景对象无主连接）
             entity_id,
             ENTITY_TYPE_STATIC,
-            json.dumps(msg).encode("utf-8"),
+            msgpack.dumps(msg),
         )
         entity_ids.append(entity_id)
 
