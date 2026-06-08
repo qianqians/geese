@@ -23,6 +23,7 @@ pub enum AssetType {
     Model,
     Texture,
     Audio,
+    Avatar,
     Other,
 }
 
@@ -34,6 +35,7 @@ impl AssetType {
             AssetType::Model => "🔷",
             AssetType::Texture => "🖼",
             AssetType::Audio => "🔊",
+            AssetType::Avatar => "🧑",
             AssetType::Other => "📄",
         }
     }
@@ -45,6 +47,20 @@ impl AssetType {
             "wav" | "ogg" | "mp3" | "flac" => AssetType::Audio,
             "geese" | "scene" => AssetType::Scene,
             _ => AssetType::Other,
+        }
+    }
+
+    /// 根据文件名判断资源类型（支持复合后缀如 `.scene.json`、`.avatar.json`）。
+    fn from_filename(name: &str) -> Self {
+        let lower = name.to_lowercase();
+        if lower.ends_with(".scene.json") {
+            AssetType::Scene
+        } else if lower.ends_with(".avatar.json") {
+            AssetType::Avatar
+        } else if let Some(ext) = std::path::Path::new(name).extension().and_then(|e| e.to_str()) {
+            Self::from_extension(ext)
+        } else {
+            AssetType::Other
         }
     }
 }
@@ -74,6 +90,7 @@ enum AssetFilter {
     Textures,
     Audio,
     Scenes,
+    Avatars,
 }
 
 impl AssetFilter {
@@ -84,6 +101,7 @@ impl AssetFilter {
             AssetFilter::Textures => "Textures",
             AssetFilter::Audio => "Audio",
             AssetFilter::Scenes => "Scenes",
+            AssetFilter::Avatars => "Avatars",
         }
     }
 
@@ -94,6 +112,7 @@ impl AssetFilter {
             AssetFilter::Textures => matches!(asset_type, AssetType::Texture),
             AssetFilter::Audio => matches!(asset_type, AssetType::Audio),
             AssetFilter::Scenes => matches!(asset_type, AssetType::Scene),
+            AssetFilter::Avatars => matches!(asset_type, AssetType::Avatar),
         }
     }
 }
@@ -108,52 +127,66 @@ impl AssetBrowser {
     pub fn new() -> Self {
         Self {
             current_path: "assets/".into(),
-            entries: Self::sample_entries(),
+            entries: Vec::new(),
             filter: AssetFilter::All,
             selected_index: None,
             view_mode: ViewMode::List,
         }
     }
 
-    fn sample_entries() -> Vec<AssetEntry> {
-        vec![
-            AssetEntry {
-                name: "scenes".into(),
-                path: "assets/scenes/".into(),
-                asset_type: AssetType::Folder,
-                size_bytes: 0,
-            },
-            AssetEntry {
-                name: "models".into(),
-                path: "assets/models/".into(),
-                asset_type: AssetType::Folder,
-                size_bytes: 0,
-            },
-            AssetEntry {
-                name: "textures".into(),
-                path: "assets/textures/".into(),
-                asset_type: AssetType::Folder,
-                size_bytes: 0,
-            },
-            AssetEntry {
-                name: "main.scene".into(),
-                path: "assets/scenes/main.scene".into(),
-                asset_type: AssetType::Scene,
-                size_bytes: 2048,
-            },
-            AssetEntry {
-                name: "player.glb".into(),
-                path: "assets/models/player.glb".into(),
-                asset_type: AssetType::Model,
-                size_bytes: 524288,
-            },
-            AssetEntry {
-                name: "floor.png".into(),
-                path: "assets/textures/floor.png".into(),
-                asset_type: AssetType::Texture,
-                size_bytes: 65536,
-            },
-        ]
+    /// 扫描真实文件系统目录，填充 entries。
+    pub fn scan_directory(&mut self, project_path: &str) {
+        let dir = format!("{}/{}", project_path, self.current_path);
+        self.entries.clear();
+        self.selected_index = None;
+
+        let Ok(read_dir) = std::fs::read_dir(&dir) else {
+            return;
+        };
+
+        for entry in read_dir {
+            let Ok(entry) = entry else { continue };
+            let path = entry.path();
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_string();
+
+            if name.starts_with('.') {
+                continue;
+            }
+
+            let is_dir = path.is_dir();
+            let asset_type = if is_dir {
+                AssetType::Folder
+            } else {
+                AssetType::from_filename(&name)
+            };
+
+            let size_bytes = if is_dir {
+                0
+            } else {
+                entry.metadata().map(|m| m.len()).unwrap_or(0)
+            };
+
+            let rel_path = format!("{}{}", self.current_path, name);
+            self.entries.push(AssetEntry {
+                name,
+                path: rel_path,
+                asset_type,
+                size_bytes,
+            });
+        }
+
+        // 目录在前，文件在后
+        self.entries.sort_by(|a, b| {
+            match (a.asset_type == AssetType::Folder, b.asset_type == AssetType::Folder) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => a.name.cmp(&b.name),
+            }
+        });
     }
 
     fn format_size(bytes: u64) -> String {
@@ -206,7 +239,7 @@ impl EditorPanel for AssetBrowser {
 
         // 过滤器
         ui.horizontal(|ui| {
-            for filter in &[AssetFilter::All, AssetFilter::Models, AssetFilter::Textures, AssetFilter::Audio, AssetFilter::Scenes] {
+            for filter in &[AssetFilter::All, AssetFilter::Models, AssetFilter::Textures, AssetFilter::Audio, AssetFilter::Scenes, AssetFilter::Avatars] {
                 let selected = self.filter == *filter;
                 if ui.selectable_label(selected, filter.label()).clicked() {
                     self.filter = *filter;

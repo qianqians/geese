@@ -3,6 +3,7 @@ pub mod octree;
 mod scene;
 pub mod scene_object;
 pub mod manifest;
+pub mod avatar_manifest;
 pub mod loader;
 pub mod net;
 
