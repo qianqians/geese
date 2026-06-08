@@ -5,6 +5,7 @@
 use crate::asset_browser::AssetBrowser;
 use crate::commands::CommandHistory;
 use crate::editor_mode::EditorMode;
+use crate::gltf_import_dialog::GltfImportDialog;
 use crate::hierarchy::HierarchyPanel;
 use crate::inspector::InspectorPanel;
 use crate::panel_layer::PanelLayerManager;
@@ -30,6 +31,10 @@ pub struct Editor {
     inspector: InspectorPanel,
     /// 资源浏览器
     asset_browser: AssetBrowser,
+    /// GLTF 导入对话框
+    gltf_import_dialog: GltfImportDialog,
+    /// 资源浏览器是否需要重新扫描
+    asset_needs_scan: bool,
 }
 
 impl Editor {
@@ -46,6 +51,8 @@ impl Editor {
             viewport: ViewportPanel::new(),
             inspector: InspectorPanel::new(),
             asset_browser: AssetBrowser::new(),
+            gltf_import_dialog: GltfImportDialog::new(),
+            asset_needs_scan: true,
         }
     }
 
@@ -62,6 +69,14 @@ impl Editor {
             self.show_floating_panels(ctx);
             self.show_toolbar(ctx);
         }
+
+        // 4. GLTF 导入对话框（模态，始终检测）
+        let was_visible = self.gltf_import_dialog.visible;
+        self.gltf_import_dialog.show_dialog(ctx, &mut self.state);
+        // 对话框关闭时刷新资源浏览器
+        if was_visible && !self.gltf_import_dialog.visible && self.gltf_import_dialog.import_success {
+            self.asset_needs_scan = true;
+        }
     }
 
     // -------------------------------------------------------------------
@@ -74,6 +89,11 @@ impl Editor {
             egui::menu::bar(ui, |ui| {
                 // File 菜单
                 ui.menu_button("File", |ui| {
+                    if ui.button("Import GLTF...").clicked() {
+                        self.gltf_import_dialog.open();
+                        ui.close_menu();
+                    }
+                    ui.separator();
                     if ui.button("New Scene").clicked() {
                         ui.close_menu();
                     }
@@ -318,6 +338,10 @@ impl Editor {
 
         // 底部 - Asset Browser 面板
         if self.state.panel_visibility.asset_browser {
+            if self.asset_needs_scan {
+                self.asset_browser.scan_directory(&self.state.project_path);
+                self.asset_needs_scan = false;
+            }
             egui::Window::new("Asset Browser")
                 .resizable(true)
                 .collapsible(true)

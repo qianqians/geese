@@ -10,6 +10,7 @@ pub mod commands;
 pub mod editor;
 pub mod editor_mode;
 pub mod gizmo;
+pub mod gltf_import_dialog;
 pub mod hierarchy;
 pub mod inspector;
 pub mod panel_layer;
