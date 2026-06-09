@@ -10,6 +10,8 @@ use crate::hierarchy::HierarchyPanel;
 use crate::inspector::InspectorPanel;
 use crate::panel_layer::PanelLayerManager;
 use crate::panels::{EditorLayout, EditorPanel, EditorState};
+use crate::physics_debug::PhysicsDebugRenderer;
+use crate::physics_server::PhysicsServerManager;
 use crate::play_mode::PlayMode;
 use crate::viewport::{GizmoMode, ViewportPanel};
 
@@ -35,12 +37,25 @@ pub struct Editor {
     gltf_import_dialog: GltfImportDialog,
     /// 资源浏览器是否需要重新扫描
     asset_needs_scan: bool,
+    /// 物理服务器进程管理器
+    physics_server: PhysicsServerManager,
+    /// 物理碰撞体调试渲染器
+    physics_debug: PhysicsDebugRenderer,
+    /// tokio 异步 Runtime（驱动物理通信）
+    rt: tokio::runtime::Runtime,
+    /// 上次帧更新时间（用于 dt 计算）
+    last_update: Option<std::time::Instant>,
 }
 
 impl Editor {
     /// 从项目路径打开编辑器。
     pub fn open(project_path: String) -> Self {
         let state = EditorState::new(project_path);
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("Failed to create tokio runtime");
 
         Self {
             state,
@@ -53,11 +68,37 @@ impl Editor {
             asset_browser: AssetBrowser::new(),
             gltf_import_dialog: GltfImportDialog::new(),
             asset_needs_scan: true,
+            physics_server: PhysicsServerManager::new(),
+            physics_debug: PhysicsDebugRenderer::new(),
+            rt,
+            last_update: None,
         }
     }
 
     /// 每帧调用，渲染完整的编辑器 UI。
     pub fn update(&mut self, ctx: &egui::Context) {
+        // 计算每帧时间增量
+        let now = std::time::Instant::now();
+        let dt = self
+            .last_update
+            .map(|t| now.duration_since(t).as_secs_f32())
+            .unwrap_or(0.016);
+        self.last_update = Some(now);
+
+        // 物理步进（Play 模式下）
+        if self.state.mode.is_playing() && self.physics_server.is_connected() {
+            if let Some(client) = self.physics_server.client() {
+                let _ = self.rt.block_on(client.step(dt as f64));
+                // 如果 Physics Debug 开启，获取碰撞体快照
+                if self.physics_debug.enabled {
+                    if let Ok(bodies) = self.rt.block_on(client.get_bodies()) {
+                        self.physics_debug.update(bodies.clone());
+                        self.state.physics_debug_bodies = bodies;
+                    }
+                }
+            }
+        }
+
         // 1. 快捷键始终生效
         self.handle_shortcuts(ctx);
 
@@ -214,6 +255,25 @@ impl Editor {
 
                     ui.separator();
 
+                    // Physics Debug 开关（Play 模式下显示）
+                    if self.state.mode.is_playing() {
+                        let debug_label = if self.physics_debug.enabled {
+                            "🔍 Debug ON"
+                        } else {
+                            "🔍 Debug OFF"
+                        };
+                        if ui
+                            .add_sized(
+                                [90.0, 24.0],
+                                egui::Button::new(egui::RichText::new(debug_label).size(11.0)),
+                            )
+                            .clicked()
+                        {
+                            self.physics_debug.toggle();
+                        }
+                        ui.separator();
+                    }
+
                     // Gizmo 模式
                     ui.selectable_value(&mut self.viewport.gizmo_mode, GizmoMode::Translate, "W");
                     ui.selectable_value(&mut self.viewport.gizmo_mode, GizmoMode::Rotate, "E");
@@ -364,6 +424,12 @@ impl Editor {
                 self.viewport.camera.distance = snapshot.camera_distance;
                 self.state.selected_entity = snapshot.selected_entity.take();
             }
+            // 停止物理服务器
+            if let Some(client) = self.physics_server.client() {
+                let _ = self.rt.block_on(client.reset());
+            }
+            self.physics_server.stop();
+            self.physics_debug.enabled = false;
             self.state.mode = EditorMode::Edit;
             self.panel_layer.set_edit_alpha();
         } else {
@@ -374,6 +440,24 @@ impl Editor {
                 self.viewport.camera.pitch,
                 self.viewport.camera.distance,
             );
+
+            // 启动物理服务器
+            let python_path = "python3";
+            let server_script = "crates/editor/scripts/physics_editor_server.py";
+            if let Err(e) = self.physics_server.start(python_path, server_script, &self.rt) {
+                eprintln!("[Editor] Failed to start physics server: {e}");
+            } else if let Some(client) = self.physics_server.client() {
+                // 初始化物理世界
+                if let Err(e) = self.rt.block_on(client.init_physics([0.0, -9.81, 0.0])) {
+                    eprintln!("[Editor] Failed to init physics: {e}");
+                }
+                // 加载场景碰撞体
+                let manifest_path = format!("{}/.scene.json", self.state.project_path);
+                if let Err(e) = self.rt.block_on(client.load_scene(&manifest_path)) {
+                    eprintln!("[Editor] Failed to load scene physics: {e}");
+                }
+            }
+
             self.state.mode = EditorMode::Play;
             self.state.selected_entity = None;
             self.panel_layer.set_play_alpha();
@@ -381,5 +465,3 @@ impl Editor {
         }
     }
 }
-
-

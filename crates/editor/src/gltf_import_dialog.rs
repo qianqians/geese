@@ -30,6 +30,8 @@ pub struct GltfImportDialog {
     status_message: Option<String>,
     /// 是否成功
     pub import_success: bool,
+    /// 是否启用碰撞体（仅 Scene 类型时有效）
+    pub collision_enabled: bool,
 }
 
 impl Default for GltfImportDialog {
@@ -41,6 +43,7 @@ impl Default for GltfImportDialog {
             resource_name: String::new(),
             status_message: None,
             import_success: false,
+            collision_enabled: false,
         }
     }
 }
@@ -154,7 +157,7 @@ impl GltfImportDialog {
                 id: name.to_string(),
                 path: gltf_relative_path.to_string(),
                 transform: TransformDef::default(),
-                collision_enabled: false,
+                collision_enabled: self.collision_enabled,
             }],
             environment: Default::default(),
             spawn_points: vec![],
@@ -263,6 +266,24 @@ impl GltfImportDialog {
                     ui.label("Name:");
                     ui.text_edit_singleline(&mut self.resource_name);
                 });
+
+                ui.add_space(4.0);
+
+                // 碰撞体开关（仅 Scene 类型时显示）
+                if self.resource_type == ImportResourceType::Scene {
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut self.collision_enabled, "Enable Collision (TriMesh)");
+                        if self.collision_enabled {
+                            ui.label(
+                                egui::RichText::new("⚠ Physics collision will be generated")
+                                    .size(11.0)
+                                    .color(egui::Color32::YELLOW),
+                            );
+                        }
+                    });
+                } else {
+                    self.collision_enabled = false;
+                }
 
                 ui.add_space(8.0);
 

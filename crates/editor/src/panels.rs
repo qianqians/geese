@@ -7,6 +7,7 @@
 //! - [`EditorLayout`]：面板布局渲染器
 
 use crate::editor_mode::EditorMode;
+use crate::physics_client::BodySnapshot;
 
 // ---------------------------------------------------------------------------
 // EditorState - 编辑器全局状态
@@ -27,6 +28,8 @@ pub struct EditorState {
     pub panel_alpha: f32,
     /// 面板可见性
     pub panel_visibility: PanelVisibility,
+    /// 物理碰撞体调试渲染数据
+    pub physics_debug_bodies: Vec<BodySnapshot>,
 }
 
 impl EditorState {
@@ -38,6 +41,7 @@ impl EditorState {
             ui_visible: true,
             panel_alpha: 0.85,
             panel_visibility: PanelVisibility::default(),
+            physics_debug_bodies: Vec::new(),
         }
     }
 }
