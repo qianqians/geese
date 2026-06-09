@@ -15,6 +15,9 @@ pub mod hierarchy;
 pub mod inspector;
 pub mod panel_layer;
 pub mod panels;
+pub mod physics_client;
+pub mod physics_debug;
+pub mod physics_server;
 pub mod play_mode;
 pub mod viewport;
 

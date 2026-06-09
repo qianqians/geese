@@ -5,6 +5,7 @@
 //! - [`ViewportPanel`]：集成到编辑器面板系统的 3D 视口
 //! - 射线拾取（Ray Picking）：屏幕坐标 → 世界空间射线
 //! - 编辑器网格和世界坐标轴指示器
+//! - 物理碰撞体调试渲染（wireframe）
 
 use crate::editor_mode::EditorMode;
 use crate::gizmo::{GizmoInteraction, draw_gizmo};
@@ -381,14 +382,12 @@ impl ViewportPanel {
                     let rect = response.rect;
                     let local_x = pos.0 - rect.left();
                     let local_y = pos.1 - rect.top();
-                    // 拾取逻辑在外部处理，这里仅传递坐标
                     let _ray = self.camera.screen_to_world_ray(
                         local_x,
                         local_y,
                         rect.width(),
                         rect.height(),
                     );
-                    // ray 可用于 AABB 相交测试选择实体
                 }
             }
         }
@@ -401,7 +400,6 @@ impl ViewportPanel {
         response: &egui::Response,
         state: &EditorState,
     ) {
-        // 播放模式下不处理 Gizmo
         if state.mode == EditorMode::Play {
             return;
         }
@@ -412,14 +410,12 @@ impl ViewportPanel {
         let hovered = response.hovered();
         let rect = response.rect;
 
-        // 计算 Gizmo 在屏幕上的位置
-        let gizmo_world_pos = Point3::new(0.0, 0.0, 0.0); // TODO: 从选中实体获取
+        let gizmo_world_pos = Point3::new(0.0, 0.0, 0.0);
         let gizmo_screen = self.world_to_screen(gizmo_world_pos, rect);
 
         if let (Some(gizmo_screen), Some(mouse)) = (gizmo_screen, pointer_pos) {
             let gizmo_sp = (gizmo_screen.x, gizmo_screen.y);
 
-            // 鼠标左键
             let left_down = ui.input(|input| {
                 input.pointer.button_down(egui::PointerButton::Primary)
             });
@@ -430,13 +426,11 @@ impl ViewportPanel {
                 input.pointer.button_released(egui::PointerButton::Primary)
             });
 
-            // 命中检测
             if self.gizmo_interaction.dragging.is_none() {
                 if hovered {
                     let hit = self.gizmo_interaction.hit_test(mouse, gizmo_sp, &self.camera);
                     self.gizmo_interaction.hovered_axis = hit;
 
-                    // 开始拖拽
                     if left_pressed && hit.is_some() {
                         self.gizmo_interaction.begin_drag(
                             hit.unwrap(),
@@ -449,14 +443,12 @@ impl ViewportPanel {
                 }
             }
 
-            // 更新拖拽
             if self.gizmo_interaction.dragging.is_some() {
                 if left_down {
                     self.gizmo_interaction.update_drag(mouse, &self.camera);
                 }
                 if left_released {
                     if let Some((axis, delta)) = self.gizmo_interaction.end_drag() {
-                        // TODO: 将变换应用到选中实体
                         let _ = (axis, delta);
                     }
                 }
@@ -471,7 +463,6 @@ impl ViewportPanel {
         let axis_color_x = egui::Color32::from_rgb(200, 50, 50);
         let axis_color_z = egui::Color32::from_rgb(50, 50, 200);
 
-        // 将世界空间网格点投影到屏幕并绘制
         let half = self.grid_size * self.grid_subdivisions as f32 / 2.0;
         let step = self.grid_size;
 
@@ -510,9 +501,55 @@ impl ViewportPanel {
                 }
             }
         }
+    }
 
-        // 绘制世界坐标轴指示器（右下角）
-        // Y 轴在网格上不可见，因为网格在 XZ 平面
+    /// 绘制物理碰撞体调试线框。
+    fn draw_physics_debug(&self, ui: &mut egui::Ui, rect: egui::Rect, state: &EditorState) {
+        if state.physics_debug_bodies.is_empty() {
+            return;
+        }
+
+        let painter = ui.painter();
+        let box_half = 0.5;
+        let color = egui::Color32::from_rgb(0, 255, 100);
+
+        // 单位立方体的 8 个顶点（相对中心）
+        let corners: [(f32, f32, f32); 8] = [
+            (-box_half, -box_half, -box_half),
+            ( box_half, -box_half, -box_half),
+            ( box_half,  box_half, -box_half),
+            (-box_half,  box_half, -box_half),
+            (-box_half, -box_half,  box_half),
+            ( box_half, -box_half,  box_half),
+            ( box_half,  box_half,  box_half),
+            (-box_half,  box_half,  box_half),
+        ];
+
+        // 12 条边的索引对
+        let edges: [(usize, usize); 12] = [
+            (0,1), (1,2), (2,3), (3,0), // 底面
+            (4,5), (5,6), (6,7), (7,4), // 顶面
+            (0,4), (1,5), (2,6), (3,7), // 竖直边
+        ];
+
+        for body in &state.physics_debug_bodies {
+            let pos = &body.position;
+            let pos_3 = Point3::new(pos.x as f32, pos.y as f32, pos.z as f32);
+
+            for &(a, b) in &edges {
+                let ca = corners[a];
+                let cb = corners[b];
+                let pa = Point3::new(pos_3.x + ca.0, pos_3.y + ca.1, pos_3.z + ca.2);
+                let pb = Point3::new(pos_3.x + cb.0, pos_3.y + cb.1, pos_3.z + cb.2);
+
+                if let (Some(sp_a), Some(sp_b)) = (
+                    self.world_to_screen(pa, rect),
+                    self.world_to_screen(pb, rect),
+                ) {
+                    painter.line_segment([sp_a, sp_b], (1.5, color));
+                }
+            }
+        }
     }
 
     /// 将世界坐标投影到屏幕坐标。超出视口范围返回 None。
@@ -528,7 +565,6 @@ impl ViewportPanel {
         let ndc_y = clip.y / clip.w;
         let ndc_z = clip.z / clip.w;
 
-        // 视锥体裁剪
         if ndc_x < -1.0 || ndc_x > 1.0 || ndc_y < -1.0 || ndc_y > 1.0 || ndc_z < -1.0 || ndc_z > 1.0 {
             return None;
         }
@@ -569,11 +605,9 @@ impl EditorPanel for ViewportPanel {
             egui::Vec2::new(available.x, available.y.max(100.0)),
         );
 
-        // 监听键盘聚焦 Viewport
         let (rect_response, _painter) =
             ui.allocate_painter(egui::Vec2::new(available.x, available.y), egui::Sense::click_and_drag());
 
-        // 右键上下文菜单：切换面板显隐
         rect_response.clone().context_menu(|ui| {
             ui.label("Panels");
             ui.separator();
@@ -585,15 +619,11 @@ impl EditorPanel for ViewportPanel {
         self.viewport_size = (rect.width(), rect.height());
         self.camera.aspect_ratio = rect.width() / rect.height().max(1.0);
 
-        // 同步 Gizmo 模式
         self.gizmo_interaction.mode = self.gizmo_mode;
         self.gizmo_interaction.handle_shortcuts(ui);
         self.gizmo_mode = self.gizmo_interaction.mode;
 
-        // 处理 Gizmo 快捷键和摄像机输入
         self.handle_input(ui, &rect_response, state);
-
-        // 处理 Gizmo 鼠标交互
         self.handle_gizmo_input(ui, &rect_response, state);
 
         // 绘制背景
@@ -609,13 +639,15 @@ impl EditorPanel for ViewportPanel {
                 egui::Color32::WHITE,
             );
         } else {
-            // 绘制编辑器网格
             self.draw_grid(ui, rect);
         }
 
+        // 绘制物理碰撞体调试线框
+        self.draw_physics_debug(ui, rect, state);
+
         // 绘制 Gizmo（当有选中实体时）
         if state.selected_entity.is_some() {
-            let gizmo_world_pos = Point3::new(0.0, 0.0, 0.0); // TODO: 从选中实体获取位置
+            let gizmo_world_pos = Point3::new(0.0, 0.0, 0.0);
             if let Some(gizmo_screen) = self.world_to_screen(gizmo_world_pos, rect) {
                 let screen_pos = (gizmo_screen.x, gizmo_screen.y);
                 draw_gizmo(ui.painter(), screen_pos, &self.camera, &self.gizmo_interaction);
@@ -634,7 +666,6 @@ impl EditorPanel for ViewportPanel {
                 ui.add_space(2.0);
                 self.draw_gizmo_overlay(ui);
 
-                // 摄像机信息
                 let eye = self.camera.eye_position();
                 ui.label(
                     egui::RichText::new(format!(
@@ -667,12 +698,19 @@ impl EditorPanel for ViewportPanel {
                         GizmoMode::Rotate => "R",
                         GizmoMode::Scale => "S",
                     };
+                    let debug_count = state.physics_debug_bodies.len();
+                    let debug_info = if debug_count > 0 {
+                        format!(" | Bodies: {}", debug_count)
+                    } else {
+                        String::new()
+                    };
                     ui.label(
                         egui::RichText::new(format!(
-                            "Gizmo: {} | {}x{} | FPS: --",
+                            "Gizmo: {} | {}x{}{} | FPS: --",
                             mode,
                             rect.width() as u32,
                             rect.height() as u32,
+                            debug_info,
                         ))
                         .size(10.0)
                         .color(egui::Color32::from_gray(140)),
@@ -691,14 +729,11 @@ impl ViewportPanel {
     fn draw_axes_widget(&self, ui: &mut egui::Ui) {
         let painter = ui.painter();
 
-        // 计算方向指示器的屏幕位置
         let view = self.camera.view_matrix();
-        let _origin = Point3::new(0.0, 0.0, 0.0);
         let x_axis = Vector3::unit_x();
         let y_axis = Vector3::unit_y();
         let z_axis = Vector3::unit_z();
 
-        // 使用 view 矩阵的逆来获取摄像机空间的轴方向
         let view_inv = view.invert().unwrap_or_else(|| Matrix4::from_scale(1.0));
         let cam_right = Vector3::new(view_inv.x.x, view_inv.x.y, view_inv.x.z).normalize();
         let cam_up = Vector3::new(view_inv.y.x, view_inv.y.y, view_inv.y.z).normalize();
@@ -708,7 +743,6 @@ impl ViewportPanel {
         let center = egui::Pos2::new(center_x, center_y);
         let scale = 20.0;
 
-        // 投影到 2D 屏幕空间
         let proj = |dir: Vector3<f32>| -> egui::Pos2 {
             let x = cam_right.dot(dir) * scale;
             let y = -cam_up.dot(dir) * scale;
@@ -766,7 +800,6 @@ mod tests {
     fn test_orbit_camera_eye_position() {
         let cam = OrbitCamera::default();
         let eye = cam.eye_position();
-        // 摄像机应该距离焦点大约 10 个单位
         let dist = (eye - cam.focal_point).magnitude();
         assert!((dist - cam.distance).abs() < 0.01);
     }
@@ -774,8 +807,6 @@ mod tests {
     #[test]
     fn test_orbit_camera_orbit_clamps_pitch() {
         let mut cam = OrbitCamera::default();
-        let _initial_pitch = cam.pitch;
-        // 大幅旋转，pitch 应该被限制
         cam.orbit(0.0, 10000.0);
         assert!(cam.pitch.abs() <= std::f32::consts::FRAC_PI_2);
     }
@@ -784,10 +815,8 @@ mod tests {
     fn test_orbit_camera_zoom_clamped() {
         let mut cam = OrbitCamera::default();
         cam.distance = 5.0;
-        // 放大到超出最小距离
         cam.zoom(100.0);
         assert!(cam.distance >= cam.min_distance);
-        // 缩小到超出最大距离
         cam.distance = 90.0;
         cam.zoom(-100.0);
         assert!(cam.distance <= cam.max_distance);
@@ -807,7 +836,6 @@ mod tests {
     fn test_orbit_camera_view_projection_is_valid() {
         let cam = OrbitCamera::default();
         let vp = cam.view_projection_matrix();
-        // 视图-投影矩阵不应为零矩阵
         let trace = vp.x.x + vp.y.y + vp.z.z + vp.w.w;
         assert!(trace.abs() > 0.001);
     }
@@ -819,7 +847,7 @@ mod tests {
             Point3::new(1.0, 1.0, 1.0),
         );
         let origin = Point3::new(0.0, 0.0, -5.0);
-        let dir = Vector3::new(0.0, 0.0, 1.0); // 指向 +Z，穿过 AABB
+        let dir = Vector3::new(0.0, 0.0, 1.0);
         let t = ray_aabb_intersection(origin, dir, &aabb);
         assert!(t.is_some());
         assert!(t.unwrap() > 0.0);
@@ -832,7 +860,7 @@ mod tests {
             Point3::new(1.0, 1.0, 1.0),
         );
         let origin = Point3::new(5.0, 0.0, -5.0);
-        let dir = Vector3::new(0.0, 0.0, 1.0); // 平行于 AABB 但未击中
+        let dir = Vector3::new(0.0, 0.0, 1.0);
         let t = ray_aabb_intersection(origin, dir, &aabb);
         assert!(t.is_none());
     }
@@ -843,7 +871,7 @@ mod tests {
             Point3::new(-2.0, -2.0, -2.0),
             Point3::new(2.0, 2.0, 2.0),
         );
-        let origin = Point3::new(0.0, 0.0, 0.0); // 在 AABB 内部
+        let origin = Point3::new(0.0, 0.0, 0.0);
         let dir = Vector3::new(0.0, 0.0, 1.0);
         let t = ray_aabb_intersection(origin, dir, &aabb);
         assert!(t.is_some());
@@ -852,9 +880,7 @@ mod tests {
     #[test]
     fn test_orbit_camera_screen_to_world_ray() {
         let cam = OrbitCamera::default();
-        // 屏幕中心应该产生一条指向场景的射线
         let (_origin, dir) = cam.screen_to_world_ray(400.0, 300.0, 800.0, 600.0);
-        // 射线方向应该被归一化
         assert!((dir.magnitude() - 1.0).abs() < 0.01);
     }
 }
