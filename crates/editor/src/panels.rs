@@ -3,11 +3,29 @@
 //! 提供：
 //! - [`EditorPanel`] trait：统一的面板接口
 //! - [`EditorState`]：编辑器全局状态
-//! - [`PanelVisibility`]：面板显隐状态管理
+//! - 面板可见性由 [`PanelLayerManager`] 统一管理
 //! - [`EditorLayout`]：面板布局渲染器
 
 use crate::editor_mode::EditorMode;
+use crate::panel_layer::{PanelLayer, PanelLayerManager};
 use crate::physics_client::BodySnapshot;
+use std::collections::HashMap;
+
+// ---------------------------------------------------------------------------
+// PendingTransform - Inspector 写回的变换变更
+// ---------------------------------------------------------------------------
+
+/// 由 Inspector 面板生成的变换变更，帧末由 Editor 消费并推入 CommandHistory。
+#[derive(Debug, Clone)]
+pub struct PendingTransform {
+    pub entity_id: String,
+    pub old_position: [f32; 3],
+    pub new_position: [f32; 3],
+    pub old_rotation: [f32; 3],
+    pub new_rotation: [f32; 3],
+    pub old_scale: [f32; 3],
+    pub new_scale: [f32; 3],
+}
 
 // ---------------------------------------------------------------------------
 // EditorState - 编辑器全局状态
@@ -24,12 +42,14 @@ pub struct EditorState {
     pub mode: EditorMode,
     /// 浮动面板总开关
     pub ui_visible: bool,
-    /// 全局面板不透明度（0.0-1.0）
-    pub panel_alpha: f32,
-    /// 面板可见性
-    pub panel_visibility: PanelVisibility,
+    /// 面板可见性管理器（单一真相源，替代原 PanelVisibility + panel_alpha 双轨）
+    pub panel_layer: PanelLayerManager,
     /// 物理碰撞体调试渲染数据
     pub physics_debug_bodies: Vec<BodySnapshot>,
+    /// 实体变换缓存（selection 时填入上次确认值，用于 undo）
+    pub transform_cache: HashMap<String, ([f32; 3], [f32; 3], [f32; 3])>,
+    /// Inspector 写回的待提交变换变更
+    pub pending_transform: Option<PendingTransform>,
 }
 
 impl EditorState {
@@ -39,9 +59,10 @@ impl EditorState {
             selected_entity: None,
             mode: EditorMode::Edit,
             ui_visible: true,
-            panel_alpha: 0.85,
-            panel_visibility: PanelVisibility::default(),
+            panel_layer: PanelLayerManager::default(),
             physics_debug_bodies: Vec::new(),
+            transform_cache: HashMap::new(),
+            pending_transform: None,
         }
     }
 }
@@ -57,39 +78,6 @@ pub trait EditorPanel {
 
     /// 渲染面板 UI。
     fn show(&mut self, ui: &mut egui::Ui, state: &mut EditorState);
-}
-
-// ---------------------------------------------------------------------------
-// PanelVisibility - 面板显隐管理
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone)]
-pub struct PanelVisibility {
-    pub hierarchy: bool,
-    pub inspector: bool,
-    pub asset_browser: bool,
-}
-
-impl Default for PanelVisibility {
-    fn default() -> Self {
-        Self {
-            hierarchy: true,
-            inspector: true,
-            asset_browser: true,
-        }
-    }
-}
-
-impl PanelVisibility {
-    pub fn toggle_hierarchy(&mut self) {
-        self.hierarchy = !self.hierarchy;
-    }
-    pub fn toggle_inspector(&mut self) {
-        self.inspector = !self.inspector;
-    }
-    pub fn toggle_asset_browser(&mut self) {
-        self.asset_browser = !self.asset_browser;
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -111,7 +99,7 @@ impl EditorLayout {
         asset_browser: &mut dyn EditorPanel,
     ) {
         // 底部面板必须先于侧边面板声明（egui 布局要求）
-        if state.panel_visibility.asset_browser {
+        if state.panel_layer.is_visible(&PanelLayer::AssetBrowser) {
             egui::TopBottomPanel::bottom("editor_bottom")
                 .resizable(true)
                 .default_height(200.0)
@@ -121,7 +109,7 @@ impl EditorLayout {
         }
 
         // 左侧面板
-        if state.panel_visibility.hierarchy {
+        if state.panel_layer.is_visible(&PanelLayer::Hierarchy) {
             egui::SidePanel::left("editor_left")
                 .resizable(true)
                 .default_width(250.0)
@@ -131,7 +119,7 @@ impl EditorLayout {
         }
 
         // 右侧面板
-        if state.panel_visibility.inspector {
+        if state.panel_layer.is_visible(&PanelLayer::Inspector) {
             egui::SidePanel::right("editor_right")
                 .resizable(true)
                 .default_width(300.0)

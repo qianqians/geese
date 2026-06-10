@@ -4,25 +4,26 @@
 
 use crate::asset_browser::AssetBrowser;
 use crate::commands::CommandHistory;
+use crate::commands::TransformCommand;
 use crate::editor_mode::EditorMode;
 use crate::gltf_import_dialog::GltfImportDialog;
 use crate::hierarchy::HierarchyPanel;
 use crate::inspector::InspectorPanel;
-use crate::panel_layer::PanelLayerManager;
+use crate::panel_layer::PanelLayer;
 use crate::panels::{EditorLayout, EditorPanel, EditorState};
 use crate::physics_debug::PhysicsDebugRenderer;
 use crate::physics_server::PhysicsServerManager;
 use crate::play_mode::PlayMode;
 use crate::viewport::{GizmoMode, ViewportPanel};
 
+use cgmath::{Point3, Vector3};
+
 /// 编辑器顶层结构体。
 pub struct Editor {
-    /// 全局共享状态
+    /// 全局共享状态（含面板可见性 manager，单一真相源）
     pub state: EditorState,
     /// Undo/Redo 命令历史
     pub command_history: CommandHistory,
-    /// 面板层级管理器
-    pub panel_layer: PanelLayerManager,
     /// Play/Stop 模式管理器
     play_mode: PlayMode,
     /// 层级面板
@@ -60,7 +61,6 @@ impl Editor {
         Self {
             state,
             command_history: CommandHistory::default(),
-            panel_layer: PanelLayerManager::default(),
             play_mode: PlayMode::new(),
             hierarchy: HierarchyPanel::new(),
             viewport: ViewportPanel::new(),
@@ -118,6 +118,9 @@ impl Editor {
         if was_visible && !self.gltf_import_dialog.visible && self.gltf_import_dialog.import_success {
             self.asset_needs_scan = true;
         }
+
+        // 5. 处理 Inspector 写回的变换变更 -> 推入 CommandHistory
+        self.process_pending_transform();
     }
 
     // -------------------------------------------------------------------
@@ -178,25 +181,19 @@ impl Editor {
 
                 // View 菜单
                 ui.menu_button("View", |ui| {
-                    if ui
-                        .checkbox(&mut self.state.panel_visibility.hierarchy, "Hierarchy")
-                        .clicked()
-                    {
+                    let mut hier_vis = self.state.panel_layer.is_visible(&PanelLayer::Hierarchy);
+                    if ui.checkbox(&mut hier_vis, "Hierarchy").clicked() {
+                        self.state.panel_layer.set_visible(PanelLayer::Hierarchy, hier_vis);
                         ui.close_menu();
                     }
-                    if ui
-                        .checkbox(&mut self.state.panel_visibility.inspector, "Inspector")
-                        .clicked()
-                    {
+                    let mut insp_vis = self.state.panel_layer.is_visible(&PanelLayer::Inspector);
+                    if ui.checkbox(&mut insp_vis, "Inspector").clicked() {
+                        self.state.panel_layer.set_visible(PanelLayer::Inspector, insp_vis);
                         ui.close_menu();
                     }
-                    if ui
-                        .checkbox(
-                            &mut self.state.panel_visibility.asset_browser,
-                            "Asset Browser",
-                        )
-                        .clicked()
-                    {
+                    let mut ab_vis = self.state.panel_layer.is_visible(&PanelLayer::AssetBrowser);
+                    if ui.checkbox(&mut ab_vis, "Asset Browser").clicked() {
+                        self.state.panel_layer.set_visible(PanelLayer::AssetBrowser, ab_vis);
                         ui.close_menu();
                     }
                 });
@@ -225,7 +222,7 @@ impl Editor {
     // -------------------------------------------------------------------
 
     fn show_toolbar(&mut self, ctx: &egui::Context) {
-        let alpha = self.state.panel_alpha;
+        let alpha = self.state.panel_layer.global_alpha;
         let bg_fill = egui::Color32::from_rgba_unmultiplied(20, 22, 30, (alpha * 220.0) as u8);
         let frame = egui::Frame::window(&ctx.style())
             .fill(bg_fill)
@@ -333,21 +330,16 @@ impl Editor {
 
         // 然后应用
         if toggle_hierarchy {
-            self.state.panel_visibility.toggle_hierarchy();
+            self.state.panel_layer.toggle_visible(PanelLayer::Hierarchy);
         }
         if toggle_inspector {
-            self.state.panel_visibility.toggle_inspector();
+            self.state.panel_layer.toggle_visible(PanelLayer::Inspector);
         }
         if toggle_asset_browser {
-            self.state.panel_visibility.toggle_asset_browser();
+            self.state.panel_layer.toggle_visible(PanelLayer::AssetBrowser);
         }
         if toggle_ui {
-            self.panel_layer.toggle_all();
-            // 同步到 PanelVisibility（保持兼容）
-            let all_visible = self.panel_layer.is_visible(&crate::panel_layer::PanelLayer::Hierarchy);
-            self.state.panel_visibility.hierarchy = all_visible;
-            self.state.panel_visibility.inspector = all_visible;
-            self.state.panel_visibility.asset_browser = all_visible;
+            self.state.panel_layer.toggle_all();
         }
         if undo {
             self.command_history.undo();
@@ -366,14 +358,14 @@ impl Editor {
 
     /// 渲染浮动半透明面板（在全屏视口之上）。
     fn show_floating_panels(&mut self, ctx: &egui::Context) {
-        let alpha = self.state.panel_alpha;
+        let alpha = self.state.panel_layer.global_alpha;
         let bg_fill = egui::Color32::from_rgba_unmultiplied(28, 30, 38, (alpha * 220.0) as u8);
         let frame = egui::Frame::window(&ctx.style())
             .fill(bg_fill)
             .rounding(egui::Rounding::same(6.0));
 
         // 左侧 - Hierarchy 面板
-        if self.state.panel_visibility.hierarchy {
+        if self.state.panel_layer.is_visible(&PanelLayer::Hierarchy) {
             egui::Window::new("Hierarchy")
                 .resizable(true)
                 .collapsible(true)
@@ -385,7 +377,7 @@ impl Editor {
         }
 
         // 右侧 - Inspector 面板
-        if self.state.panel_visibility.inspector {
+        if self.state.panel_layer.is_visible(&PanelLayer::Inspector) {
             egui::Window::new("Inspector")
                 .resizable(true)
                 .collapsible(true)
@@ -397,7 +389,7 @@ impl Editor {
         }
 
         // 底部 - Asset Browser 面板
-        if self.state.panel_visibility.asset_browser {
+        if self.state.panel_layer.is_visible(&PanelLayer::AssetBrowser) {
             if self.asset_needs_scan {
                 self.asset_browser.scan_directory(&self.state.project_path);
                 self.asset_needs_scan = false;
@@ -411,6 +403,48 @@ impl Editor {
                     self.asset_browser.show(ui, &mut self.state);
                 });
         }
+    }
+
+    /// 处理 Inspector 写回的变换变更，生成 TransformCommand 并推入历史。
+    fn process_pending_transform(&mut self) {
+        let Some(change) = self.state.pending_transform.take() else {
+            return;
+        };
+
+        let old_pos = Point3::new(
+            change.old_position[0],
+            change.old_position[1],
+            change.old_position[2],
+        );
+        let new_pos = Point3::new(
+            change.new_position[0],
+            change.new_position[1],
+            change.new_position[2],
+        );
+        let old_rot = Vector3::new(
+            change.old_rotation[0],
+            change.old_rotation[1],
+            change.old_rotation[2],
+        );
+        let new_rot = Vector3::new(
+            change.new_rotation[0],
+            change.new_rotation[1],
+            change.new_rotation[2],
+        );
+        let old_scl = Vector3::new(
+            change.old_scale[0],
+            change.old_scale[1],
+            change.old_scale[2],
+        );
+        let new_scl = Vector3::new(
+            change.new_scale[0],
+            change.new_scale[1],
+            change.new_scale[2],
+        );
+
+        let entity_id = change.entity_id;
+        let cmd = TransformCommand::new(entity_id, old_pos, new_pos, old_rot, new_rot, old_scl, new_scl);
+        self.command_history.execute(Box::new(cmd));
     }
 
     /// 切换 Play/Stop 模式。
@@ -431,7 +465,7 @@ impl Editor {
             self.physics_server.stop();
             self.physics_debug.enabled = false;
             self.state.mode = EditorMode::Edit;
-            self.panel_layer.set_edit_alpha();
+            self.state.panel_layer.set_edit_alpha();
         } else {
             // Play: 进入播放模式
             self.play_mode.play(
@@ -460,8 +494,7 @@ impl Editor {
 
             self.state.mode = EditorMode::Play;
             self.state.selected_entity = None;
-            self.panel_layer.set_play_alpha();
-            self.state.panel_alpha = self.panel_layer.global_alpha;
+            self.state.panel_layer.set_play_alpha();
         }
     }
 }

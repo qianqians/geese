@@ -3,7 +3,7 @@
 //! 显示和编辑选中实体的属性：Transform（Position/Rotation/Scale）、
 //! Mesh 信息（顶点数、三角形数、材质）、组件列表。
 
-use crate::panels::{EditorPanel, EditorState};
+use crate::panels::{EditorPanel, EditorState, PendingTransform};
 
 // ---------------------------------------------------------------------------
 // InspectorPanel
@@ -15,6 +15,8 @@ pub struct InspectorPanel {
     position: [f32; 3],
     rotation: [f32; 3], // Euler 角度
     scale: [f32; 3],
+    /// 上次选中的实体 ID，用于检测选中变化
+    last_selected: Option<String>,
 }
 
 impl InspectorPanel {
@@ -23,6 +25,7 @@ impl InspectorPanel {
             position: [0.0, 0.0, 0.0],
             rotation: [0.0, 0.0, 0.0],
             scale: [1.0, 1.0, 1.0],
+            last_selected: None,
         }
     }
 
@@ -80,6 +83,26 @@ impl EditorPanel for InspectorPanel {
     fn show(&mut self, ui: &mut egui::Ui, state: &mut EditorState) {
         ui.strong("Inspector");
 
+        // 检测选中实体变化，从缓存同步变换值
+        let selection_changed = state.selected_entity.as_deref() != self.last_selected.as_deref();
+        if selection_changed {
+            self.last_selected = state.selected_entity.clone();
+            if let Some(ref entity_id) = state.selected_entity {
+                if let Some(&(pos, rot, scl)) = state.transform_cache.get(entity_id) {
+                    self.position = pos;
+                    self.rotation = rot;
+                    self.scale = scl;
+                } else {
+                    // 首次选中：初始化缓存
+                    let defaults = ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+                    state.transform_cache.insert(entity_id.clone(), defaults);
+                    self.position = defaults.0;
+                    self.rotation = defaults.1;
+                    self.scale = defaults.2;
+                }
+            }
+        }
+
         match &state.selected_entity {
             Some(entity_id) => {
                 ui.add_space(8.0);
@@ -98,14 +121,39 @@ impl EditorPanel for InspectorPanel {
                 egui::CollapsingHeader::new("▼ Transform")
                     .default_open(true)
                     .show(ui, |ui| {
+                        let pos_before = self.position;
+                        let rot_before = self.rotation;
+                        let scl_before = self.scale;
+
+                        let mut changed = false;
                         if drag_value_row(ui, "Position", &mut self.position, 0.1) {
-                            // TODO: 同步到 Scene
+                            changed = true;
                         }
                         if drag_value_row(ui, "Rotation", &mut self.rotation, 1.0) {
-                            // TODO: 同步到 Scene
+                            changed = true;
                         }
                         if drag_value_row(ui, "Scale   ", &mut self.scale, 0.01) {
-                            // TODO: 同步到 Scene
+                            changed = true;
+                        }
+
+                        if changed {
+                            if let Some(ref entity_id) = state.selected_entity {
+                                // 更新缓存
+                                state.transform_cache.insert(
+                                    entity_id.clone(),
+                                    (self.position, self.rotation, self.scale),
+                                );
+                                // 推入待提交变更
+                                state.pending_transform = Some(PendingTransform {
+                                    entity_id: entity_id.clone(),
+                                    old_position: pos_before,
+                                    new_position: self.position,
+                                    old_rotation: rot_before,
+                                    new_rotation: self.rotation,
+                                    old_scale: scl_before,
+                                    new_scale: self.scale,
+                                });
+                            }
                         }
                     });
 

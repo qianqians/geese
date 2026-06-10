@@ -6,6 +6,7 @@
 //!
 //! 工具栏按钮状态指示器：红=播放中/灰=编辑中
 
+use crate::panel_layer::PanelLayer;
 use crate::panels::EditorState;
 
 // ---------------------------------------------------------------------------
@@ -40,7 +41,7 @@ pub struct PlayModeSnapshot {
 /// 面板状态快照，Play 时保存 UI 状态、Stop 时恢复。
 #[derive(Debug, Clone)]
 pub struct PanelStateSnapshot {
-    pub panel_alpha: f32,
+    pub global_alpha: f32,
     pub ui_visible: bool,
     pub hierarchy_visible: bool,
     pub inspector_visible: bool,
@@ -71,11 +72,11 @@ impl PlayMode {
             camera_pitch,
             camera_distance,
             panel_state: PanelStateSnapshot {
-                panel_alpha: state.panel_alpha,
+                global_alpha: state.panel_layer.global_alpha,
                 ui_visible: state.ui_visible,
-                hierarchy_visible: state.panel_visibility.hierarchy,
-                inspector_visible: state.panel_visibility.inspector,
-                asset_browser_visible: state.panel_visibility.asset_browser,
+                hierarchy_visible: state.panel_layer.is_visible(&PanelLayer::Hierarchy),
+                inspector_visible: state.panel_layer.is_visible(&PanelLayer::Inspector),
+                asset_browser_visible: state.panel_layer.is_visible(&PanelLayer::AssetBrowser),
             },
         });
 
@@ -101,11 +102,11 @@ impl PlayMode {
 
     /// 从快照恢复面板状态到 EditorState。
     pub fn restore_panel_state(snapshot: &PlayModeSnapshot, state: &mut EditorState) {
-        state.panel_alpha = snapshot.panel_state.panel_alpha;
+        state.panel_layer.global_alpha = snapshot.panel_state.global_alpha;
         state.ui_visible = snapshot.panel_state.ui_visible;
-        state.panel_visibility.hierarchy = snapshot.panel_state.hierarchy_visible;
-        state.panel_visibility.inspector = snapshot.panel_state.inspector_visible;
-        state.panel_visibility.asset_browser = snapshot.panel_state.asset_browser_visible;
+        state.panel_layer.set_visible(PanelLayer::Hierarchy, snapshot.panel_state.hierarchy_visible);
+        state.panel_layer.set_visible(PanelLayer::Inspector, snapshot.panel_state.inspector_visible);
+        state.panel_layer.set_visible(PanelLayer::AssetBrowser, snapshot.panel_state.asset_browser_visible);
     }
 
     /// 更新播放模式时间。
