@@ -19,6 +19,7 @@ from .context import context
 from .dbproxy_msg_handle import dbproxy_msg_handle
 from .conn_msg_handle import conn_msg_handle
 from .dbproxy import *
+from .physics_sync import PhysicsSyncManager
 from .service import *
 from .save import *
 from .player import *
@@ -27,7 +28,6 @@ from .subentity import *
 from .receiver import *
 from .login import *
 from .get_guid import *
-from .dbproxy import *
 
 def __handle_exception__(exc_type, exc_value, tb):
     app().error("error Uncaught exception:{}, exc_value:{}, tb:{}".format(exc_type, exc_value, tb))
@@ -67,7 +67,8 @@ class app(object):
         self.physics_world:PhysicsWorld = None
         self.scene_id:int = 0
         self.scene_bodies:dict = {}
-        
+        self.physics_sync:PhysicsSyncManager = None
+                
         self.is_idle = True
         self.config:dict = None
         self.redis_proxy:Redis = None
@@ -139,6 +140,7 @@ class app(object):
         调用时机：在 ``build()`` 之后、``run()`` 之前。
         """
         from .scene_physics import load_scene_collision_from_manifest
+        self.physics_sync = PhysicsSyncManager(self.ctx)
 
         self.physics_world = PhysicsWorld()
         self.scene_id = self.physics_world.create_scene((0.0, -9.81, 0.0))
@@ -159,6 +161,25 @@ class app(object):
             manifest_path,
         )
         return self
+
+    def cast_ray(
+        self,
+        origin: tuple[float, float, float],
+        direction: tuple[float, float, float],
+        max_toi: float,
+        solid: bool = True,
+    ):
+        """射线检测工具（Thrift cast_ray_req → cast_ray_rsp）。"""
+        if self.physics_world is None:
+            return None
+        from .physics import _cast_ray
+        return _cast_ray(self.physics_world, self.scene_id, origin, direction, max_toi, solid)
+
+    def get_contacts(self):
+        """获取本帧碰撞事件（Thrift get_contacts_req → get_contacts_rsp）。"""
+        if self.physics_world is None:
+            return []
+        return self.physics_world.drain_collision_events(self.scene_id)
 
     def register(self, entity_type:str, creator:Callable[[str, str, dict]]):
         self.__entity_create_method__[entity_type] = creator
@@ -249,6 +270,8 @@ class app(object):
             if self.__physics_tick__ is not None:
                 try:
                     self.__physics_tick__(0.033)
+                    if self.physics_sync is not None:
+                        self.physics_sync.flush_after_step(self.physics_world, self.scene_id)
                 except Exception as ex:
                     self.error("physics tick Exception:{0}", ex)
             tick = time.time() - start
