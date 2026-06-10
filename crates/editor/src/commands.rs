@@ -378,6 +378,11 @@ impl CommandHistory {
         self.redo_stack.len()
     }
 
+    /// 弹出最近一条 undo 命令（用于合并连续拖拽操作，不触发 undo 逻辑）。
+    pub fn pop_last_undo(&mut self) -> Option<Box<dyn EditorCommand>> {
+        self.undo_stack.pop()
+    }
+
     /// 最近命令的描述。
     pub fn last_undo_description(&self) -> Option<&str> {
         self.undo_stack.last().map(|c| c.description())

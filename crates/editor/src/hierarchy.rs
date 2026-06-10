@@ -71,14 +71,19 @@ impl SceneNodeTree {
         self.nodes.insert(id.clone(), node);
 
         if !has_parent {
-            self.root_ids.push(id);
+            self.root_ids.push(id.clone());
         } else if let Some(ref pid) = parent_id {
             if !self.nodes.contains_key(pid) {
                 eprintln!("[SceneNodeTree] parent '{}' of node '{}' not found, promoted to root", pid, id);
-                self.root_ids.push(id);
+                self.root_ids.push(id.clone());
+            } else {
+                // 更新父节点的 children 列表
+                if let Some(parent) = self.nodes.get_mut(pid) {
+                    parent.children.push(id.clone());
+                }
             }
         } else {
-            self.root_ids.push(id);
+            self.root_ids.push(id.clone());
         }
     }
 

@@ -17,6 +17,8 @@ use crate::play_mode::PlayMode;
 use crate::viewport::{GizmoMode, ViewportPanel};
 
 use cgmath::{Point3, Vector3};
+use std::cell::RefCell;
+use std::rc::Rc;
 
 /// 编辑器顶层结构体。
 pub struct Editor {
@@ -46,6 +48,12 @@ pub struct Editor {
     rt: tokio::runtime::Runtime,
     /// 上次帧更新时间（用于 dt 计算）
     last_update: Option<std::time::Instant>,
+    /// Undo/Redo apply 回调队列（闭包写入，Editor 消费）
+    apply_queue: Rc<RefCell<Vec<(String, Point3<f32>, Vector3<f32>, Vector3<f32>)>>>,
+    /// 上一条变换命令的 entity_id（用于合并连续拖拽）
+    last_transform_entity: Option<String>,
+    /// 上一条变换命令的 old 值（合并时保持不变）
+    last_transform_old: Option<(Point3<f32>, Vector3<f32>, Vector3<f32>)>,
 }
 
 impl Editor {
@@ -72,6 +80,9 @@ impl Editor {
             physics_debug: PhysicsDebugRenderer::new(),
             rt,
             last_update: None,
+            apply_queue: Rc::new(RefCell::new(Vec::new())),
+            last_transform_entity: None,
+            last_transform_old: None,
         }
     }
 
@@ -121,6 +132,8 @@ impl Editor {
 
         // 5. 处理 Inspector 写回的变换变更 -> 推入 CommandHistory
         self.process_pending_transform();
+        // 6. 消费 Undo/Redo 回调产生的 apply 事件
+        self.process_apply_queue();
     }
 
     // -------------------------------------------------------------------
@@ -343,9 +356,15 @@ impl Editor {
         }
         if undo {
             self.command_history.undo();
+            self.last_transform_entity = None;
+            self.last_transform_old = None;
+            self.process_apply_queue();
         }
         if redo {
             self.command_history.redo();
+            self.last_transform_entity = None;
+            self.last_transform_old = None;
+            self.process_apply_queue();
         }
         if save {
             // TODO: 场景序列化保存
@@ -406,35 +425,24 @@ impl Editor {
     }
 
     /// 处理 Inspector 写回的变换变更，生成 TransformCommand 并推入历史。
+    /// 连续拖拽同一实体时自动合并为单次 Undo 条目。
     fn process_pending_transform(&mut self) {
         let Some(change) = self.state.pending_transform.take() else {
+            // 无拖拽帧：拖拽已松手，重置合并状态，下一轮拖拽 = 新 Undo 条目
+            self.last_transform_entity = None;
+            self.last_transform_old = None;
             return;
         };
 
-        let old_pos = Point3::new(
-            change.old_position[0],
-            change.old_position[1],
-            change.old_position[2],
-        );
         let new_pos = Point3::new(
             change.new_position[0],
             change.new_position[1],
             change.new_position[2],
         );
-        let old_rot = Vector3::new(
-            change.old_rotation[0],
-            change.old_rotation[1],
-            change.old_rotation[2],
-        );
         let new_rot = Vector3::new(
             change.new_rotation[0],
             change.new_rotation[1],
             change.new_rotation[2],
-        );
-        let old_scl = Vector3::new(
-            change.old_scale[0],
-            change.old_scale[1],
-            change.old_scale[2],
         );
         let new_scl = Vector3::new(
             change.new_scale[0],
@@ -442,9 +450,72 @@ impl Editor {
             change.new_scale[2],
         );
 
+        // 检查是否需要合并：同一实体连续拖拽
+        let same_entity = self.last_transform_entity.as_deref() == Some(&change.entity_id);
+        if same_entity {
+            // 弹出上一条命令，保留其 old 值
+            let _ = self.command_history.pop_last_undo();
+        } else {
+            // 不同实体或新一轮拖拽，重置合并状态
+            self.last_transform_entity = None;
+            self.last_transform_old = None;
+        }
+
+        let (old_pos, old_rot, old_scl) = if same_entity {
+            // 合并：沿用最初的 old 值（clone 而非 take，支持多次合并）
+            self.last_transform_old
+                .clone()
+                .expect("merge must have old values")
+        } else {
+            // 新拖拽：记录 old 值供后续合并使用
+            let old = (
+                Point3::new(
+                    change.old_position[0],
+                    change.old_position[1],
+                    change.old_position[2],
+                ),
+                Vector3::new(
+                    change.old_rotation[0],
+                    change.old_rotation[1],
+                    change.old_rotation[2],
+                ),
+                Vector3::new(
+                    change.old_scale[0],
+                    change.old_scale[1],
+                    change.old_scale[2],
+                ),
+            );
+            self.last_transform_old = Some(old.clone());
+            self.last_transform_entity = Some(change.entity_id.clone());
+            old
+        };
+
+        // 设置 apply 回调：通过 apply_queue 将变换写回 transform_cache
+        let queue = self.apply_queue.clone();
         let entity_id = change.entity_id;
-        let cmd = TransformCommand::new(entity_id, old_pos, new_pos, old_rot, new_rot, old_scl, new_scl);
+        let cmd = TransformCommand::new(
+            entity_id.clone(),
+            old_pos, new_pos, old_rot, new_rot, old_scl, new_scl,
+        ).with_apply(move |eid, pos, rot, scl| {
+            queue.borrow_mut().push((eid.to_string(), pos, rot, scl));
+        });
+
         self.command_history.execute(Box::new(cmd));
+    }
+
+    /// 消费 Undo/Redo 回调产生的 apply 事件，写入 transform_cache。
+    fn process_apply_queue(&mut self) {
+        let pending: Vec<_> = self.apply_queue.borrow_mut().drain(..).collect();
+        for (eid, pos, rot, scl) in pending {
+            self.state.transform_cache.insert(
+                eid,
+                (
+                    [pos.x, pos.y, pos.z],
+                    [rot.x, rot.y, rot.z],
+                    [scl.x, scl.y, scl.z],
+                ),
+            );
+        }
     }
 
     /// 切换 Play/Stop 模式。

@@ -613,11 +613,11 @@ impl EditorPanel for ViewportPanel {
             ui.label("Panels");
             ui.separator();
             let mut hier_vis = state.panel_layer.is_visible(&PanelLayer::Hierarchy);
-            if ui.checkbox(&mut hier_vis, "Hierarchy").changed() { state.panel_layer.set_visible(PanelLayer::Hierarchy, hier_vis); }
+            if ui.checkbox(&mut hier_vis, "Hierarchy").clicked() { state.panel_layer.set_visible(PanelLayer::Hierarchy, hier_vis); }
             let mut insp_vis = state.panel_layer.is_visible(&PanelLayer::Inspector);
-            if ui.checkbox(&mut insp_vis, "Inspector").changed() { state.panel_layer.set_visible(PanelLayer::Inspector, insp_vis); }
+            if ui.checkbox(&mut insp_vis, "Inspector").clicked() { state.panel_layer.set_visible(PanelLayer::Inspector, insp_vis); }
             let mut ab_vis = state.panel_layer.is_visible(&PanelLayer::AssetBrowser);
-            if ui.checkbox(&mut ab_vis, "Asset Browser").changed() { state.panel_layer.set_visible(PanelLayer::AssetBrowser, ab_vis); }
+            if ui.checkbox(&mut ab_vis, "Asset Browser").clicked() { state.panel_layer.set_visible(PanelLayer::AssetBrowser, ab_vis); }
         });
 
         self.viewport_size = (rect.width(), rect.height());
