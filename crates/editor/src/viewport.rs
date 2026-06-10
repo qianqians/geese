@@ -9,6 +9,7 @@
 
 use crate::editor_mode::EditorMode;
 use crate::gizmo::{GizmoInteraction, draw_gizmo};
+use crate::panel_layer::PanelLayer;
 use crate::panels::{EditorPanel, EditorState};
 use cgmath::{EuclideanSpace, InnerSpace, Matrix4, Point3, SquareMatrix, Vector3, Vector4, perspective, Rad};
 use math::AABB;
@@ -611,9 +612,12 @@ impl EditorPanel for ViewportPanel {
         rect_response.clone().context_menu(|ui| {
             ui.label("Panels");
             ui.separator();
-            ui.checkbox(&mut state.panel_visibility.hierarchy, "Hierarchy");
-            ui.checkbox(&mut state.panel_visibility.inspector, "Inspector");
-            ui.checkbox(&mut state.panel_visibility.asset_browser, "Asset Browser");
+            let mut hier_vis = state.panel_layer.is_visible(&PanelLayer::Hierarchy);
+            if ui.checkbox(&mut hier_vis, "Hierarchy").changed() { state.panel_layer.set_visible(PanelLayer::Hierarchy, hier_vis); }
+            let mut insp_vis = state.panel_layer.is_visible(&PanelLayer::Inspector);
+            if ui.checkbox(&mut insp_vis, "Inspector").changed() { state.panel_layer.set_visible(PanelLayer::Inspector, insp_vis); }
+            let mut ab_vis = state.panel_layer.is_visible(&PanelLayer::AssetBrowser);
+            if ui.checkbox(&mut ab_vis, "Asset Browser").changed() { state.panel_layer.set_visible(PanelLayer::AssetBrowser, ab_vis); }
         });
 
         self.viewport_size = (rect.width(), rect.height());

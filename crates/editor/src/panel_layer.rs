@@ -75,6 +75,12 @@ impl PanelLayerManager {
         self.visibility.get(layer).copied().unwrap_or(true)
     }
 
+    /// 切换指定面板的可见性。
+    pub fn toggle_visible(&mut self, layer: PanelLayer) {
+        let current = self.is_visible(&layer);
+        self.set_visible(layer, !current);
+    }
+
     /// 钉住面板。
     pub fn pin(&mut self, layer: PanelLayer) {
         self.pinned.insert(layer);

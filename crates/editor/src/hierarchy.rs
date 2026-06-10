@@ -69,7 +69,15 @@ impl SceneNodeTree {
         let parent_id = node.parent.clone();
         let id = node.id.clone();
         self.nodes.insert(id.clone(), node);
-        if !has_parent || parent_id.as_ref().map_or(true, |p| !self.nodes.contains_key(p)) {
+
+        if !has_parent {
+            self.root_ids.push(id);
+        } else if let Some(ref pid) = parent_id {
+            if !self.nodes.contains_key(pid) {
+                eprintln!("[SceneNodeTree] parent '{}' of node '{}' not found, promoted to root", pid, id);
+                self.root_ids.push(id);
+            }
+        } else {
             self.root_ids.push(id);
         }
     }
