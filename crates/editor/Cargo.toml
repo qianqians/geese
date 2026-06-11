@@ -20,7 +20,7 @@ scene = { path = "../scene", version = "0.1.0" }
 asset = { path = "../asset", version = "0.1.0" }
 camera = { path = "../camera", version = "0.1.0" }
 math = { path = "../math", version = "0.1.0" }
-physics = { path = "../physics", version = "0.1.0" }
+physics = { path = "../physics", version = "0.1.0", features = ["scene-builder"] }
 input = { path = "../input", version = "0.1.0" }
 tcp = { path = "../tcp", version = "0.1.0" }
 net = { path = "../net", version = "0.1.0" }

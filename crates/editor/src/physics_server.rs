@@ -9,6 +9,7 @@
 
 use std::net::TcpStream;
 use std::process::{Child, Command};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -24,7 +25,7 @@ use crate::physics_client::PhysicsClient;
 /// `PhysicsClient` 连接。
 pub struct PhysicsServerManager {
     process: Option<Child>,
-    client: Option<PhysicsClient>,
+    client: Option<Arc<PhysicsClient>>,
     port: u16,
 }
 
@@ -66,7 +67,7 @@ impl PhysicsServerManager {
         // 4. 连接（在外部 Runtime 上执行）
         let addr = format!("127.0.0.1:{}", self.port);
         let client = rt.block_on(PhysicsClient::connect(&addr))?;
-        self.client = Some(client);
+        self.client = Some(Arc::new(client));
 
         Ok(())
     }
@@ -76,9 +77,9 @@ impl PhysicsServerManager {
         self.client.is_some()
     }
 
-    /// 获取客户端引用。
-    pub fn client(&self) -> Option<&PhysicsClient> {
-        self.client.as_ref()
+    /// 获取客户端引用（Arc 克隆，可发给 spawned task）。
+    pub fn client(&self) -> Option<Arc<PhysicsClient>> {
+        self.client.clone()
     }
 
     /// 获取端口。

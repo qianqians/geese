@@ -64,7 +64,7 @@ impl ShapeDesc {
                 half_height,
                 radius,
             } => Ok(rp::SharedShape::capsule_y(
-                half_height.max(0.0),
+                half_height.max(1e-6),
                 radius.max(1e-6),
             )),
             ShapeDesc::Cylinder {

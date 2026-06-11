@@ -7,10 +7,6 @@
 - 请求 body: msgpack({"method": "...", "argvs": [...]})
 - 响应 body: msgpack(response_dict)
 
-协议定义见：
-  crates/proto/proto/editor_physics.thrift      （请求 struct + union）
-  crates/proto/proto/editor_server_physics.thrift（响应 struct + union）
-
 启动方式: python3 physics_editor_server.py --port 9000
 """
 from __future__ import annotations
@@ -47,7 +43,7 @@ _loaded_bodies: dict[str, PhysicsBody] = {}
 
 def pack_msg(data: dict) -> bytes:
     """编码 msgpack → 4 字节 LE 长度前缀 + body。"""
-    body = msgpack.dumps(data)
+    body = msgpack.dumps(data, use_bin_type=True)
     return struct.pack("<I", len(body)) + body
 
 
@@ -139,10 +135,7 @@ def _load_scene_collision(
 # ---------------------------------------------------------------------------
 
 async def handle_init_physics(argvs: list) -> dict:
-    """argvs: [(double)gravity_x, (double)gravity_y, (double)gravity_z]
-    
-    对应 Thrift: init_physics_req → init_physics_rsp
-    """
+    """argvs: [(double)gravity_x, (double)gravity_y, (double)gravity_z]"""
     global _world, _scene_id
 
     gravity = (0.0, -9.81, 0.0)
@@ -155,10 +148,7 @@ async def handle_init_physics(argvs: list) -> dict:
 
 
 async def handle_load_scene(argvs: list) -> dict:
-    """argvs: [(str)manifest_path]
-
-    对应 Thrift: load_scene_req → load_scene_rsp
-    """
+    """argvs: [(str)manifest_path]"""
     global _world, _loaded_bodies
 
     if _world is None:
@@ -177,10 +167,7 @@ async def handle_load_scene(argvs: list) -> dict:
 
 
 async def handle_step_physics(argvs: list) -> dict:
-    """argvs: [(double)dt]
-
-    对应 Thrift: step_physics_req → step_physics_rsp
-    """
+    """argvs: [(double)dt]"""
     global _world, _scene_id
 
     if _world is None:
@@ -191,10 +178,7 @@ async def handle_step_physics(argvs: list) -> dict:
 
 
 async def handle_get_bodies(argvs: list) -> dict:
-    """无参数。
-
-    对应 Thrift: get_bodies_req → get_bodies_rsp
-    """
+    """无参数。"""
     global _loaded_bodies
     body_list = []
     for body_id, body in _loaded_bodies.items():
@@ -204,7 +188,7 @@ async def handle_get_bodies(argvs: list) -> dict:
             body_list.append({
                 "id": body_id,
                 "position": {"x": pos[0], "y": pos[1], "z": pos[2]},
-                "rotation": {"x": rot[0], "y": rot[1], "z": rot[2]},
+                "rotation": {"x": rot[0], "y": rot[1], "z": rot[2], "w": rot[3]},
             })
         except Exception:
             continue
@@ -212,10 +196,7 @@ async def handle_get_bodies(argvs: list) -> dict:
 
 
 async def handle_get_contacts(argvs: list) -> dict:
-    """无参数。
-
-    对应 Thrift: get_contacts_req → get_contacts_rsp
-    """
+    """无参数。"""
     global _world, _scene_id
 
     if _world is None:
@@ -242,10 +223,7 @@ async def handle_get_contacts(argvs: list) -> dict:
 
 
 async def handle_cast_ray(argvs: list) -> dict:
-    """argvs: [origin_x, origin_y, origin_z, dir_x, dir_y, dir_z, max_toi]
-
-    对应 Thrift: cast_ray_req → cast_ray_rsp
-    """
+    """argvs: [origin_x, origin_y, origin_z, dir_x, dir_y, dir_z, max_toi]"""
     global _world, _scene_id
 
     if _world is None:
@@ -281,10 +259,7 @@ async def handle_cast_ray(argvs: list) -> dict:
 
 
 async def handle_reset_physics(argvs: list) -> dict:
-    """无参数。
-
-    对应 Thrift: reset_physics_req → reset_physics_rsp
-    """
+    """无参数。"""
     global _world, _scene_id, _loaded_bodies
 
     if _world is not None and _scene_id is not None:
@@ -299,7 +274,7 @@ async def handle_reset_physics(argvs: list) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# 方法路由表（与 editor_physics.thrift union 一致）
+# 方法路由表
 # ---------------------------------------------------------------------------
 _METHODS = {
     "init_physics": handle_init_physics,

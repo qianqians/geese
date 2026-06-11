@@ -100,6 +100,16 @@ fn collect_trimeshes(
                 .map(|chunk| [chunk[0], chunk[1], chunk[2]])
                 .collect();
 
+            let remainder = indices.len() % 3;
+            if remainder != 0 {
+                eprintln!(
+                    "[scene_builder] {} indices not divisible by 3 (remainder {}), last {} indices discarded",
+                    indices.len(),
+                    remainder,
+                    remainder
+                );
+            }
+
             if tri_indices.is_empty() {
                 continue;
             }
