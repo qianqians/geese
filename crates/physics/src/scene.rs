@@ -411,6 +411,11 @@ impl PhysicsScene {
         }
     }
 
+    /// 返回场景中所有刚体句柄的迭代器（供调试渲染遍历碰撞体快照）。
+    pub fn body_handles(&self) -> impl Iterator<Item = BodyHandle> + '_ {
+        self.bodies.iter().map(|(handle, _)| BodyHandle::new(self.id, handle))
+    }
+
     fn check_body(&self, handle: BodyHandle) -> Option<RpRigidBodyHandle> {
         if handle.scene != self.id {
             return None;

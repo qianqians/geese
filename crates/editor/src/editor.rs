@@ -9,8 +9,10 @@ use crate::editor_mode::EditorMode;
 use crate::gltf_import_dialog::GltfImportDialog;
 use crate::hierarchy::HierarchyPanel;
 use crate::inspector::InspectorPanel;
+use crate::local_physics::LocalPhysics;
 use crate::panel_layer::PanelLayer;
 use crate::panels::{EditorLayout, EditorPanel, EditorState};
+use crate::physics_client::BodySnapshot;
 use crate::physics_debug::PhysicsDebugRenderer;
 use crate::physics_server::PhysicsServerManager;
 use crate::play_mode::PlayMode;
@@ -19,6 +21,14 @@ use crate::viewport::{GizmoMode, ViewportPanel};
 use cgmath::{Point3, Vector3};
 use std::cell::RefCell;
 use std::rc::Rc;
+
+/// 物理后端：编辑模式本地进程内运行，Play 模式连接远程服务器。
+enum PhysicsBackend {
+    /// 编辑模式：本地 PhysicsWorld（纯 Rust，无网络）
+    Local(LocalPhysics),
+    /// Play 模式：远程 Python 物理服务器（TCP + msgpack）
+    Remote(PhysicsServerManager),
+}
 
 /// 编辑器顶层结构体。
 pub struct Editor {
@@ -40,8 +50,8 @@ pub struct Editor {
     gltf_import_dialog: GltfImportDialog,
     /// 资源浏览器是否需要重新扫描
     asset_needs_scan: bool,
-    /// 物理服务器进程管理器
-    physics_server: PhysicsServerManager,
+    /// 物理后端（Edit 模式本地，Play 模式远程）
+    physics_backend: PhysicsBackend,
     /// 物理碰撞体调试渲染器
     physics_debug: PhysicsDebugRenderer,
     /// tokio 异步 Runtime（驱动物理通信）
@@ -54,17 +64,25 @@ pub struct Editor {
     last_transform_entity: Option<String>,
     /// 上一条变换命令的 old 值（合并时保持不变）
     last_transform_old: Option<(Point3<f32>, Vector3<f32>, Vector3<f32>)>,
+    /// 等待中的远程物理步进结果（避免 block_on 阻塞 UI）
+    pending_physics:
+        Option<tokio::sync::oneshot::Receiver<Result<Vec<BodySnapshot>, String>>>,
 }
 
 impl Editor {
     /// 从项目路径打开编辑器。
     pub fn open(project_path: String) -> Self {
-        let state = EditorState::new(project_path);
+        let state = EditorState::new(project_path.clone());
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
             .build()
             .expect("Failed to create tokio runtime");
+
+        // 创建本地物理世界并加载场景碰撞体
+        let mut local_physics = LocalPhysics::new([0.0, -9.81, 0.0]);
+        let manifest_path = format!("{}/.scene.json", project_path);
+        local_physics.load_scene(&manifest_path);
 
         Self {
             state,
@@ -76,13 +94,14 @@ impl Editor {
             asset_browser: AssetBrowser::new(),
             gltf_import_dialog: GltfImportDialog::new(),
             asset_needs_scan: true,
-            physics_server: PhysicsServerManager::new(),
+            physics_backend: PhysicsBackend::Local(local_physics),
             physics_debug: PhysicsDebugRenderer::new(),
             rt,
             last_update: None,
             apply_queue: Rc::new(RefCell::new(Vec::new())),
             last_transform_entity: None,
             last_transform_old: None,
+            pending_physics: None,
         }
     }
 
@@ -96,15 +115,66 @@ impl Editor {
             .unwrap_or(0.016);
         self.last_update = Some(now);
 
-        // 物理步进（Play 模式下）
-        if self.state.mode.is_playing() && self.physics_server.is_connected() {
-            if let Some(client) = self.physics_server.client() {
-                let _ = self.rt.block_on(client.step(dt as f64));
-                // 如果 Physics Debug 开启，获取碰撞体快照
-                if self.physics_debug.enabled {
-                    if let Ok(bodies) = self.rt.block_on(client.get_bodies()) {
-                        self.physics_debug.update(bodies.clone());
-                        self.state.physics_debug_bodies = bodies;
+        // 物理步进
+        match &mut self.physics_backend {
+            PhysicsBackend::Local(local) => {
+                if self.state.mode.is_editing() {
+                    local.step(dt);
+                    if self.physics_debug.enabled {
+                        let bodies = local.get_body_snapshots();
+                        self.state.physics_debug_bodies = bodies.clone();
+                        self.physics_debug.update(bodies);
+                    }
+                }
+            }
+            PhysicsBackend::Remote(server) => {
+                if self.state.mode.is_playing() && server.is_connected() {
+                    // 先检查是否有 pending 结果完成
+                    if let Some(rx) = &mut self.pending_physics {
+                        match rx.try_recv() {
+                            Ok(result) => {
+                                self.pending_physics = None;
+                                match result {
+                                    Ok(bodies) => {
+                                        self.state.physics_debug_bodies = bodies.clone();
+                                        self.physics_debug.update(bodies);
+                                    }
+                                    Err(e) => eprintln!("[Editor] physics step error: {e}"),
+                                }
+                            }
+                            Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                                // spawned task panic 或提前 drop sender，重置以允许重试
+                                self.pending_physics = None;
+                                eprintln!(
+                                    "[Editor] physics task closed unexpectedly (may have panicked)"
+                                );
+                            }
+                            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {
+                                // 任务仍在执行，等待下一帧
+                            }
+                        }
+                    }
+
+                    // 没有 pending 请求则发起新异步请求（spawn 到 tokio，不阻塞 UI）
+                    if self.pending_physics.is_none() {
+                        if let Some(client) = server.client() {
+                            let debug_enabled = self.physics_debug.enabled;
+                            let (tx, rx) = tokio::sync::oneshot::channel();
+                            let dt_f64 = dt as f64;
+                            self.rt.spawn(async move {
+                                let result = async {
+                                    client.step(dt_f64).await?;
+                                    if debug_enabled {
+                                        client.get_bodies().await
+                                    } else {
+                                        Ok(Vec::new())
+                                    }
+                                }
+                                .await;
+                                let _ = tx.send(result);
+                            });
+                            self.pending_physics = Some(rx);
+                        }
                     }
                 }
             }
@@ -265,8 +335,8 @@ impl Editor {
 
                     ui.separator();
 
-                    // Physics Debug 开关（Play 模式下显示）
-                    if self.state.mode.is_playing() {
+                    // Physics Debug 开关
+                    {
                         let debug_label = if self.physics_debug.enabled {
                             "🔍 Debug ON"
                         } else {
@@ -529,11 +599,19 @@ impl Editor {
                 self.viewport.camera.distance = snapshot.camera_distance;
                 self.state.selected_entity = snapshot.selected_entity.take();
             }
-            // 停止物理服务器
-            if let Some(client) = self.physics_server.client() {
-                let _ = self.rt.block_on(client.reset());
+            // 停止远程物理服务器，切换到本地物理
+            if let PhysicsBackend::Remote(server) = &mut self.physics_backend {
+                if let Some(client) = server.client() {
+                    let _ = self.rt.block_on(client.reset());
+                }
+                server.stop();
             }
-            self.physics_server.stop();
+            self.physics_backend = PhysicsBackend::Local(LocalPhysics::new([0.0, -9.81, 0.0]));
+            // 重新加载场景碰撞体
+            if let PhysicsBackend::Local(local) = &mut self.physics_backend {
+                let manifest_path = format!("{}/.scene.json", self.state.project_path);
+                local.load_scene(&manifest_path);
+            }
             self.physics_debug.enabled = false;
             self.state.mode = EditorMode::Edit;
             self.state.panel_layer.set_edit_alpha();
@@ -546,20 +624,27 @@ impl Editor {
                 self.viewport.camera.distance,
             );
 
-            // 启动物理服务器
+            // 切换到远程物理服务器
             let python_path = "python3";
-            let server_script = "crates/editor/scripts/physics_editor_server.py";
-            if let Err(e) = self.physics_server.start(python_path, server_script, &self.rt) {
-                eprintln!("[Editor] Failed to start physics server: {e}");
-            } else if let Some(client) = self.physics_server.client() {
-                // 初始化物理世界
-                if let Err(e) = self.rt.block_on(client.init_physics([0.0, -9.81, 0.0])) {
-                    eprintln!("[Editor] Failed to init physics: {e}");
-                }
-                // 加载场景碰撞体
-                let manifest_path = format!("{}/.scene.json", self.state.project_path);
-                if let Err(e) = self.rt.block_on(client.load_scene(&manifest_path)) {
-                    eprintln!("[Editor] Failed to load scene physics: {e}");
+            // 编译时解析脚本路径，不依赖运行时工作目录
+            let server_script = concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/scripts/physics_editor_server.py"
+            );
+            self.physics_backend = PhysicsBackend::Remote(PhysicsServerManager::new());
+            if let PhysicsBackend::Remote(server) = &mut self.physics_backend {
+                if let Err(e) = server.start(python_path, server_script, &self.rt) {
+                    eprintln!("[Editor] Failed to start physics server: {e}");
+                } else if let Some(client) = server.client() {
+                    // 初始化物理世界
+                    if let Err(e) = self.rt.block_on(client.init_physics([0.0, -9.81, 0.0])) {
+                        eprintln!("[Editor] Failed to init physics: {e}");
+                    }
+                    // 加载场景碰撞体
+                    let manifest_path = format!("{}/.scene.json", self.state.project_path);
+                    if let Err(e) = self.rt.block_on(client.load_scene(&manifest_path)) {
+                        eprintln!("[Editor] Failed to load scene physics: {e}");
+                    }
                 }
             }
 

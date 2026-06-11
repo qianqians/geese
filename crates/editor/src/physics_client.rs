@@ -7,10 +7,6 @@
 //! ```text
 //! [4 字节 LE 长度] + [msgpack 编码的 body]
 //! ```
-//!
-//! 消息结构定义见：
-//!   `crates/proto/proto/editor_physics.thrift`       (请求)
-//!   `crates/proto/proto/editor_server_physics.thrift` (响应)
 
 use std::sync::Arc;
 
@@ -20,10 +16,10 @@ use tcp::tcp_connect::TcpConnect;
 use tokio::sync::Mutex;
 
 // ---------------------------------------------------------------------------
-// 基础数据类型（与 Thrift 对应）
+// 基础数据类型
 // ---------------------------------------------------------------------------
 
-/// 三维向量。（Thrift `struct vec3`）
+/// 三维向量。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Vec3 {
     pub x: f64,
@@ -37,7 +33,7 @@ impl Vec3 {
     }
 }
 
-/// 四元数。（Thrift `struct quat`）
+/// 四元数。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub struct Quat {
@@ -47,15 +43,16 @@ pub struct Quat {
     pub w: f64,
 }
 
-/// 碰撞体快照（调试渲染用）。（Thrift `struct body_snapshot`）
+/// 碰撞体快照（调试渲染用）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BodySnapshot {
     pub id: String,
     pub position: Vec3,
-    pub rotation: Vec3,
+    /// 四元数旋转（x, y, z, w）
+    pub rotation: Quat,
 }
 
-/// 射线检测命中结果。（Thrift `struct ray_hit`）
+/// 射线检测命中结果。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RayHit {
     pub body_id: String,
@@ -82,7 +79,7 @@ struct Request {
     argvs: Vec<serde_json::Value>,
 }
 
-// 响应结构体（Thrift *_rsp 对应）
+// 响应结构体
 
 #[derive(Debug, Deserialize)]
 struct InitPhysicsRsp {
@@ -150,13 +147,18 @@ impl PhysicsReaderCallback {
         }
     }
 
-    async fn wait(&self) -> Vec<u8> {
+    async fn wait(&self) -> Result<Vec<u8>, String> {
+        let start = tokio::time::Instant::now();
+        let timeout = tokio::time::Duration::from_secs(30);
         loop {
             {
                 let mut guard = self.rx.lock().await;
                 if let Some(data) = guard.take() {
-                    return data;
+                    return Ok(data);
                 }
+            }
+            if start.elapsed() > timeout {
+                return Err("timeout after 30s".to_string());
             }
             tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
         }
@@ -182,7 +184,7 @@ impl NetReaderCallback for PhysicsReaderCallback {
 pub struct PhysicsClient {
     writer: Mutex<Box<dyn NetWriter + Send>>,
     callback: Arc<Mutex<PhysicsReaderCallback>>,
-    _reader_join: tokio::task::JoinHandle<()>,
+    reader_join: tokio::task::JoinHandle<()>,
 }
 
 impl PhysicsClient {
@@ -203,7 +205,7 @@ impl PhysicsClient {
         Ok(Self {
             writer: Mutex::new(Box::new(writer)),
             callback: Arc::new(Mutex::new(callback)),
-            _reader_join: reader_join,
+            reader_join,
         })
     }
 
@@ -221,13 +223,13 @@ impl PhysicsClient {
             writer.send(&body).await;
         }
 
-        let resp = self.callback.lock().await.wait().await;
+        let resp = self.callback.lock().await.wait().await?;
         Ok(resp)
     }
 
     // ---- 便捷方法 ----
 
-    /// 初始化物理世界。（Thrift `init_physics_req → init_physics_rsp`）
+    /// 初始化物理世界。
     pub async fn init_physics(&self, gravity: [f32; 3]) -> Result<i64, String> {
         let argvs = vec![
             serde_json::json!(gravity[0]),
@@ -243,7 +245,7 @@ impl PhysicsClient {
         Ok(rsp.scene_id)
     }
 
-    /// 从 `.scene.json` 加载碰撞体。（Thrift `load_scene_req → load_scene_rsp`）
+    /// 从 `.scene.json` 加载碰撞体。
     pub async fn load_scene(&self, manifest_path: &str) -> Result<i64, String> {
         let argvs = vec![serde_json::json!(manifest_path)];
         let resp = self.call("load_scene", argvs).await?;
@@ -255,7 +257,7 @@ impl PhysicsClient {
         Ok(rsp.body_count)
     }
 
-    /// 步进物理模拟。（Thrift `step_physics_req → step_physics_rsp`）
+    /// 步进物理模拟。
     pub async fn step(&self, dt: f64) -> Result<(), String> {
         let argvs = vec![serde_json::json!(dt)];
         let resp = self.call("step_physics", argvs).await?;
@@ -267,7 +269,7 @@ impl PhysicsClient {
         Ok(())
     }
 
-    /// 获取所有碰撞体快照。（Thrift `get_bodies_req → get_bodies_rsp`）
+    /// 获取所有碰撞体快照。
     pub async fn get_bodies(&self) -> Result<Vec<BodySnapshot>, String> {
         let resp = self.call("get_bodies", vec![]).await?;
         let rsp: GetBodiesRsp =
@@ -278,7 +280,7 @@ impl PhysicsClient {
         Ok(rsp.bodies)
     }
 
-    /// 获取碰撞事件。（Thrift `get_contacts_req → get_contacts_rsp`）
+    /// 获取碰撞事件。
     pub async fn get_contacts(&self) -> Result<Vec<ContactInfo>, String> {
         let resp = self.call("get_contacts", vec![]).await?;
         let rsp: ContactsRsp =
@@ -289,7 +291,7 @@ impl PhysicsClient {
         Ok(rsp.contacts)
     }
 
-    /// 射线检测。（Thrift `cast_ray_req → cast_ray_rsp`）
+    /// 射线检测。
     pub async fn cast_ray(
         &self,
         origin: (f64, f64, f64),
@@ -314,7 +316,7 @@ impl PhysicsClient {
         Ok(rsp.hit)
     }
 
-    /// 重置物理世界。（Thrift `reset_physics_req → reset_physics_rsp`）
+    /// 重置物理世界。
     pub async fn reset(&self) -> Result<(), String> {
         let resp = self.call("reset_physics", vec![]).await?;
         let rsp: ResetPhysicsRsp =
@@ -323,5 +325,11 @@ impl PhysicsClient {
             return Err(rsp.error);
         }
         Ok(())
+    }
+}
+
+impl Drop for PhysicsClient {
+    fn drop(&mut self) {
+        self.reader_join.abort();
     }
 }
