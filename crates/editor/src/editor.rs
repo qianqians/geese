@@ -12,7 +12,7 @@ use crate::inspector::InspectorPanel;
 use crate::local_physics::LocalPhysics;
 use crate::panel_layer::PanelLayer;
 use crate::panels::{EditorLayout, EditorPanel, EditorState};
-use crate::physics_client::BodySnapshot;
+use physics_client::BodySnapshot;
 use crate::physics_debug::PhysicsDebugRenderer;
 use crate::physics_server::PhysicsServerManager;
 use crate::play_mode::PlayMode;

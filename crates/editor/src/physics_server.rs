@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use crate::physics_client::PhysicsClient;
+use physics_client::PhysicsClient;
 
 // ---------------------------------------------------------------------------
 // PhysicsServerManager

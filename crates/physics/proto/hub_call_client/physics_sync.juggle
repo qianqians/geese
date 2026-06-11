@@ -1,0 +1,6 @@
+import physics_common
+
+mutil_service physics_sync {
+    sync_bodies ntf(body_snapshot[] bodies);
+    sync_contacts ntf(contact_info[] contacts);
+}

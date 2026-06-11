@@ -8,7 +8,7 @@
 
 use crate::editor_mode::EditorMode;
 use crate::panel_layer::{PanelLayer, PanelLayerManager};
-use crate::physics_client::BodySnapshot;
+use physics_client::BodySnapshot;
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------

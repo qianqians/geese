@@ -3,7 +3,7 @@
 //! [`LocalPhysics`] 直接嵌入 [`PhysicsWorld`]，在 Edit 模式下零网络、
 //! 零子进程、零序列化地步进物理模拟。供 PhysicsDebug 渲染碰撞体线框。
 
-use crate::physics_client::BodySnapshot;
+use physics_client::BodySnapshot;
 use physics::{PhysicsWorld, SceneId};
 use std::path::Path;
 
@@ -163,12 +163,12 @@ impl LocalPhysics {
                     let (idx, _gen) = handle.raw().into_raw_parts();
                     snapshots.push(BodySnapshot {
                         id: format!("local_{}", idx),
-                        position: crate::physics_client::Vec3 {
+                        position: physics_client::Vec3 {
                             x: iso.translation.x as f64,
                             y: iso.translation.y as f64,
                             z: iso.translation.z as f64,
                         },
-                        rotation: crate::physics_client::Quat {
+                        rotation: physics_client::Quat {
                             x: iso.rotation.x as f64,
                             y: iso.rotation.y as f64,
                             z: iso.rotation.z as f64,
