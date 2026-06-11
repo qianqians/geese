@@ -32,6 +32,8 @@ class PhysicsSyncManager:
         self._last_transform: dict[str, tuple[Vec3, Quat]] = {}
         # 碰撞事件回调（每个事件 body1_id/body2_id 都调用）
         self._collision_handlers: dict[str, Callable] = {}
+        # collider_handle (u64) → entity_id，用于碰撞事件分发
+        self._collider_to_entity: dict[int, str] = {}
 
     # ---- component 注册 ----
 
@@ -45,12 +47,20 @@ class PhysicsSyncManager:
             )
         except Exception:
             self._last_transform[entity_id] = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0))
+        # 注册 collider handle → entity_id 映射
+        collider_handle = getattr(component, 'collider_handle', None)
+        if collider_handle is not None:
+            self._collider_to_entity[collider_handle] = entity_id
 
     def detach(self, entity_id: str) -> None:
         """移除 entity 的物理同步。"""
         self._components.pop(entity_id, None)
         self._last_transform.pop(entity_id, None)
         self._collision_handlers.pop(entity_id, None)
+        # 清理 collider → entity 映射
+        to_remove = [k for k, v in self._collider_to_entity.items() if v == entity_id]
+        for k in to_remove:
+            self._collider_to_entity.pop(k, None)
 
     # ---- 碰撞回调 ----
 
@@ -120,11 +130,13 @@ class PhysicsSyncManager:
             return
 
         for ev in events:
-            # 分发到注册了回调的 body
-            for body_id_key in (getattr(ev, 'body1_id', None), getattr(ev, 'body2_id', None)):
-                if body_id_key and body_id_key in self._collision_handlers:
+            # PyCollisionEvent 字段: a(u64), b(u64), started(bool), sensor(bool)
+            # 通过 collider handle 反查 entity_id
+            for collider_handle in (ev.a, ev.b):
+                entity_id = self._collider_to_entity.get(collider_handle)
+                if entity_id and entity_id in self._collision_handlers:
                     try:
-                        self._collision_handlers[body_id_key](ev)
+                        self._collision_handlers[entity_id](ev)
                     except Exception:
                         pass
 

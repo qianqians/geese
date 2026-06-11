@@ -52,6 +52,11 @@ class PhysicsComponent:
         return self._body
 
     @property
+    def collider_handle(self) -> int:
+        """不透明 u64 collider 句柄，供 physics_sync 碰撞事件分发使用。"""
+        return self._body.collider_handle
+
+    @property
     def position(self) -> Vec3:
         return self._body.position()
 

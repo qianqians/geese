@@ -1,0 +1,31 @@
+struct vec3 {
+    float x;
+    float y;
+    float z;
+}
+
+struct quat {
+    float x;
+    float y;
+    float z;
+    float w;
+}
+
+struct body_snapshot {
+    string id;
+    vec3 position;
+    quat rotation;
+}
+
+struct ray_hit {
+    string body_id;
+    vec3 point;
+    vec3 normal;
+}
+
+struct contact_info {
+    string body1_id;
+    string body2_id;
+    vec3 point;
+    vec3 normal;
+}

@@ -6,7 +6,7 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use crate::handles::BodyHandle;
+use crate::handles::{BodyHandle, ColliderHandle};
 use crate::math::{Iso3, Vec3, iso_from_parts, quat_to_tuple, vec3_from_tuple, vec3_to_tuple};
 use crate::py::shape::PyShape;
 use crate::py::world::{PyPhysicsWorld, SharedWorld, lock_world, pack_handle, scene_id_from_u64};
@@ -16,11 +16,12 @@ use crate::world::{BodyDesc, BodyKind};
 pub struct PyBody {
     world: SharedWorld,
     handle: BodyHandle,
+    collider: ColliderHandle,
 }
 
 impl PyBody {
-    fn new(world: SharedWorld, handle: BodyHandle) -> Self {
-        Self { world, handle }
+    fn new(world: SharedWorld, handle: BodyHandle, collider: ColliderHandle) -> Self {
+        Self { world, handle, collider }
     }
 }
 
@@ -60,7 +61,7 @@ fn add_body_internal(
     shape: &PyShape,
 ) -> PyResult<PyBody> {
     let shared = world_py.share();
-    let (handle, _collider) = {
+    let (handle, collider) = {
         let mut guard = lock_world(&shared)?;
         let scene = guard
             .scene_mut(scene_id_from_u64(scene_id))
@@ -69,7 +70,7 @@ fn add_body_internal(
             .add_body(desc, shape.desc())
             .map_err(PyValueError::new_err)?
     };
-    Ok(PyBody::new(shared, handle))
+    Ok(PyBody::new(shared, handle, collider))
 }
 
 #[pymethods]
@@ -211,6 +212,13 @@ impl PyBody {
     #[getter]
     fn id(&self) -> u64 {
         let (idx, generation) = self.handle.raw().into_raw_parts();
+        pack_handle(idx, generation)
+    }
+
+    /// 不透明 u64 collider 句柄，用于碰撞事件分发。
+    #[getter]
+    fn collider_handle(&self) -> u64 {
+        let (idx, generation) = self.collider.raw().into_raw_parts();
         pack_handle(idx, generation)
     }
 

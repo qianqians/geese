@@ -186,6 +186,10 @@ class Body:
         return self._inner.id
 
     @property
+    def collider_handle(self) -> int:
+        return self._inner.collider_handle
+
+    @property
     def scene_id(self) -> int:
         return self._inner.scene_id
 

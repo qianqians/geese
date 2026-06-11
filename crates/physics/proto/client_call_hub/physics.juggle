@@ -1,0 +1,5 @@
+import physics_common
+
+entity_service physics {
+    cast_ray req(float ox, float oy, float oz, float dx, float dy, float dz, float max_toi) rsp(ray_hit hit, bool has_hit) err(string err);
+}
