@@ -53,20 +53,19 @@ impl NetPack {
         let new_pack_len: usize = len0 | len1 << 8 | len2 << 16 | len3 << 24;
         let packet_end = new_pack_len + 4;
         if new_pack_len <= 0 || packet_end > total {
-            None
+            return None
+        }
+        
+        let mut buf = vec![0u8; new_pack_len];
+        buf.copy_from_slice(&self.buf[4..packet_end]);
+
+        if total > packet_end {
+            self.buf.drain(0..packet_end);
         }
         else {
-            let mut buf = vec![0u8; new_pack_len];
-            buf.copy_from_slice(&self.buf[4..packet_end]);
-
-            if total > packet_end {
-                self.buf.drain(0..packet_end);
-            }
-            else {
-                self.buf.clear();
-            }
-
-            Some(buf)
+            self.buf.clear();
         }
+
+        Some(buf)
     }
 }
