@@ -63,12 +63,9 @@ impl NetReader for WSSReader {
                         },
                         Message::Binary(buf) => {
                             net_pack.input(&buf[..]);
-                            match net_pack.try_get_pack() {
-                                None => continue,
-                                Some(data) => {
-                                    let mut f_handle = f_clone.as_ref().lock().await;
-                                    f_handle.cb(data).await;
-                                }
+                            while let Some(data) = net_pack.try_get_pack() {
+                                let mut f_handle = f_clone.as_ref().lock().await;
+                                f_handle.cb(data).await;
                             }
                         },
                         _ => {}

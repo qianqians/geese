@@ -3,7 +3,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use async_trait::async_trait;
-use tracing::trace;
 
 #[async_trait]
 pub trait NetWriter {
@@ -42,28 +41,26 @@ impl NetPack {
             return None
         }
 
+        let total = self.buf.len();
+        if total < 4 {
+            return None
+        }
+
         let len0 = self.buf[0] as usize;
         let len1 = self.buf[1] as usize;
         let len2 = self.buf[2] as usize;
         let len3 = self.buf[3] as usize;
         let new_pack_len: usize = len0 | len1 << 8 | len2 << 16 | len3 << 24;
-        trace!("try_get_pack new_pack_len:{} self.buf.len:{}!", new_pack_len, self.buf.len());
-        if new_pack_len > self.buf.len() || self.buf.is_empty() || new_pack_len <= 0 {
+        let packet_end = new_pack_len + 4;
+        if new_pack_len <= 0 || packet_end > total {
             None
         }
         else {
-            let len = new_pack_len as usize;
-            let idx = self.buf.len();
-            let mut buf = vec![0u8; len];
-            let idx_len = len + 4;
-            buf.copy_from_slice(&self.buf[4..idx_len]);
+            let mut buf = vec![0u8; new_pack_len];
+            buf.copy_from_slice(&self.buf[4..packet_end]);
 
-            let remain = idx - len - 4;
-            if remain > 0 {
-                let mut tmp = vec![0u8; remain];
-                tmp.copy_from_slice(&self.buf[idx_len..idx]);
-                self.buf.clear();
-                self.buf.extend_from_slice(&tmp[..]);
+            if total > packet_end {
+                self.buf.drain(0..packet_end);
             }
             else {
                 self.buf.clear();
