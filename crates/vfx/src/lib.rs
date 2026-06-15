@@ -22,6 +22,8 @@ pub struct Particle {
     pub lifetime: f32,
     pub color: [f32; 4],
     pub size: f32,
+    /// 所属 emitter 在 ParticleSystem.emitters 中的索引。
+    pub emitter_index: usize,
 }
 
 impl Particle {
@@ -165,20 +167,25 @@ impl ParticleSystem {
                 n.min(budget)
             };
             for _ in 0..to_emit {
-                let p = Self::spawn_one(&self.emitters[i], &mut self.rng);
+                let p = Self::spawn_one(&self.emitters[i], i, &mut self.rng);
                 self.particles.push(p);
             }
         }
         // 4. 位置积分（用更新后的 dt）
         for p in &mut self.particles {
+            // 每个粒子使用所属 emitter 的重力；若 emitter 已被移除则无额外重力
+            let gravity = self.emitters
+                .get(p.emitter_index)
+                .map(|e| e.gravity)
+                .unwrap_or([0.0; 3]);
             for k in 0..3 {
-                p.velocity[k] += self.emitters.first().map(|e| e.gravity[k]).unwrap_or(0.0) * dt;
+                p.velocity[k] += gravity[k] * dt;
                 p.position[k] += p.velocity[k] * dt;
             }
         }
     }
 
-    fn spawn_one(e: &Emitter, rng: &mut Rng) -> Particle {
+    fn spawn_one(e: &Emitter, emitter_index: usize, rng: &mut Rng) -> Particle {
         let mut pos = e.origin;
         let dir = match e.shape {
             EmitterShape::Point => rng.unit_vec3(),
@@ -211,6 +218,7 @@ impl ParticleSystem {
             lifetime,
             color: e.start_color,
             size: e.start_size,
+            emitter_index,
         }
     }
 }
@@ -257,6 +265,7 @@ mod tests {
         let mut p = Particle {
             position: [0.0; 3], velocity: [0.0; 3], age: 0.0, lifetime: 1.0,
             color: [1.0; 4], size: 1.0,
+            emitter_index: 0,
         };
         assert!(p.is_alive());
         p.age = 1.1;
