@@ -197,16 +197,20 @@ class app(object):
             value_lock = self.redis_proxy.get(key)
             if value_lock == value:
                 self.redis_proxy.delete(key)
-        except:
+        except Exception:
             self.ctx.log("error", "unlock distributed lock faild key:{} value:{}".format(key, value))
 
     async def distributed_lock(self, key:str, timeout:int) -> Callable[[], None] | None:
         try:
             value = str(uuid.uuid4())
+            deadline = time.monotonic() + max(timeout * 3, 5)
             while not self.redis_proxy.set(key, value, ex=timeout, nx=True):
-                asyncio.sleep(0.08)
+                if time.monotonic() > deadline:
+                    self.ctx.log("error", "distributed lock timeout key:{} timeout:{}".format(key, timeout))
+                    return None
+                await asyncio.sleep(0.08)
             return lambda : self.__unlock_distributed_lock__(key, value)
-        except:
+        except Exception:
             self.ctx.log("error", "distributed lock faild key:{}".format(key))
         return None
     
@@ -242,6 +246,7 @@ class app(object):
                 break
     
     def poll_db_msg_thread(self):
+        physics_last_time = time.monotonic()
         while self.__is_run__:
             start = time.time()
             try:
@@ -269,7 +274,10 @@ class app(object):
                 self.error("poll Exception:{0}", ex)
             if self.__physics_tick__ is not None:
                 try:
-                    self.__physics_tick__(0.033)
+                    now = time.monotonic()
+                    dt = now - physics_last_time
+                    physics_last_time = now
+                    self.__physics_tick__(min(dt, 0.05))
                     if self.physics_sync is not None:
                         self.physics_sync.flush_after_step(self.physics_world, self.scene_id)
                 except Exception as ex:
