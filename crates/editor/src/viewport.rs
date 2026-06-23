@@ -59,7 +59,7 @@ impl Default for OrbitCamera {
         Self {
             focal_point: Point3::new(0.0, 1.5, 0.0),
             yaw: std::f32::consts::FRAC_PI_4,
-            pitch: std::f32::consts::FRAC_PI_4 * 0.5,
+            pitch: -std::f32::consts::FRAC_PI_4 * 0.8,
             distance: 10.0,
             min_distance: 0.5,
             max_distance: 100.0,
@@ -159,7 +159,7 @@ impl OrbitCamera {
     pub fn reset(&mut self) {
         self.focal_point = Point3::new(0.0, 1.5, 0.0);
         self.yaw = std::f32::consts::FRAC_PI_4;
-        self.pitch = std::f32::consts::FRAC_PI_4 * 0.5;
+        self.pitch = -std::f32::consts::FRAC_PI_4 * 0.8;
         self.distance = 10.0;
     }
 
@@ -270,6 +270,10 @@ pub struct ViewportPanel {
     grid_subdivisions: usize,
     /// Gizmo 交互状态
     gizmo_interaction: GizmoInteraction,
+    /// Pickable scene objects for ray-casting selection
+    pub pickable_objects: Vec<(String, Point3<f32>, AABB)>,
+    /// AABB of the selected object (for highlight rendering)
+    selection_aabb: Option<AABB>,
 }
 
 impl ViewportPanel {
@@ -285,6 +289,8 @@ impl ViewportPanel {
             grid_size: 10.0,
             grid_subdivisions: 10,
             gizmo_interaction: GizmoInteraction::new(),
+            pickable_objects: Vec::new(),
+            selection_aabb: None,
         }
     }
 
@@ -459,49 +465,7 @@ impl ViewportPanel {
 
     /// 绘制编辑器网格。
     fn draw_grid(&self, ui: &mut egui::Ui, rect: egui::Rect) {
-        let painter = ui.painter();
-        let grid_color = egui::Color32::from_gray(60);
-        let axis_color_x = egui::Color32::from_rgb(200, 50, 50);
-        let axis_color_z = egui::Color32::from_rgb(50, 50, 200);
-
-        let half = self.grid_size * self.grid_subdivisions as f32 / 2.0;
-        let step = self.grid_size;
-
-        for i in 0..=self.grid_subdivisions {
-            let offset = -half + i as f32 * step;
-
-            // X 方向线（沿 Z 轴分布）
-            {
-                let p1 = self.world_to_screen(Point3::new(-half, 0.0, offset), rect);
-                let p2 = self.world_to_screen(Point3::new(half, 0.0, offset), rect);
-                if let (Some(p1), Some(p2)) = (p1, p2) {
-                    if rect.contains(p1) || rect.contains(p2) {
-                        let color = if (offset - 0.0).abs() < f32::EPSILON {
-                            axis_color_x
-                        } else {
-                            grid_color
-                        };
-                        painter.line_segment([p1, p2], (1.0, color));
-                    }
-                }
-            }
-
-            // Z 方向线（沿 X 轴分布）
-            {
-                let p1 = self.world_to_screen(Point3::new(offset, 0.0, -half), rect);
-                let p2 = self.world_to_screen(Point3::new(offset, 0.0, half), rect);
-                if let (Some(p1), Some(p2)) = (p1, p2) {
-                    if rect.contains(p1) || rect.contains(p2) {
-                        let color = if (offset - 0.0).abs() < f32::EPSILON {
-                            axis_color_z
-                        } else {
-                            grid_color
-                        };
-                        painter.line_segment([p1, p2], (1.0, color));
-                    }
-                }
-            }
-        }
+        draw_grid_impl(ui, rect, &self.camera, self.grid_size, self.grid_subdivisions);
     }
 
     /// 绘制物理碰撞体调试线框。
@@ -795,6 +759,174 @@ impl ViewportPanel {
 // ---------------------------------------------------------------------------
 // 测试
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Unity 风格网格渲染（自适应 LOD + 距离衰减 + 边缘淡出）
+// ---------------------------------------------------------------------------
+
+/// Unity 风格无限网格：自适应 LOD、距离衰减、边缘淡出、轴高亮。
+///
+/// 核心改进：
+/// - **自适应 LOD**：相机距离越近网格越精细（0.5→1→5→10→50 单元），
+///   距离越远越粗糙，极限下维持性能
+/// - **距离衰减**：线条中点离相机越远越透明，呈大气透视效果
+/// - **边缘淡出**：网格边界（后半段）平滑淡出，呈现无限网格观感
+/// - **轴高亮**：`X` 轴红色、`Z` 轴蓝色、每 5 格为粗线（`major_step = 5`）
+fn draw_grid_impl(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    camera: &OrbitCamera,
+    _grid_size: f32,
+    _grid_subdivisions: usize,
+) {
+    let painter = ui.painter();
+    let eye = camera.eye_position();
+    let dist = camera.distance;
+
+    // --- 自适应网格 LOD ---
+    // 相机越近网格越精细
+    let cell_size = if dist < 5.0 { 0.5 }
+        else if dist < 15.0 { 1.0 }
+        else if dist < 50.0 { 5.0 }
+        else if dist < 150.0 { 10.0 }
+        else { 50.0 };
+
+    // 网格范围覆盖更远
+    let half_extent = (dist * 4.0).max(20.0).min(5000.0);
+    let half_cells = (half_extent / cell_size).ceil() as i32;
+    let extent = half_cells as f32 * cell_size;
+    let major_step = 5;
+    let camera_fade_dist = dist * 6.0;
+
+    // 颜色基值（非预乘，alpha 单独预乘）
+    let minor_base = (80, 80, 80);
+    let major_base = (160, 160, 160);
+    let axis_x_base = (240, 70, 70);
+    let axis_z_base = (60, 90, 240);
+
+    // 辅助函数：正确预乘 alpha
+    let premul = |r: u32, g: u32, b: u32, a: u8| -> egui::Color32 {
+        let a32 = a as u32;
+        egui::Color32::from_rgba_premultiplied(
+            (r * a32 / 255) as u8,
+            (g * a32 / 255) as u8,
+            (b * a32 / 255) as u8,
+            a,
+        )
+    };
+
+    // --- 绘制 X 方向线（沿 X 轴，Z 变化）---
+    for i in -half_cells..=half_cells {
+        let z = i as f32 * cell_size;
+        let p1 = Point3::new(-extent, 0.0, z);
+        let p2 = Point3::new(extent, 0.0, z);
+
+        let sp1 = camera_grid_project(camera, p1, rect);
+        let sp2 = camera_grid_project(camera, p2, rect);
+        let (sp1, sp2) = match (sp1, sp2) {
+            (Some(a), Some(b)) => (a, b),
+            _ => continue,
+        };
+
+        // 线条中点 → 相机眼（XZ 平面距离）
+        let dz = z - eye.z;
+        let dx = 0.0 - eye.x;
+        let cam_dist = (dx * dx + dz * dz).sqrt();
+        let cam_alpha = 1.0 - (cam_dist / camera_fade_dist).clamp(0.0, 1.0);
+
+        // 边缘淡出：t ∈ [0, 0.75) → 1.0, [0.75, 1.0] → 渐变到 0
+        let edge_t = z.abs() / extent;
+        let edge_alpha = if edge_t < 0.75 { 1.0 }
+            else { 1.0 - ((edge_t - 0.75) / 0.25).clamp(0.0, 1.0) };
+
+        let alpha_f = cam_alpha * edge_alpha;
+        let alpha = (alpha_f * 255.0) as u8;
+        if alpha < 4 { continue; }
+
+        let is_center = i == 0;
+        let is_major = is_center || i % major_step == 0;
+
+        if is_center {
+            let (br, bg, bb) = axis_x_base;
+            let color = premul(br, bg, bb, alpha);
+            painter.line_segment([sp1, sp2], (2.5, color));
+        } else if is_major {
+            let (br, bg, bb) = major_base;
+            let color = premul(br, bg, bb, alpha);
+            painter.line_segment([sp1, sp2], (1.5, color));
+        } else {
+            let (br, bg, bb) = minor_base;
+            let color = premul(br, bg, bb, alpha);
+            painter.line_segment([sp1, sp2], (1.0, color));
+        }
+    }
+
+    // --- 绘制 Z 方向线（沿 Z 轴，X 变化）---
+    for i in -half_cells..=half_cells {
+        let x = i as f32 * cell_size;
+        let p1 = Point3::new(x, 0.0, -extent);
+        let p2 = Point3::new(x, 0.0, extent);
+
+        let sp1 = camera_grid_project(camera, p1, rect);
+        let sp2 = camera_grid_project(camera, p2, rect);
+        let (sp1, sp2) = match (sp1, sp2) {
+            (Some(a), Some(b)) => (a, b),
+            _ => continue,
+        };
+
+        let dx = x - eye.x;
+        let dz = 0.0 - eye.z;
+        let cam_dist = (dx * dx + dz * dz).sqrt();
+        let cam_alpha = 1.0 - (cam_dist / camera_fade_dist).clamp(0.0, 1.0);
+
+        let edge_t = x.abs() / extent;
+        let edge_alpha = if edge_t < 0.75 { 1.0 }
+            else { 1.0 - ((edge_t - 0.75) / 0.25).clamp(0.0, 1.0) };
+
+        let alpha_f = cam_alpha * edge_alpha;
+        let alpha = (alpha_f * 255.0) as u8;
+        if alpha < 4 { continue; }
+
+        let is_center = i == 0;
+        let is_major = is_center || i % major_step == 0;
+
+        if is_center {
+            let (br, bg, bb) = axis_z_base;
+            let color = premul(br, bg, bb, alpha);
+            painter.line_segment([sp1, sp2], (2.5, color));
+        } else if is_major {
+            let (br, bg, bb) = major_base;
+            let color = premul(br, bg, bb, alpha);
+            painter.line_segment([sp1, sp2], (1.5, color));
+        } else {
+            let (br, bg, bb) = minor_base;
+            let color = premul(br, bg, bb, alpha);
+            painter.line_segment([sp1, sp2], (1.0, color));
+        }
+    }
+}
+/// 网格专用世界→屏幕投影，允许点超出视口范围。
+/// 与 `world_to_screen` 的区别：不裁剪 NDC `w < 0` 以外的范围。
+fn camera_grid_project(
+    camera: &OrbitCamera,
+    world_pos: Point3<f32>,
+    rect: egui::Rect,
+) -> Option<egui::Pos2> {
+    let vp = camera.view_projection_matrix();
+    let clip = vp * Vector4::new(world_pos.x, world_pos.y, world_pos.z, 1.0);
+
+    if clip.w.abs() < f32::EPSILON || clip.w < 0.0 {
+        return None;
+    }
+
+    let ndc_x = clip.x / clip.w;
+    let ndc_y = clip.y / clip.w;
+
+    let screen_x = rect.left() + (ndc_x * 0.5 + 0.5) * rect.width();
+    let screen_y = rect.top() + (0.5 - ndc_y * 0.5) * rect.height();
+
+    Some(egui::Pos2::new(screen_x, screen_y))
+}
 
 #[cfg(test)]
 mod tests {

@@ -30,6 +30,8 @@ pub struct GltfImportDialog {
     status_message: Option<String>,
     /// 是否成功
     pub import_success: bool,
+    /// Imported resource name (set after successful import)
+    pub imported_name: Option<String>,
     /// 是否启用碰撞体（仅 Scene 类型时有效）
     pub collision_enabled: bool,
 }
@@ -43,6 +45,7 @@ impl Default for GltfImportDialog {
             resource_name: String::new(),
             status_message: None,
             import_success: false,
+            imported_name: None,
             collision_enabled: false,
         }
     }
@@ -60,6 +63,7 @@ impl GltfImportDialog {
         self.resource_name.clear();
         self.status_message = None;
         self.import_success = false;
+        self.imported_name = None;
     }
 
     /// 弹出原生文件选择对话框，选取 GLTF/GLB 文件。
@@ -135,6 +139,7 @@ impl GltfImportDialog {
                 self.status_message =
                     Some(format!("Imported successfully: {}", manifest_path));
                 self.import_success = true;
+                self.imported_name = Some(self.resource_name.clone());
             }
             Err(e) => {
                 self.status_message = Some(format!("Import failed: {}", e));
