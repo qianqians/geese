@@ -7,13 +7,13 @@ use crate::commands::CommandHistory;
 use crate::commands::TransformCommand;
 use crate::editor_mode::EditorMode;
 use crate::gltf_import_dialog::GltfImportDialog;
-use crate::hierarchy::HierarchyPanel;
+use crate::hierarchy::{HierarchyPanel, SceneNodeData, NodeType};
 use crate::inspector::InspectorPanel;
 use crate::panel_layer::PanelLayer;
-use crate::panels::{EditorLayout, EditorPanel, EditorState};
+use crate::panels::{EditorLayout, EditorState};
 use crate::physics_debug::PhysicsDebugRenderer;
 use crate::play_mode::PlayMode;
-use crate::viewport::{GizmoMode, ViewportPanel};
+use crate::viewport::ViewportPanel;
 use physics_client::BodySnapshot;
 use physics_manager::{PhysicsManager, PhysicsSource};
 
@@ -165,14 +165,23 @@ impl Editor {
         // 1. 快捷键始终生效
         self.handle_shortcuts(ctx);
 
-        // 2. 全屏视口（场景渲染纹理填充整个窗口）
-        self.show_fullscreen_viewport(ctx);
-
-        // 3. 浮动面板（在全屏视口之上，egui::Window 渲染）
-        if self.state.ui_visible || !self.state.mode.is_playing() {
-            self.show_floating_panels(ctx);
-            self.show_toolbar(ctx);
+        // 2. 同步可拾取对象列表到视口
+        self.viewport.pickable_objects.clear();
+        for (entity_id, &(pos, _, scl)) in &self.state.transform_cache {
+            let center = cgmath::Point3::new(pos[0], pos[1], pos[2]);
+            let half = cgmath::Vector3::new(
+                (scl[0] * 0.5).max(0.5),
+                (scl[1] * 0.5).max(0.5),
+                (scl[2] * 0.5).max(0.5),
+            );
+            let aabb = math::AABB::new(center - half, center + half);
+            self.viewport.pickable_objects.push((entity_id.clone(), center, aabb));
         }
+
+        // 3. 编辑器主布局（菜单栏 + 侧栏 + 视口 + 底部栏）
+        self.show_editor_layout(ctx);
+
+
 
         // 4. GLTF 导入对话框（模态，始终检测）
         let was_visible = self.gltf_import_dialog.visible;
@@ -180,6 +189,10 @@ impl Editor {
         // 对话框关闭时刷新资源浏览器
         if was_visible && !self.gltf_import_dialog.visible && self.gltf_import_dialog.import_success {
             self.asset_needs_scan = true;
+            if let Some(import_name) = self.gltf_import_dialog.imported_name.clone() {
+                let project_path = self.state.project_path.clone();
+                self.load_imported_scene(&project_path, &import_name);
+            }
         }
 
         // 5. 处理 Inspector 写回的变换变更 -> 推入 CommandHistory
@@ -189,86 +202,158 @@ impl Editor {
     }
 
     // -------------------------------------------------------------------
+    // 场景导入
+    // -------------------------------------------------------------------
+
+    /// After GLTF import: parse manifest, walk GLTF node tree, populate hierarchy + transform cache.
+    fn load_imported_scene(&mut self, project_path: &str, name: &str) {
+        let mpath = format!("{}/assets/{}.scene.json", project_path, name);
+        let content = match std::fs::read_to_string(&mpath) {
+            Ok(c) => c,
+            Err(e) => { eprintln!("[Editor] Cannot read manifest: {e}"); return; }
+        };
+        let manifest: scene::manifest::SceneManifest = match serde_json::from_str(&content) {
+            Ok(m) => m,
+            Err(e) => { eprintln!("[Editor] Cannot parse manifest: {e}"); return; }
+        };
+
+        for model in &manifest.models {
+            let gltf_abs = format!("{}/{}", project_path, model.path);
+            let f = match std::fs::File::open(&gltf_abs) {
+                Ok(f) => f,
+                Err(e) => { eprintln!("[Editor] Cannot open GLTF {gltf_abs}: {e}"); continue; }
+            };
+            let reader = std::io::BufReader::new(f);
+            let document: gltf::Gltf = match gltf::Gltf::from_reader(reader) {
+                Ok(d) => d,
+                Err(e) => { eprintln!("[Editor] Cannot parse GLTF: {e}"); continue; }
+            };
+
+            fn walk_gltf_node(
+                node: &gltf::Node,
+                parent_id: Option<String>,
+                hierarchy: &mut HierarchyPanel,
+                tx_cache: &mut std::collections::HashMap<String, ([f32;3],[f32;3],[f32;3])>,
+            ) {
+                let eid = format!("node_{}", node.index());
+                let nname = node.name().unwrap_or("Node").to_string();
+                let ntype = if node.mesh().is_some() { NodeType::Mesh } else { NodeType::Empty };
+
+                let cids: Vec<String> = node.children().map(|c| {
+                    let cid = format!("node_{}", c.index());
+                    walk_gltf_node(&c, Some(eid.clone()), hierarchy, tx_cache);
+                    cid
+                }).collect();
+
+                hierarchy.add_scene_node(SceneNodeData {
+                    id: eid.clone(),
+                    name: nname,
+                    children: cids,
+                    parent: parent_id,
+                    visible: true,
+                    locked: false,
+                    node_type: ntype,
+                });
+
+                tx_cache.entry(eid).or_insert((
+                    [0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0],
+                    [1.0, 1.0, 1.0],
+                ));
+            }
+
+            for gltf_scene in document.scenes() {
+                for node in gltf_scene.nodes() {
+                    walk_gltf_node(&node, None, &mut self.hierarchy, &mut self.state.transform_cache);
+                }
+            }
+            eprintln!("[Editor] Loaded '{}' into hierarchy", model.id);
+        }
+
+        self.state.selected_entity = None;
+    }
+
+        // -------------------------------------------------------------------
     // 菜单栏
     // -------------------------------------------------------------------
 
-    #[allow(dead_code)]
     fn show_menu_bar(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::top("editor_menu_bar").show(ctx, |ui| {
+        egui::TopBottomPanel::top("editor_top_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
-                // File 菜单
+                // --- Left: Menu buttons ---
                 ui.menu_button("File", |ui| {
                     if ui.button("Import GLTF...").clicked() {
                         self.gltf_import_dialog.open();
                         ui.close_menu();
                     }
                     ui.separator();
-                    if ui.button("New Scene").clicked() {
-                        ui.close_menu();
-                    }
-                    if ui.button("Open Scene...").clicked() {
-                        ui.close_menu();
-                    }
-                    if ui.button("Save Scene").clicked() {
-                        ui.close_menu();
-                    }
+                    if ui.button("New Scene").clicked() { ui.close_menu(); }
+                    if ui.button("Open Scene...").clicked() { ui.close_menu(); }
+                    if ui.button("Save Scene").clicked() { ui.close_menu(); }
                     ui.separator();
-                    if ui.button("Exit").clicked() {
-                        ui.close_menu();
-                    }
+                    if ui.button("Exit").clicked() { ui.close_menu(); }
                 });
-
-                // Edit 菜单
                 ui.menu_button("Edit", |ui| {
                     let can_undo = self.command_history.can_undo();
                     let undo_label = self.command_history
                         .last_undo_description()
                         .map(|d| format!("Undo {}", d))
                         .unwrap_or_else(|| "Undo".to_string());
-                    if ui
-                        .add_enabled(can_undo, egui::Button::new(undo_label))
-                        .clicked()
-                    {
-                        self.command_history.undo();
-                        ui.close_menu();
+                    if ui.add_enabled(can_undo, egui::Button::new(undo_label)).clicked() {
+                        self.command_history.undo(); ui.close_menu();
                     }
-                    if ui
-                        .add_enabled(
-                            self.command_history.can_redo(),
-                            egui::Button::new("Redo"),
-                        )
-                        .clicked()
-                    {
-                        self.command_history.redo();
-                        ui.close_menu();
+                    if ui.add_enabled(self.command_history.can_redo(), egui::Button::new("Redo")).clicked() {
+                        self.command_history.redo(); ui.close_menu();
                     }
                 });
-
-                // View 菜单
                 ui.menu_button("View", |ui| {
-                    let mut hier_vis = self.state.panel_layer.is_visible(&PanelLayer::Hierarchy);
-                    if ui.checkbox(&mut hier_vis, "Hierarchy").clicked() {
-                        self.state.panel_layer.set_visible(PanelLayer::Hierarchy, hier_vis);
-                        ui.close_menu();
-                    }
-                    let mut insp_vis = self.state.panel_layer.is_visible(&PanelLayer::Inspector);
-                    if ui.checkbox(&mut insp_vis, "Inspector").clicked() {
-                        self.state.panel_layer.set_visible(PanelLayer::Inspector, insp_vis);
-                        ui.close_menu();
-                    }
-                    let mut ab_vis = self.state.panel_layer.is_visible(&PanelLayer::AssetBrowser);
-                    if ui.checkbox(&mut ab_vis, "Asset Browser").clicked() {
-                        self.state.panel_layer.set_visible(PanelLayer::AssetBrowser, ab_vis);
-                        ui.close_menu();
-                    }
+                    let mut hv = self.state.panel_layer.is_visible(&PanelLayer::Hierarchy);
+                    if ui.checkbox(&mut hv, "Hierarchy").clicked() { self.state.panel_layer.set_visible(PanelLayer::Hierarchy, hv); ui.close_menu(); }
+                    let mut iv = self.state.panel_layer.is_visible(&PanelLayer::Inspector);
+                    if ui.checkbox(&mut iv, "Inspector").clicked() { self.state.panel_layer.set_visible(PanelLayer::Inspector, iv); ui.close_menu(); }
+                    let mut av = self.state.panel_layer.is_visible(&PanelLayer::AssetBrowser);
+                    if ui.checkbox(&mut av, "Asset Browser").clicked() { self.state.panel_layer.set_visible(PanelLayer::AssetBrowser, av); ui.close_menu(); }
+                });
+                ui.menu_button("Help", |ui| {
+                    if ui.button("About Geese Editor").clicked() { ui.close_menu(); }
                 });
 
-                // Help 菜单
-                ui.menu_button("Help", |ui| {
-                    if ui.button("About Geese Editor").clicked() {
-                        ui.close_menu();
-                    }
-                });
+                ui.separator();
+
+                // --- Right: Editor toolbar (UPBGE/Blender style) ---
+                // Play/Stop
+                let (label, color) = self.play_mode.button_ui();
+                if ui.add_sized([54.0, 22.0], egui::Button::new(egui::RichText::new(label).color(color))).clicked() {
+                    self.toggle_play_mode();
+                }
+
+                ui.separator();
+
+                // Physics Source
+                let mut phy_src = self.physics.source();
+                let src_old = phy_src;
+                ui.label("Phys:");
+                ui.selectable_value(&mut phy_src, physics_manager::PhysicsSource::Client, "Local");
+                ui.selectable_value(&mut phy_src, physics_manager::PhysicsSource::Server, "Remote");
+                ui.selectable_value(&mut phy_src, physics_manager::PhysicsSource::ClientAndServer, "Both");
+                if !self.state.mode.is_playing() && phy_src != src_old {
+                    self.physics.set_source(phy_src);
+                }
+
+                ui.separator();
+
+                // Gizmo mode
+                ui.selectable_value(&mut self.viewport.gizmo_mode, crate::viewport::GizmoMode::Translate, "W");
+                ui.selectable_value(&mut self.viewport.gizmo_mode, crate::viewport::GizmoMode::Rotate, "E");
+                ui.selectable_value(&mut self.viewport.gizmo_mode, crate::viewport::GizmoMode::Scale, "R");
+
+                ui.separator();
+
+                // Physics Debug
+                let dbg_label = if self.physics_debug.enabled { "Debug ON" } else { "Debug OFF" };
+                if ui.add_sized([60.0, 22.0], egui::Button::new(dbg_label)).clicked() {
+                    self.physics_debug.toggle();
+                }
             });
         });
     }
@@ -277,91 +362,11 @@ impl Editor {
     // 全屏视口
     // -------------------------------------------------------------------
 
-    /// 渲染全屏沉浸式视口（场景渲染纹理填充整个窗口）。
-    fn show_fullscreen_viewport(&mut self, ctx: &egui::Context) {
-        EditorLayout::render_fullscreen(ctx, &mut self.state, &mut self.viewport);
-    }
+
 
     // -------------------------------------------------------------------
     // 工具栏
-    // -------------------------------------------------------------------
 
-    fn show_toolbar(&mut self, ctx: &egui::Context) {
-        let alpha = self.state.panel_layer.global_alpha;
-        let bg_fill = egui::Color32::from_rgba_unmultiplied(20, 22, 30, (alpha * 220.0) as u8);
-        let frame = egui::Frame::window(&ctx.style())
-            .fill(bg_fill)
-            .rounding(egui::Rounding::same(6.0));
-
-        egui::Window::new("##floating_toolbar")
-            .title_bar(false)
-            .resizable(false)
-            .collapsible(false)
-            .anchor(egui::Align2::CENTER_TOP, egui::Vec2::new(0.0, 8.0))
-            .frame(frame)
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    // Play/Stop 按钮
-                    let (label, color) = self.play_mode.button_ui();
-                    if ui
-                        .add_sized(
-                            [60.0, 24.0],
-                            egui::Button::new(
-                                egui::RichText::new(label).color(color),
-                            ),
-                        )
-                        .clicked()
-                    {
-                        self.toggle_play_mode();
-                    }
-
-                    ui.separator();
-
-                    // Physics Debug 开关
-                    {
-                        let debug_label = if self.physics_debug.enabled {
-                            "🔍 Debug ON"
-                        } else {
-                            "🔍 Debug OFF"
-                        };
-                        if ui
-                            .add_sized(
-                                [90.0, 24.0],
-                                egui::Button::new(egui::RichText::new(debug_label).size(11.0)),
-                            )
-                            .clicked()
-                        {
-                            self.physics_debug.toggle();
-                        }
-                        ui.separator();
-
-                        // Physics Source 选择
-                        ui.label("Physics:");
-                        let mut phy_src = self.physics.source();
-                        let src_old = phy_src;
-                        ui.selectable_value(&mut phy_src, physics_manager::PhysicsSource::Client, "Local");
-                        ui.selectable_value(&mut phy_src, physics_manager::PhysicsSource::Server, "Remote");
-                        ui.selectable_value(&mut phy_src, physics_manager::PhysicsSource::ClientAndServer, "Both");
-                        if !self.state.mode.is_playing() && phy_src != src_old {
-                            self.physics.set_source(phy_src);
-                        }
-                        ui.separator();
-                    }
-
-                    // Gizmo 模式
-                    ui.selectable_value(&mut self.viewport.gizmo_mode, GizmoMode::Translate, "W");
-                    ui.selectable_value(&mut self.viewport.gizmo_mode, GizmoMode::Rotate, "E");
-                    ui.selectable_value(&mut self.viewport.gizmo_mode, GizmoMode::Scale, "R");
-
-                    ui.separator();
-
-                    // 面板显隐总控按钮
-                    if ui.button("👁").clicked() {
-                        self.state.ui_visible = !self.state.ui_visible;
-                    }
-                });
-            });
-    }
 
     // -------------------------------------------------------------------
     // 快捷键
@@ -439,53 +444,22 @@ impl Editor {
     // 浮动面板
     // -------------------------------------------------------------------
 
-    /// 渲染浮动半透明面板（在全屏视口之上）。
-    fn show_floating_panels(&mut self, ctx: &egui::Context) {
-        let alpha = self.state.panel_layer.global_alpha;
-        let bg_fill = egui::Color32::from_rgba_unmultiplied(28, 30, 38, (alpha * 220.0) as u8);
-        let frame = egui::Frame::window(&ctx.style())
-            .fill(bg_fill)
-            .rounding(egui::Rounding::same(6.0));
-
-        // 左侧 - Hierarchy 面板
-        if self.state.panel_layer.is_visible(&PanelLayer::Hierarchy) {
-            egui::Window::new("Hierarchy")
-                .resizable(true)
-                .collapsible(true)
-                .default_width(250.0)
-                .frame(frame)
-                .show(ctx, |ui| {
-                    self.hierarchy.show(ui, &mut self.state);
-                });
+    /// 渲染停靠式编辑器布局（菜单栏 + SidePanel 侧栏 + CentralPanel 视口 + 底部栏）。
+    fn show_editor_layout(&mut self, ctx: &egui::Context) {
+        // 菜单栏
+        if !self.state.mode.is_playing() || self.state.ui_visible {
+            self.show_menu_bar(ctx);
         }
 
-        // 右侧 - Inspector 面板
-        if self.state.panel_layer.is_visible(&PanelLayer::Inspector) {
-            egui::Window::new("Inspector")
-                .resizable(true)
-                .collapsible(true)
-                .default_width(300.0)
-                .frame(frame)
-                .show(ctx, |ui| {
-                    self.inspector.show(ui, &mut self.state);
-                });
-        }
-
-        // 底部 - Asset Browser 面板
-        if self.state.panel_layer.is_visible(&PanelLayer::AssetBrowser) {
-            if self.asset_needs_scan {
-                self.asset_browser.scan_directory(&self.state.project_path);
-                self.asset_needs_scan = false;
-            }
-            egui::Window::new("Asset Browser")
-                .resizable(true)
-                .collapsible(true)
-                .default_height(200.0)
-                .frame(frame)
-                .show(ctx, |ui| {
-                    self.asset_browser.show(ui, &mut self.state);
-                });
-        }
+        // 主布局：侧栏 + 视口 + 底部栏
+        EditorLayout::render(
+            ctx,
+            &mut self.state,
+            &mut self.hierarchy,
+            &mut self.viewport,
+            &mut self.inspector,
+            &mut self.asset_browser,
+        );
     }
 
     /// 处理 Inspector 写回的变换变更，生成 TransformCommand 并推入历史。
