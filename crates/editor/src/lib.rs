@@ -13,11 +13,9 @@ pub mod gizmo;
 pub mod gltf_import_dialog;
 pub mod hierarchy;
 pub mod inspector;
-pub mod local_physics;
 pub mod panel_layer;
 pub mod panels;
 pub mod physics_debug;
-pub mod physics_server;
 pub mod play_mode;
 pub mod viewport;
 
