@@ -325,29 +325,31 @@ impl Scene {
         entity_id
     }
 
-    /// 按 entity_id 移除对象。
-    pub fn remove_object(&mut self, entity_id: &str) -> Result<(), String> {
-        let obj_idx = self
+    /// 内部移除：不重建索引和八叉树（供批量删除复用）。
+    fn remove_object_internal(&mut self, entity_id: &str) -> bool {
+        let Some(obj_idx) = self
             .objects
             .iter()
             .position(|o| o.entity_id == entity_id)
-            .ok_or_else(|| format!("object not found: {}", entity_id))?;
+            else { return false; };
         let node_idx = self.objects[obj_idx].node;
 
-        // swap_remove 对象
         self.objects.swap_remove(obj_idx);
-        // 更新被移动对象的 node 关联
         self.fix_moved_object_node(obj_idx, self.objects.len());
 
-        // swap_remove 节点（孤立节点：无父子约束）
         self.nodes.swap_remove(node_idx);
-        // 修正受影响的对象 node 字段
         self.fix_moved_node_references(node_idx, self.nodes.len());
 
-        // 重建分类索引和八叉树
+        true
+    }
+
+    /// 按 entity_id 移除对象。
+    pub fn remove_object(&mut self, entity_id: &str) -> Result<(), String> {
+        if !self.remove_object_internal(entity_id) {
+            return Err(format!("object not found: {}", entity_id));
+        }
         self.rebuild_object_indices();
         self.rebuild_octree();
-        // 记录到删除队列，供 drain_deleted_ids 消费
         self.deleted_ids.push(entity_id.to_string());
         Ok(())
     }
@@ -387,10 +389,20 @@ impl Scene {
         ids
     }
 
-    /// 批量移除对象。
+    /// 批量移除对象（仅最后重建一次 octree）。
     pub fn remove_objects_batch(&mut self, entity_ids: &[&str]) -> Result<(), String> {
+        let mut removed_any = false;
         for id in entity_ids {
-            self.remove_object(id)?;
+            if self.remove_object_internal(id) {
+                self.deleted_ids.push(id.to_string());
+                removed_any = true;
+            } else {
+                return Err(format!("object not found: {}", id));
+            }
+        }
+        if removed_any {
+            self.rebuild_object_indices();
+            self.rebuild_octree();
         }
         Ok(())
     }
@@ -484,7 +496,7 @@ impl Scene {
             // 更新节点中对该对象的引用
             if moved_node < self.nodes.len() {
                 // 节点原来引用 old_len-1，现在引用 removed_idx
-                if let Some(pos) = self.nodes[moved_node].objects.iter().position(|&i| i == old_len - 1) {
+                if let Some(pos) = self.nodes[moved_node].objects.iter().position(|&i| i == old_len) {
                     self.nodes[moved_node].objects[pos] = removed_idx;
                 }
             }
@@ -495,7 +507,7 @@ impl Scene {
     fn fix_moved_node_references(&mut self, removed_node_idx: usize, new_len: usize) {
         if removed_node_idx < self.nodes.len() {
             for obj in self.objects.iter_mut() {
-                if obj.node == removed_node_idx + new_len {
+                if obj.node == new_len {
                     obj.node = removed_node_idx;
                 }
             }
