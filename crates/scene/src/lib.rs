@@ -230,14 +230,12 @@ fn load_gltf_mesh(
     object_indices
 }
 
-fn load_node(
+/// First pass: build node tree structure only (lightweight, no mesh data).
+fn load_node_structure(
     node: &gltf::Node,
     parent: Option<usize>,
-    buffers: &[gltf::buffer::Data],
     nodes: &mut Vec<SceneNode>,
-    objects: &mut Vec<SceneObject>,
     node_map: &mut HashMap<usize, usize>,
-    skin_map: &HashMap<usize, usize>,
 ) -> usize {
     let (translation, rotation, scale) = node.transform().decomposed();
     let node_id = nodes.len();
@@ -248,6 +246,25 @@ fn load_node(
     ));
     node_map.insert(node.index(), node_id);
 
+    for child in node.children() {
+        let child_id = load_node_structure(&child, Some(node_id), nodes, node_map);
+        nodes[node_id].children.push(child_id);
+    }
+
+    node_id
+}
+
+/// Second pass: load actual mesh data using the pre-built node_map and skin_map.
+fn load_node_meshes(
+    node: &gltf::Node,
+    buffers: &[gltf::buffer::Data],
+    nodes: &mut Vec<SceneNode>,
+    objects: &mut Vec<SceneObject>,
+    node_map: &HashMap<usize, usize>,
+    skin_map: &HashMap<usize, usize>,
+) {
+    let node_id = node_map[&node.index()];
+
     if let Some(mesh) = node.mesh() {
         let skin = node
             .skin()
@@ -257,19 +274,8 @@ fn load_node(
     }
 
     for child in node.children() {
-        let child_id = load_node(
-            &child,
-            Some(node_id),
-            buffers,
-            nodes,
-            objects,
-            node_map,
-            skin_map,
-        );
-        nodes[node_id].children.push(child_id);
+        load_node_meshes(&child, buffers, nodes, objects, node_map, skin_map);
     }
-
-    node_id
 }
 
 pub fn import_scene(
@@ -295,31 +301,24 @@ pub fn import_scene(
 
     for scene in gltf.scenes() {
         for node in scene.nodes() {
-            load_node(
+            load_node_structure(
                 &node,
                 None,
-                &buffers,
                 &mut nodes,
-                &mut objects,
                 &mut node_map,
-                &HashMap::new(),
             );
         }
     }
     let (skins, skin_map) = load_skins(&gltf, &buffers, &node_map);
-    nodes.clear();
-    objects.clear();
-    node_map.clear();
 
     for scene in gltf.scenes() {
         for node in scene.nodes() {
-            load_node(
+            load_node_meshes(
                 &node,
-                None,
                 &buffers,
                 &mut nodes,
                 &mut objects,
-                &mut node_map,
+                &node_map,
                 &skin_map,
             );
         }
