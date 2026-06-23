@@ -535,7 +535,7 @@ impl ViewportPanel {
         }
 
         let screen_x = rect.left() + (ndc_x * 0.5 + 0.5) * rect.width();
-        let screen_y = rect.top() + (0.5 - ndc_y * 0.5) * rect.height();
+        let screen_y = rect.top() + (ndc_y * 0.5 + 0.5) * rect.height(); // fixed NDC Y flip
 
         Some(egui::Pos2::new(screen_x, screen_y))
     }
@@ -923,7 +923,7 @@ fn camera_grid_project(
     let ndc_y = clip.y / clip.w;
 
     let screen_x = rect.left() + (ndc_x * 0.5 + 0.5) * rect.width();
-    let screen_y = rect.top() + (0.5 - ndc_y * 0.5) * rect.height();
+    let screen_y = rect.top() + (ndc_y * 0.5 + 0.5) * rect.height(); // fixed NDC Y flip
 
     Some(egui::Pos2::new(screen_x, screen_y))
 }
