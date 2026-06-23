@@ -143,8 +143,6 @@ pub struct HierarchyPanel {
     tree: SceneNodeTree,
     /// 搜索文本
     search_text: String,
-    /// 右键菜单目标
-    context_menu_id: Option<String>,
     /// 展开的节点集合
     expanded: std::collections::HashSet<String>,
 }
@@ -226,7 +224,6 @@ impl HierarchyPanel {
         Self {
             tree,
             search_text: String::new(),
-            context_menu_id: None,
             expanded: std::collections::HashSet::new(),
         }
     }
