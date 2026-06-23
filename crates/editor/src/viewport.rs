@@ -272,8 +272,6 @@ pub struct ViewportPanel {
     gizmo_interaction: GizmoInteraction,
     /// Pickable scene objects for ray-casting selection
     pub pickable_objects: Vec<(String, Point3<f32>, AABB)>,
-    /// AABB of the selected object (for highlight rendering)
-    selection_aabb: Option<AABB>,
 }
 
 impl ViewportPanel {
@@ -290,7 +288,6 @@ impl ViewportPanel {
             grid_subdivisions: 10,
             gizmo_interaction: GizmoInteraction::new(),
             pickable_objects: Vec::new(),
-            selection_aabb: None,
         }
     }
 
