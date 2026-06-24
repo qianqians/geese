@@ -6,4 +6,4 @@ edition = "2024"
 [dependencies]
 bytemuck = { version = "1.14", features = ["derive"] }
 cgmath = "0.18"
-wgpu = "0.20"
+wgpu = "22.1"

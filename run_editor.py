@@ -1,5 +1,5 @@
 ﻿import sys, traceback, os
-sys.path.insert(0, 'D:/Personal/geese/desktop/target/debug')
+sys.path.insert(0, 'D:/Personal/geese/desktop/target/release')
 try:
     from pydesktop import open_editor
     print('Import OK', flush=True)

@@ -214,6 +214,7 @@ impl DeferredPlusPipeline {
                 targets: &geometry_targets,
             }),
             multiview: None,
+            cache: None,
         });
 
         let lighting_pipeline_layout =
@@ -254,6 +255,7 @@ impl DeferredPlusPipeline {
                 targets: &lighting_targets,
             }),
             multiview: None,
+            cache: None,
         });
 
         let culling_pipeline_layout =
@@ -268,6 +270,7 @@ impl DeferredPlusPipeline {
             module: &culling_shader,
             entry_point: "cs_main",
             compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
         });
 
         // ---- buffers ----

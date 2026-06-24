@@ -23,6 +23,7 @@ mod desktop_app;
 #[pyfunction]
 fn run() -> PyResult<()> {
     let options = eframe::NativeOptions {
+        renderer: eframe::Renderer::Wgpu,
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([900.0, 800.0])
             .with_resizable(false),
@@ -43,6 +44,7 @@ fn run() -> PyResult<()> {
 #[pyfunction]
 fn open_editor(project_path: String) -> PyResult<()> {
     let options = eframe::NativeOptions {
+        renderer: eframe::Renderer::Wgpu,
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1280.0, 720.0])
             .with_title(format!("Geese Editor - {}", project_path)),
@@ -54,7 +56,7 @@ fn open_editor(project_path: String) -> PyResult<()> {
         options,
         Box::new(|cc| {
             desktop_app::setup_chinese_fonts(cc);
-            Ok(Box::new(desktop_app::EditorApp::new(project_path.clone())))
+            Ok(Box::new(desktop_app::EditorApp::new(project_path.clone(), cc)))
         }),
     )
     .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))

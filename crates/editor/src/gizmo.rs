@@ -456,16 +456,95 @@ fn draw_arrow(
 }
 
 fn draw_rotation_ring(
-    _painter: &egui::Painter,
-    _center: egui::Pos2,
+    painter: &egui::Painter,
+    center: egui::Pos2,
     _axis: Axis,
     _axis_dir: Vector3<f32>,
-    _color: egui::Color32,
+    color: egui::Color32,
     _interaction: &GizmoInteraction,
     _camera: &OrbitCamera,
 ) {
-    // 旋转环的 2D 投影简化为圆形，暂用简化绘制
-    // 完整实现需要将 3D 圆投影到屏幕空间
+    // 获取视口大小
+    let viewport_width = painter.clip_rect().width();
+    let viewport_height = painter.clip_rect().height();
+    
+    // 网格大小（根据视口大小调整）
+    let grid_size = viewport_width.min(viewport_height) * 0.4;
+    
+    // 绘制三个坐标平面的网格
+    draw_grid_plane(painter, center, grid_size, Vector3::unit_x(), Vector3::unit_z(), color); // XY平面
+    draw_grid_plane(painter, center, grid_size, Vector3::unit_x(), Vector3::unit_y(), color); // XZ平面  
+    draw_grid_plane(painter, center, grid_size, Vector3::unit_y(), Vector3::unit_z(), color); // YZ平面
+    
+    // 绘制坐标轴
+    draw_axis_lines(painter, center, grid_size * 1.2, color);
+}
+
+// 辅助函数：绘制网格平面
+fn draw_grid_plane(
+    painter: &egui::Painter,
+    center: egui::Pos2,
+    size: f32,
+    axis1: Vector3<f32>,
+    axis2: Vector3<f32>,
+    color: egui::Color32,
+) {
+    let grid_lines = 10; // 网格线数量
+    let line_spacing = size / grid_lines as f32;
+    
+    // 绘制第一组线条（沿axis1方向）
+    for i in -grid_lines..=grid_lines {
+        let offset = i as f32 * line_spacing;
+        let start = center + egui::Vec2::new(
+            axis1.x * offset + axis2.x * (-size/2.0),
+            axis1.y * offset + axis2.y * (-size/2.0)
+        );
+        let end = center + egui::Vec2::new(
+            axis1.x * offset + axis2.x * (size/2.0),
+            axis1.y * offset + axis2.y * (size/2.0)
+        );
+        painter.line_segment([start, end], (0.5, color));
+    }
+    
+    // 绘制第二组线条（沿axis2方向）
+    for i in -grid_lines..=grid_lines {
+        let offset = i as f32 * line_spacing;
+        let start = center + egui::Vec2::new(
+            axis2.x * offset + axis1.x * (-size/2.0),
+            axis2.y * offset + axis1.y * (-size/2.0)
+        );
+        let end = center + egui::Vec2::new(
+            axis2.x * offset + axis1.x * (size/2.0),
+            axis2.y * offset + axis1.y * (size/2.0)
+        );
+        painter.line_segment([start, end], (0.5, color));
+    }
+}
+
+// 辅助函数：绘制坐标轴
+fn draw_axis_lines(
+    painter: &egui::Painter,
+    center: egui::Pos2,
+    length: f32,
+    _color: egui::Color32,
+) {
+    // X轴（红色）
+    painter.line_segment([
+        center,
+        center + egui::Vec2::new(length, 0.0)
+    ], (2.0, egui::Color32::RED));
+    
+    // Y轴（绿色）
+    painter.line_segment([
+        center,
+        center + egui::Vec2::new(0.0, length)
+    ], (2.0, egui::Color32::GREEN));
+    
+    // Z轴（蓝色，在2D中显示为对角线）
+    painter.line_segment([
+        center,
+        center + egui::Vec2::new(length, length)
+    ], (2.0, egui::Color32::BLUE));
 }
 
 fn draw_scale_box(
