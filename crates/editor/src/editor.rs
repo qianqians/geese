@@ -64,7 +64,7 @@ pub struct Editor {
 
 impl Editor {
     /// 从项目路径打开编辑器。
-    pub fn open(project_path: String) -> Self {
+    pub fn open(project_path: String, render_state: Option<egui_wgpu::RenderState>) -> Self {
         let state = EditorState::new(project_path.clone());
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
@@ -82,7 +82,11 @@ impl Editor {
             command_history: CommandHistory::default(),
             play_mode: PlayMode::new(),
             hierarchy: HierarchyPanel::new(),
-            viewport: ViewportPanel::new(),
+            viewport: {
+                let mut vp = ViewportPanel::new();
+                vp.render_state = render_state;
+                vp
+            },
             inspector: InspectorPanel::new(),
             asset_browser: AssetBrowser::new(),
             gltf_import_dialog: GltfImportDialog::new(),

@@ -57,16 +57,16 @@ pub struct OrbitCamera {
 impl Default for OrbitCamera {
     fn default() -> Self {
         Self {
-            focal_point: Point3::new(0.0, 1.5, 0.0),
-            yaw: std::f32::consts::FRAC_PI_4,
-            pitch: -std::f32::consts::FRAC_PI_4 * 0.8,
-            distance: 10.0,
+            focal_point: Point3::new(0.0, 0.0, 0.0),  // 将焦点移到原点
+            yaw: 0.0,  // 初始朝向改为正前方
+            pitch: 0.0,  // 初始俯仰角改为0
+            distance: 5.0,  // 缩短距离，使网格更清晰可见
             min_distance: 0.5,
-            max_distance: 100.0,
+            max_distance: 50.0,
             aspect_ratio: 16.0 / 9.0,
-            fov: std::f32::consts::FRAC_PI_3,
+            fov: std::f32::consts::FRAC_PI_4,  // 减小FOV，使视野更集中
             z_near: 0.1,
-            z_far: 1000.0,
+            z_far: 100.0,  // 减小远裁剪平面
             orbit_sensitivity: 0.005,
             pan_sensitivity: 0.01,
             zoom_sensitivity: 0.5,
@@ -264,7 +264,9 @@ pub struct ViewportPanel {
     viewport_size: (f32, f32),
     /// 渲染纹理 ID（由外部设置，渲染场景到纹理后传入）
     pub rendered_texture: Option<egui::TextureId>,
-    /// 网格大小
+    /// eframe wgpu render state（由外部 CreationContext 传入）。
+   pub render_state: Option<egui_wgpu::RenderState>,
+   /// 网格大小
     grid_size: f32,
     /// 网格细分数量
     grid_subdivisions: usize,
@@ -284,7 +286,8 @@ impl ViewportPanel {
             panning: false,
             viewport_size: (800.0, 600.0),
             rendered_texture: None,
-            grid_size: 10.0,
+           render_state: None,
+           grid_size: 10.0,
             grid_subdivisions: 10,
             gizmo_interaction: GizmoInteraction::new(),
             pickable_objects: Vec::new(),
@@ -603,9 +606,10 @@ impl EditorPanel for ViewportPanel {
                 egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(1.0, 1.0)),
                 egui::Color32::WHITE,
             );
-        } else {
+       } else {
+            // CPU 网格渲染（始终使用 egui painter 路径）
             self.draw_grid(ui, rect);
-        }
+       }
 
         // 绘制物理碰撞体调试线框
         self.draw_physics_debug(ui, rect, state);
@@ -925,6 +929,7 @@ fn camera_grid_project(
     Some(egui::Pos2::new(screen_x, screen_y))
 }
 
+// ---------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -4,6 +4,7 @@ pub mod deferred_plus;
 pub mod forward_plus;
 pub mod ibl;
 pub mod light;
+pub mod lines;
 pub mod material;
 pub mod mesh;
 pub mod pipeline;
@@ -46,3 +47,8 @@ pub use skinning::{
     SkinningMode, SkinningUploader, MAX_MORPH_TARGETS,
 };
 pub use wgpu_renderer::{WgpuSceneRenderer, WgpuSceneRendererDescriptor};
+
+pub use lines::{LineRenderer, LineVertex};
+
+/// Re-export wgpu so downstream crates (editor, etc.) share the same version.
+pub use wgpu;

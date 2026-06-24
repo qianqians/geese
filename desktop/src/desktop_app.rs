@@ -39,6 +39,7 @@ pub struct DesktopApp {
     editors: Vec<EditorViewport>,
     launcher_visible: bool,
     next_id: u64,
+    render_state: Option<egui_wgpu::RenderState>,
 }
 
 impl DesktopApp {
@@ -49,6 +50,7 @@ impl DesktopApp {
             editors: Vec::new(),
             launcher_visible: true,
             next_id: 0,
+            render_state: cc.wgpu_render_state.clone(),
         }
     }
 }
@@ -92,7 +94,7 @@ impl eframe::App for DesktopApp {
             self.next_id += 1;
             self.editors.push(EditorViewport {
                 viewport_id: id,
-                editor: Editor::open(project_path),
+                editor: Editor::open(project_path, self.render_state.clone()),
                 close_requested: Arc::new(AtomicBool::new(false)),
             });
         }
@@ -126,8 +128,8 @@ pub struct EditorApp {
 }
 
 impl EditorApp {
-    pub fn new(project_path: String) -> Self {
-        Self { editor: Editor::open(project_path) }
+    pub fn new(project_path: String, cc: &eframe::CreationContext<'_>) -> Self {
+        Self { editor: Editor::open(project_path, cc.wgpu_render_state.clone()) }
     }
 }
 

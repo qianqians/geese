@@ -142,6 +142,7 @@ impl ForwardPlusPipeline {
                 targets: &color_targets,
             }),
             multiview: None,
+            cache: None,
         });
 
         // ---- compute pipeline (cluster culling) ----
@@ -164,6 +165,7 @@ impl ForwardPlusPipeline {
             module: &culling_shader,
             entry_point: "cs_main",
             compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
         });
 
         // ---- buffers ----
