@@ -10,9 +10,10 @@
 use crate::editor_mode::EditorMode;
 use crate::gizmo::{GizmoInteraction, draw_gizmo};
 use crate::panel_layer::PanelLayer;
-use crate::panels::{EditorPanel, EditorState};
+use crate::panels::{EditorPanel, EditorState, PendingTransform};
 use cgmath::{EuclideanSpace, InnerSpace, Matrix4, Point3, SquareMatrix, Vector3, Vector4, perspective, Rad};
 use math::AABB;
+use render::grid::build_grid_vertices;
 
 // ---------------------------------------------------------------------------
 // OrbitCamera - 编辑器摄像机
@@ -57,16 +58,16 @@ pub struct OrbitCamera {
 impl Default for OrbitCamera {
     fn default() -> Self {
         Self {
-            focal_point: Point3::new(0.0, 0.0, 0.0),  // 将焦点移到原点
-            yaw: 0.0,  // 初始朝向改为正前方
-            pitch: 0.0,  // 初始俯仰角改为0
-            distance: 5.0,  // 缩短距离，使网格更清晰可见
+            focal_point: Point3::new(0.0, 0.0, 0.0),
+            yaw: std::f32::consts::FRAC_PI_4,
+            pitch: -std::f32::consts::FRAC_PI_4,
+            distance: 10.0,
             min_distance: 0.5,
-            max_distance: 50.0,
+            max_distance: 200.0,
             aspect_ratio: 16.0 / 9.0,
             fov: std::f32::consts::FRAC_PI_4,  // 减小FOV，使视野更集中
             z_near: 0.1,
-            z_far: 100.0,  // 减小远裁剪平面
+            z_far: 500.0,  // 增加远裁剪平面，看到更远的网格
             orbit_sensitivity: 0.005,
             pan_sensitivity: 0.01,
             zoom_sensitivity: 0.5,
@@ -87,7 +88,7 @@ impl OrbitCamera {
         let yaw_cos = self.yaw.cos();
         let pitch_sin = self.pitch.sin();
         let pitch_cos = self.pitch.cos();
-        Vector3::new(yaw_cos * pitch_cos, pitch_sin, yaw_sin * pitch_cos).normalize()
+        Vector3::new(-yaw_sin * pitch_cos, pitch_sin, -yaw_cos * pitch_cos).normalize()
     }
 
     /// 摄像机右向向量。
@@ -157,9 +158,9 @@ impl OrbitCamera {
 
     /// 重置为默认视角。
     pub fn reset(&mut self) {
-        self.focal_point = Point3::new(0.0, 1.5, 0.0);
+        self.focal_point = Point3::new(0.0, 0.0, 0.0);
         self.yaw = std::f32::consts::FRAC_PI_4;
-        self.pitch = -std::f32::consts::FRAC_PI_4 * 0.8;
+        self.pitch = -std::f32::consts::FRAC_PI_4;
         self.distance = 10.0;
     }
 
@@ -270,6 +271,8 @@ pub struct ViewportPanel {
     grid_size: f32,
     /// 网格细分数量
     grid_subdivisions: usize,
+    /// GPU grid renderer (created lazily when render_state is available)
+    gpu_grid: Option<GpuGridRenderer>,
     /// Gizmo 交互状态
     gizmo_interaction: GizmoInteraction,
     /// Pickable scene objects for ray-casting selection
@@ -289,13 +292,14 @@ impl ViewportPanel {
            render_state: None,
            grid_size: 10.0,
             grid_subdivisions: 10,
+            gpu_grid: None,
             gizmo_interaction: GizmoInteraction::new(),
             pickable_objects: Vec::new(),
         }
     }
 
     /// 处理视口内的鼠标输入。
-    fn handle_input(&mut self, ui: &egui::Ui, response: &egui::Response, state: &EditorState) {
+    fn handle_input(&mut self, ui: &egui::Ui, response: &egui::Response, state: &mut EditorState) {
         // 播放模式下不处理编辑器摄像机输入
         if state.mode == EditorMode::Play {
             return;
@@ -373,8 +377,12 @@ impl ViewportPanel {
         // 聚焦快捷键
         ui.input(|input| {
             if input.key_pressed(egui::Key::F) && !input.modifiers.ctrl {
-                // 聚焦选中物体
-                self.camera.focus_on(Point3::new(0.0, 1.5, 0.0));
+                // 聚焦选中物体或原点
+                let focus_pos = state.selected_entity.as_ref()
+                    .and_then(|eid| state.transform_cache.get(eid))
+                    .map(|&(pos, _, _)| Point3::new(pos[0], pos[1], pos[2]))
+                    .unwrap_or(Point3::new(0.0, 0.0, 0.0));
+                self.camera.focus_on(focus_pos);
             }
         });
 
@@ -383,18 +391,27 @@ impl ViewportPanel {
             let clicked = ui.input(|input| {
                 input.pointer.button_clicked(egui::PointerButton::Primary)
             });
-            if clicked && !self.orbiting && !self.panning {
-                // 进行射线拾取（仅当没有拖拽时）
                 if let Some(pos) = pointer_pos {
+            if clicked && !self.orbiting && !self.panning {
                     let rect = response.rect;
                     let local_x = pos.0 - rect.left();
                     let local_y = pos.1 - rect.top();
-                    let _ray = self.camera.screen_to_world_ray(
+                    let (ray_origin, ray_dir) = self.camera.screen_to_world_ray(
                         local_x,
                         local_y,
                         rect.width(),
                         rect.height(),
                     );
+                    // 射线检测拾取对象
+                    let mut closest: Option<(String, f32)> = None;
+                    for (eid, _, aabb) in &self.pickable_objects {
+                        if let Some(t) = ray_aabb_intersection(ray_origin, ray_dir, aabb) {
+                            if closest.as_ref().map_or(true, |(_, ct)| t < *ct) {
+                                closest = Some((eid.clone(), t));
+                            }
+                        }
+                    }
+                    state.selected_entity = closest.map(|(eid, _)| eid);
                 }
             }
         }
@@ -405,7 +422,7 @@ impl ViewportPanel {
         &mut self,
         ui: &egui::Ui,
         response: &egui::Response,
-        state: &EditorState,
+        state: &mut EditorState,
     ) {
         if state.mode == EditorMode::Play {
             return;
@@ -417,7 +434,10 @@ impl ViewportPanel {
         let hovered = response.hovered();
         let rect = response.rect;
 
-        let gizmo_world_pos = Point3::new(0.0, 0.0, 0.0);
+        let gizmo_world_pos = state.selected_entity.as_ref()
+            .and_then(|eid| state.transform_cache.get(eid))
+            .map(|&(pos, _, _)| Point3::new(pos[0], pos[1], pos[2]))
+            .unwrap_or(Point3::new(0.0, 0.0, 0.0));
         let gizmo_screen = self.world_to_screen(gizmo_world_pos, rect);
 
         if let (Some(gizmo_screen), Some(mouse)) = (gizmo_screen, pointer_pos) {
@@ -455,8 +475,44 @@ impl ViewportPanel {
                     self.gizmo_interaction.update_drag(mouse, &self.camera);
                 }
                 if left_released {
-                    if let Some((axis, delta)) = self.gizmo_interaction.end_drag() {
-                        let _ = (axis, delta);
+                    if let Some((_, delta)) = self.gizmo_interaction.end_drag() {
+                        if let Some(ref entity_id) = state.selected_entity {
+                            let cached = state.transform_cache.get(entity_id).copied();
+                            if let Some((old_pos, old_rot, old_scl)) = cached {
+                                let mode = self.gizmo_mode;
+                                let (new_pos, new_rot, new_scl) = match mode {
+                                    GizmoMode::Translate => (
+                                        [old_pos[0] + delta.x, old_pos[1] + delta.y, old_pos[2] + delta.z],
+                                        old_rot,
+                                        old_scl,
+                                    ),
+                                    GizmoMode::Rotate => (
+                                        old_pos,
+                                        [old_rot[0] + delta.x, old_rot[1] + delta.y, old_rot[2] + delta.z],
+                                        old_scl,
+                                    ),
+                                    GizmoMode::Scale => (
+                                        old_pos,
+                                        old_rot,
+                                        [
+                                            (old_scl[0] * (1.0 + delta.x)).max(0.01),
+                                            (old_scl[1] * (1.0 + delta.y)).max(0.01),
+                                            (old_scl[2] * (1.0 + delta.z)).max(0.01),
+                                        ],
+                                    ),
+                                };
+                                state.pending_transform = Some(PendingTransform {
+                                    entity_id: entity_id.clone(),
+                                    old_position: old_pos,
+                                    new_position: new_pos,
+                                    old_rotation: old_rot,
+                                    new_rotation: new_rot,
+                                    old_scale: old_scl,
+                                    new_scale: new_scl,
+                                });
+                                state.transform_cache.insert(entity_id.clone(), (new_pos, new_rot, new_scl));
+                            }
+                        }
                     }
                 }
             }
@@ -535,7 +591,7 @@ impl ViewportPanel {
         }
 
         let screen_x = rect.left() + (ndc_x * 0.5 + 0.5) * rect.width();
-        let screen_y = rect.top() + (ndc_y * 0.5 + 0.5) * rect.height(); // fixed NDC Y flip
+        let screen_y = rect.top() + (1.0 - (ndc_y * 0.5 + 0.5)) * rect.height();
 
         Some(egui::Pos2::new(screen_x, screen_y))
     }
@@ -606,17 +662,21 @@ impl EditorPanel for ViewportPanel {
                 egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(1.0, 1.0)),
                 egui::Color32::WHITE,
             );
-       } else {
-            // CPU 网格渲染（始终使用 egui painter 路径）
+        } else {
+            // GPU grid via LineRenderer + wgpu offscreen; CPU fallback
+            // GPU grid disabled (wgpu validation error with egui texture GC)
+            // TODO: fix device.poll(Maintain::Wait) vs egui texture lifecycle conflict
             self.draw_grid(ui, rect);
-       }
+        }
 
         // 绘制物理碰撞体调试线框
         self.draw_physics_debug(ui, rect, state);
 
         // 绘制 Gizmo（当有选中实体时）
-        if state.selected_entity.is_some() {
-            let gizmo_world_pos = Point3::new(0.0, 0.0, 0.0);
+        if let Some(ref eid) = state.selected_entity {
+            let gizmo_world_pos = state.transform_cache.get(eid)
+                .map(|&(pos, _, _)| Point3::new(pos[0], pos[1], pos[2]))
+                .unwrap_or(Point3::new(0.0, 0.0, 0.0));
             if let Some(gizmo_screen) = self.world_to_screen(gizmo_world_pos, rect) {
                 let screen_pos = (gizmo_screen.x, gizmo_screen.y);
                 draw_gizmo(ui.painter(), screen_pos, &self.camera, &self.gizmo_interaction);
@@ -773,6 +833,189 @@ impl ViewportPanel {
 /// - **距离衰减**：线条中点离相机越远越透明，呈大气透视效果
 /// - **边缘淡出**：网格边界（后半段）平滑淡出，呈现无限网格观感
 /// - **轴高亮**：`X` 轴红色、`Z` 轴蓝色、每 5 格为粗线（`major_step = 5`）
+// ---------------------------------------------------------------------------
+// GpuGridRenderer - renders grid via GPU LineRenderer to offscreen texture
+// ---------------------------------------------------------------------------
+
+struct GpuGridRenderer {
+    line_renderer: render::LineRenderer,
+    color_texture: Option<render::wgpu::Texture>,
+    color_view: Option<render::wgpu::TextureView>,
+    depth_texture: Option<render::wgpu::Texture>,
+    depth_view: Option<render::wgpu::TextureView>,
+    tex_size: (u32, u32),
+}
+
+impl GpuGridRenderer {
+    fn new(device: &render::wgpu::Device, color_format: render::wgpu::TextureFormat) -> Self {
+        let depth_format = render::wgpu::TextureFormat::Depth32Float;
+        let line_renderer = render::LineRenderer::new(device, color_format, depth_format, 1);
+        Self {
+            line_renderer,
+            color_texture: None,
+            color_view: None,
+            depth_texture: None,
+            depth_view: None,
+            tex_size: (0, 0),
+        }
+    }
+
+    fn render(
+        &mut self,
+        ctx: &egui::Context,
+        device: &render::wgpu::Device,
+        queue: &render::wgpu::Queue,
+        camera: &OrbitCamera,
+        viewport_px: (u32, u32),
+        color_format: render::wgpu::TextureFormat,
+    ) -> Option<egui::TextureId> {
+        let (w, h) = (viewport_px.0.max(1), viewport_px.1.max(1));
+        // Inline texture creation to avoid borrow conflicts with line_renderer
+        {
+            let aligned_w = ((w + 63) / 64) * 64;
+            if self.color_texture.is_none()
+                || self.tex_size.0 != aligned_w
+                || self.tex_size.1 != h
+            {
+                self.tex_size = (aligned_w, h);
+                let tex = device.create_texture(&render::wgpu::TextureDescriptor {
+                    label: Some("grid color texture"),
+                    size: render::wgpu::Extent3d {
+                        width: self.tex_size.0, height: self.tex_size.1, depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1, sample_count: 1,
+                    dimension: render::wgpu::TextureDimension::D2,
+                    format: color_format,
+                    usage: render::wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | render::wgpu::TextureUsages::TEXTURE_BINDING
+                        | render::wgpu::TextureUsages::COPY_SRC,
+                    view_formats: &[],
+                });
+                self.color_view = Some(tex.create_view(&render::wgpu::TextureViewDescriptor::default()));
+                self.color_texture = Some(tex);
+                let dt = device.create_texture(&render::wgpu::TextureDescriptor {
+                    label: Some("grid depth texture"),
+                    size: render::wgpu::Extent3d {
+                        width: self.tex_size.0, height: self.tex_size.1, depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1, sample_count: 1,
+                    dimension: render::wgpu::TextureDimension::D2,
+                    format: render::wgpu::TextureFormat::Depth32Float,
+                    usage: render::wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    view_formats: &[],
+                });
+                self.depth_view = Some(dt.create_view(&render::wgpu::TextureViewDescriptor::default()));
+                self.depth_texture = Some(dt);
+            }
+        }
+        // Now update camera and upload vertices (borrows self for line_renderer only)
+        {
+            let eye = camera.eye_position();
+            let vp = camera.view_projection_matrix();
+            self.line_renderer.update_camera(queue, vp.into(), [eye.x, eye.y, eye.z]);
+            let vertices = build_grid_vertices(eye, camera.distance);
+            self.line_renderer.upload(device, queue, &vertices);
+        }
+        // Then get texture views (borrows self for texture fields only)
+        let color_view = self.color_view.as_ref().unwrap();
+        let depth_view = self.depth_view.as_ref().unwrap();
+
+        let mut encoder = device.create_command_encoder(&render::wgpu::CommandEncoderDescriptor {
+            label: Some("grid render encoder"),
+        });
+
+        {
+            let mut pass = encoder.begin_render_pass(&render::wgpu::RenderPassDescriptor {
+                label: Some("grid render pass"),
+                color_attachments: &[Some(render::wgpu::RenderPassColorAttachment {
+                    view: color_view,
+                    resolve_target: None,
+                    ops: render::wgpu::Operations {
+                        load: render::wgpu::LoadOp::Clear(render::wgpu::Color { r: 0.02, g: 0.02, b: 0.03, a: 1.0 }),
+                        store: render::wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(render::wgpu::RenderPassDepthStencilAttachment {
+                    view: depth_view,
+                    depth_ops: Some(render::wgpu::Operations {
+                        load: render::wgpu::LoadOp::Clear(1.0),
+                        store: render::wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            self.line_renderer.draw(&mut pass);
+        }
+
+        let bytes_per_row = (self.tex_size.0 * 4) as usize;
+        let buffer_size = bytes_per_row * self.tex_size.1 as usize;
+        let read_buffer = device.create_buffer(&render::wgpu::BufferDescriptor {
+            label: Some("grid readback buffer"),
+            size: buffer_size as render::wgpu::BufferAddress,
+            usage: render::wgpu::BufferUsages::MAP_READ | render::wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        encoder.copy_texture_to_buffer(
+            render::wgpu::ImageCopyTexture {
+                texture: self.color_texture.as_ref().unwrap(),
+                mip_level: 0,
+                origin: render::wgpu::Origin3d::ZERO,
+                aspect: render::wgpu::TextureAspect::All,
+            },
+            render::wgpu::ImageCopyBuffer {
+                buffer: &read_buffer,
+                layout: render::wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(bytes_per_row as u32),
+                    rows_per_image: Some(self.tex_size.1),
+                },
+            },
+            render::wgpu::Extent3d { width: self.tex_size.0, height: self.tex_size.1, depth_or_array_layers: 1 },
+        );
+
+        queue.submit([encoder.finish()]);
+
+        let slice = read_buffer.slice(..);
+        slice.map_async(render::wgpu::MapMode::Read, |_| {});
+        device.poll(render::wgpu::Maintain::Wait);
+        let pixels = { let data = slice.get_mapped_range(); data.to_vec() };
+        read_buffer.unmap();
+
+        let image = egui::ColorImage::from_rgba_unmultiplied([self.tex_size.0 as usize, self.tex_size.1 as usize], &pixels);
+
+        // Create new texture each frame; egui GCs old ones at frame end
+        let tex = ctx.load_texture("grid_render", image, egui::TextureOptions::LINEAR);
+        Some(tex.id())
+    }
+}
+
+fn screen_from_clip(clip: Vector4<f32>, rect: &egui::Rect) -> egui::Pos2 {
+    egui::Pos2::new(
+        rect.left() + (clip.x / clip.w * 0.5 + 0.5) * rect.width(),
+        rect.top() + (1.0 - (clip.y / clip.w * 0.5 + 0.5)) * rect.height(),
+    )
+}
+
+fn clip_grid_line(
+    p1: Point3<f32>, p2: Point3<f32>,
+    vp: &Matrix4<f32>, rect: &egui::Rect,
+) -> Option<(egui::Pos2, egui::Pos2)> {
+    let v4 = |p: Point3<f32>| Vector4::new(p.x, p.y, p.z, 1.0);
+    let c1 = vp * v4(p1);
+    let c2 = vp * v4(p2);
+    let (v1, v2) = (c1.w >= f32::EPSILON, c2.w >= f32::EPSILON);
+    let to_sp = |c: Vector4<f32>| screen_from_clip(c, rect);
+    match (v1, v2) {
+        (true,  true)  => Some((to_sp(c1), to_sp(c2))),
+        (true,  false) => { let t = (f32::EPSILON - c1.w) / (c2.w - c1.w); let p = p1 + (p2-p1)*t; let c = vp * v4(p); Some((to_sp(c1), to_sp(c))) }
+        (false, true)  => { let t = (f32::EPSILON - c1.w) / (c2.w - c1.w); let p = p1 + (p2-p1)*t; let c = vp * v4(p); Some((to_sp(c), to_sp(c2))) }
+        _ => None,
+    }
+}
+
 fn draw_grid_impl(
     ui: &mut egui::Ui,
     rect: egui::Rect,
@@ -781,6 +1024,7 @@ fn draw_grid_impl(
     _grid_subdivisions: usize,
 ) {
     let painter = ui.painter();
+    let vp = camera.view_projection_matrix();
     let eye = camera.eye_position();
     let dist = camera.distance;
 
@@ -822,12 +1066,7 @@ fn draw_grid_impl(
         let p1 = Point3::new(-extent, 0.0, z);
         let p2 = Point3::new(extent, 0.0, z);
 
-        let sp1 = camera_grid_project(camera, p1, rect);
-        let sp2 = camera_grid_project(camera, p2, rect);
-        let (sp1, sp2) = match (sp1, sp2) {
-            (Some(a), Some(b)) => (a, b),
-            _ => continue,
-        };
+        let Some((sp1, sp2)) = clip_grid_line(p1, p2, &vp, &rect) else { continue; };
 
         // 线条中点 → 相机眼（XZ 平面距离）
         let dz = z - eye.z;
@@ -868,12 +1107,7 @@ fn draw_grid_impl(
         let p1 = Point3::new(x, 0.0, -extent);
         let p2 = Point3::new(x, 0.0, extent);
 
-        let sp1 = camera_grid_project(camera, p1, rect);
-        let sp2 = camera_grid_project(camera, p2, rect);
-        let (sp1, sp2) = match (sp1, sp2) {
-            (Some(a), Some(b)) => (a, b),
-            _ => continue,
-        };
+        let Some((sp1, sp2)) = clip_grid_line(p1, p2, &vp, &rect) else { continue; };
 
         let dx = x - eye.x;
         let dz = 0.0 - eye.z;
@@ -916,7 +1150,7 @@ fn camera_grid_project(
     let vp = camera.view_projection_matrix();
     let clip = vp * Vector4::new(world_pos.x, world_pos.y, world_pos.z, 1.0);
 
-    if clip.w.abs() < f32::EPSILON || clip.w < 0.0 {
+    if clip.w < f32::EPSILON {
         return None;
     }
 
@@ -924,7 +1158,7 @@ fn camera_grid_project(
     let ndc_y = clip.y / clip.w;
 
     let screen_x = rect.left() + (ndc_x * 0.5 + 0.5) * rect.width();
-    let screen_y = rect.top() + (ndc_y * 0.5 + 0.5) * rect.height(); // fixed NDC Y flip
+    let screen_y = rect.top() + (1.0 - (ndc_y * 0.5 + 0.5)) * rect.height();
 
     Some(egui::Pos2::new(screen_x, screen_y))
 }

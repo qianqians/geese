@@ -1,14 +1,14 @@
-﻿//! 绗?3 绾挎潯娓叉煋妯″潡锛堢紪杈戝櫒缃戞牸 / Debug 绾挎绛夛級銆?
+//! Line rendering module (editor grid / Debug wireframe, etc.).
 //!
-//! 浣跨敤 `wgpu::PrimitiveTopology::LineList` 锛屽湪 GPU 涓婄粯鍒剁嚎娈碉紝
-//! 鍚?3D 鍦烘櫙鍏变韩鍚屼竴涓?render pass 涓旀繁搴︽祴璇曘€?
-//! 鐩告姌浜?editor 灞?egui painter 鎵嬪姩鎶曞奖瀵艰嚧鐨勭綉鏍兼柇瑁傞棶棰樸€?
+//! Uses wgpu::PrimitiveTopology::LineList to draw line segments on the GPU,
+//! sharing the same render pass with the 3D scene with depth testing.
+//! Avoids grid breakage caused by manual projection in the editor egui painter.
 
 use bytemuck::{Pod, Zeroable};
 
 const LINES_WGSL: &str = include_str!("../shaders/lines.wgsl");
 
-/// 绾挎潯椤剁偣锛堜綅缃?+ RGBA 棰滆壊锛屾灉閬撻涓婅壊锛夈€?
+/// Line vertex (position + RGBA color, premultiplied alpha).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub struct LineVertex {
@@ -37,15 +37,15 @@ impl LineVertex {
     }
 }
 
-/// 绾挎潯娓叉煋鍣ㄣ€傝嚜鍖呭惈 pipeline 涓?camera uniform锛屽彲鍦ㄤ换鎰?render pass 涓粯鍒躲€?
+/// Line renderer. Self-contained pipeline with camera uniform, drawable in any render pass.
 pub struct LineRenderer {
     pipeline: wgpu::RenderPipeline,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     vertex_buffer: wgpu::Buffer,
-    /// 褰撳墠缂撳瓨鐨勯《鐐规暟锛堟瘡 2 涓?1 鏉＄嚎娈碉級銆?
+    /// Number of cached vertices (every 2 vertices = 1 line segment).
     vertex_count: u32,
-    /// 缂撳啿鍖哄瓙閲忥紙鍗曚綅锛氶《鐐癸級銆?
+    /// Buffer capacity (unit: vertices).
     capacity: u32,
 }
 
@@ -141,7 +141,7 @@ impl LineRenderer {
             cache: None,
         });
 
-        // 鍒濆鑳藉沖噺锛?4096 涓ラ《鐐?锛?2048 鏉＄嚎娈碉級
+        // Initial capacity (4096 vertices, ~2048 line segments)
         let initial_capacity: u32 = 4096;
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("lines vertex buffer"),
@@ -161,7 +161,7 @@ impl LineRenderer {
         }
     }
 
-    /// 鏇存柊鐩告満 uniform锛堜笌涓荤鐞跨嚎鍏变韩鍚屼竴濂楁姇褰辩煩闃碉級銆?
+    /// Update camera uniform (shared projection matrix with the main renderer).
     pub fn update_camera(
         &self,
         queue: &wgpu::Queue,
@@ -172,7 +172,7 @@ impl LineRenderer {
         queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uniform));
     }
 
-    /// 涓婁紶绾挎绠椾釜椤剁偣銆傚繀瑕佹椂鑷姁鎵╁缂插啿鍖恒€?
+    /// Upload the given vertex array. Auto-resizes the buffer when necessary.
     pub fn upload(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, vertices: &[LineVertex]) {
         self.vertex_count = vertices.len() as u32;
 
@@ -195,7 +195,7 @@ impl LineRenderer {
         queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(vertices));
     }
 
-    /// 鍦ㄥ凡寮€濮嬬殑 render pass 涓粯鍒剁嚎鏉°€傝皟鐢ㄨ€呴』鍦ㄥ悓涓€涓?pass 鍐咃紝鍦ㄤ富鍦烘櫙缁樺埗涔嬪悗璋冪敤锛屼互渚跨綉鏍艰鐪熷疄鍑犱綍瑕嗙洊銆?
+    /// Draw lines in an already-started render pass. Call after the main scene for proper occlusion.
     pub fn draw<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
         if self.vertex_count == 0 {
             return;
@@ -206,7 +206,7 @@ impl LineRenderer {
         pass.draw(0..self.vertex_count, 0..1);
     }
 
-    /// 褰撳墠缂撳瓨鐨勭嚎娈垫暟锛堥《鐐规暟 / 2锛夈€?
+    /// Current cached line count (vertex count / 2).
     pub fn line_count(&self) -> u32 {
         self.vertex_count / 2
     }

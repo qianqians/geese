@@ -1,4 +1,4 @@
-//! 变换 Gizmo。
+﻿//! 变换 Gizmo。
 //!
 //! 在视口中绘制并操作 Translate / Rotate / Scale Gizmo。
 //! - W/E/R 切换模式
@@ -403,9 +403,7 @@ pub fn draw_gizmo(
             draw_arrow(painter, origin, z_tip, egui::Color32::LIGHT_BLUE, interaction.hovered_axis == Some(Axis::Z));
         }
         GizmoMode::Rotate => {
-            draw_rotation_ring(painter, p(origin), Axis::X, axis_x, egui::Color32::RED, &interaction, camera);
-            draw_rotation_ring(painter, p(origin), Axis::Y, axis_y, egui::Color32::GREEN, &interaction, camera);
-            draw_rotation_ring(painter, p(origin), Axis::Z, axis_z, egui::Color32::LIGHT_BLUE, &interaction, camera);
+            draw_rotation_ring(painter, p(origin), camera, interaction);
         }
         GizmoMode::Scale => {
             draw_scale_box(painter, p(origin), x_tip, egui::Color32::RED, interaction.hovered_axis == Some(Axis::X));
@@ -458,93 +456,43 @@ fn draw_arrow(
 fn draw_rotation_ring(
     painter: &egui::Painter,
     center: egui::Pos2,
-    _axis: Axis,
-    _axis_dir: Vector3<f32>,
-    color: egui::Color32,
-    _interaction: &GizmoInteraction,
-    _camera: &OrbitCamera,
+    camera: &OrbitCamera,
+    interaction: &GizmoInteraction,
 ) {
-    // 获取视口大小
-    let viewport_width = painter.clip_rect().width();
-    let viewport_height = painter.clip_rect().height();
-    
-    // 网格大小（根据视口大小调整）
-    let grid_size = viewport_width.min(viewport_height) * 0.4;
-    
-    // 绘制三个坐标平面的网格
-    draw_grid_plane(painter, center, grid_size, Vector3::unit_x(), Vector3::unit_z(), color); // XY平面
-    draw_grid_plane(painter, center, grid_size, Vector3::unit_x(), Vector3::unit_y(), color); // XZ平面  
-    draw_grid_plane(painter, center, grid_size, Vector3::unit_y(), Vector3::unit_z(), color); // YZ平面
-    
-    // 绘制坐标轴
-    draw_axis_lines(painter, center, grid_size * 1.2, color);
-}
+    let radius = 60.0;
+    let num_segments = 48;
+    let right = camera.right_direction();
+    let up = camera.up_direction();
 
-// 辅助函数：绘制网格平面
-fn draw_grid_plane(
-    painter: &egui::Painter,
-    center: egui::Pos2,
-    size: f32,
-    axis1: Vector3<f32>,
-    axis2: Vector3<f32>,
-    color: egui::Color32,
-) {
-    let grid_lines = 10; // 网格线数量
-    let line_spacing = size / grid_lines as f32;
-    
-    // 绘制第一组线条（沿axis1方向）
-    for i in -grid_lines..=grid_lines {
-        let offset = i as f32 * line_spacing;
-        let start = center + egui::Vec2::new(
-            axis1.x * offset + axis2.x * (-size/2.0),
-            axis1.y * offset + axis2.y * (-size/2.0)
-        );
-        let end = center + egui::Vec2::new(
-            axis1.x * offset + axis2.x * (size/2.0),
-            axis1.y * offset + axis2.y * (size/2.0)
-        );
-        painter.line_segment([start, end], (0.5, color));
-    }
-    
-    // 绘制第二组线条（沿axis2方向）
-    for i in -grid_lines..=grid_lines {
-        let offset = i as f32 * line_spacing;
-        let start = center + egui::Vec2::new(
-            axis2.x * offset + axis1.x * (-size/2.0),
-            axis2.y * offset + axis1.y * (-size/2.0)
-        );
-        let end = center + egui::Vec2::new(
-            axis2.x * offset + axis1.x * (size/2.0),
-            axis2.y * offset + axis1.y * (size/2.0)
-        );
-        painter.line_segment([start, end], (0.5, color));
-    }
-}
+    let proj = |v: Vector3<f32>| -> egui::Vec2 {
+        egui::Vec2::new(right.dot(v), -up.dot(v))
+    };
 
-// 辅助函数：绘制坐标轴
-fn draw_axis_lines(
-    painter: &egui::Painter,
-    center: egui::Pos2,
-    length: f32,
-    _color: egui::Color32,
-) {
-    // X轴（红色）
-    painter.line_segment([
-        center,
-        center + egui::Vec2::new(length, 0.0)
-    ], (2.0, egui::Color32::RED));
-    
-    // Y轴（绿色）
-    painter.line_segment([
-        center,
-        center + egui::Vec2::new(0.0, length)
-    ], (2.0, egui::Color32::GREEN));
-    
-    // Z轴（蓝色，在2D中显示为对角线）
-    painter.line_segment([
-        center,
-        center + egui::Vec2::new(length, length)
-    ], (2.0, egui::Color32::BLUE));
+    let rings = [
+        (Axis::X, Vector3::unit_y(), Vector3::unit_z(), egui::Color32::RED),
+        (Axis::Y, Vector3::unit_z(), Vector3::unit_x(), egui::Color32::GREEN),
+        (Axis::Z, Vector3::unit_x(), Vector3::unit_y(), egui::Color32::LIGHT_BLUE),
+    ];
+
+    for &(axis, perp1, perp2, color) in &rings {
+        let s1 = proj(perp1);
+        let s2 = proj(perp2);
+
+        let is_highlighted = interaction.hovered_axis == Some(axis)
+            || interaction.dragging.as_ref().map_or(false, |d| d.axis == axis);
+        let thickness = if is_highlighted { 3.5 } else { 2.0 };
+        let draw_color = if is_highlighted { egui::Color32::YELLOW } else { color };
+
+        let mut prev: Option<egui::Pos2> = None;
+        for i in 0..=num_segments {
+            let theta = i as f32 * 2.0 * std::f32::consts::PI / num_segments as f32;
+            let point = center + (s1 * theta.cos() + s2 * theta.sin()) * radius;
+            if let Some(p) = prev {
+                painter.line_segment([p, point], (thickness, draw_color));
+            }
+            prev = Some(point);
+        }
+    }
 }
 
 fn draw_scale_box(

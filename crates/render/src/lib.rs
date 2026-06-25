@@ -2,6 +2,7 @@ pub mod cluster;
 pub mod common;
 pub mod deferred_plus;
 pub mod forward_plus;
+pub mod grid;
 pub mod ibl;
 pub mod light;
 pub mod lines;
