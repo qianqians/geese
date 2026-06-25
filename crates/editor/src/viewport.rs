@@ -11,7 +11,7 @@ use crate::editor_mode::EditorMode;
 use crate::gizmo::{GizmoInteraction, draw_gizmo};
 use crate::panel_layer::PanelLayer;
 use crate::panels::{EditorPanel, EditorState, PendingTransform};
-use cgmath::{EuclideanSpace, InnerSpace, Matrix4, Point3, SquareMatrix, Vector3, Vector4, perspective, Rad};
+use cgmath::{InnerSpace, Matrix4, Point3, SquareMatrix, Vector3, Vector4, perspective, Rad};
 use math::AABB;
 use render::grid::build_grid_vertices;
 
@@ -59,15 +59,15 @@ impl Default for OrbitCamera {
     fn default() -> Self {
         Self {
             focal_point: Point3::new(0.0, 0.0, 0.0),
-            yaw: std::f32::consts::FRAC_PI_4,
-            pitch: -std::f32::consts::FRAC_PI_4,
-            distance: 10.0,
+            yaw: std::f32::consts::FRAC_PI_4,  // 45度水平角
+            pitch: -0.1745,  // -10度俯角（约等于-π/18），相机与XZ平面保持10度夹角
+            distance: 20.0,  // 从10.0增加到20.0，相机离地面更高
             min_distance: 0.5,
             max_distance: 200.0,
             aspect_ratio: 16.0 / 9.0,
-            fov: std::f32::consts::FRAC_PI_4,  // 减小FOV，使视野更集中
+            fov: std::f32::consts::FRAC_PI_4,
             z_near: 0.1,
-            z_far: 500.0,  // 增加远裁剪平面，看到更远的网格
+            z_far: 500.0,
             orbit_sensitivity: 0.005,
             pan_sensitivity: 0.01,
             zoom_sensitivity: 0.5,
@@ -78,17 +78,22 @@ impl Default for OrbitCamera {
 impl OrbitCamera {
     /// 计算摄像机在世界空间中的位置。
     pub fn eye_position(&self) -> Point3<f32> {
-        let direction = self.forward_direction();
-        Point3::from_vec(self.focal_point.to_vec() - direction * self.distance)
+        // Orbit相机：相机围绕焦点旋转，从上方俯视
+        // pitch为负值时相机在上方，正值时在下方
+        let x = self.yaw.sin() * (-self.pitch).cos() * self.distance;
+        let y = (-self.pitch).sin() * self.distance;  // pitch取反，确保负pitch时y为正（在上方）
+        let z = self.yaw.cos() * (-self.pitch).cos() * self.distance;
+        Point3::new(
+            self.focal_point.x + x,
+            self.focal_point.y + y,
+            self.focal_point.z + z,
+        )
     }
 
-    /// 摄像机前向方向（从焦点指向摄像机）。
+    /// 摄像机前向方向（相机看向的方向，从相机指向焦点）
     pub fn forward_direction(&self) -> Vector3<f32> {
-        let yaw_sin = self.yaw.sin();
-        let yaw_cos = self.yaw.cos();
-        let pitch_sin = self.pitch.sin();
-        let pitch_cos = self.pitch.cos();
-        Vector3::new(-yaw_sin * pitch_cos, pitch_sin, -yaw_cos * pitch_cos).normalize()
+        let eye = self.eye_position();
+        (self.focal_point - eye).normalize()
     }
 
     /// 摄像机右向向量。
@@ -151,6 +156,12 @@ impl OrbitCamera {
         self.distance = self.distance.clamp(self.min_distance, self.max_distance);
     }
 
+    /// 基于鼠标垂直拖拽缩放（Unity风格Alt+右键）
+    pub fn zoom_by_drag(&mut self, delta_y: f32) {
+        self.distance += delta_y * self.zoom_sensitivity * 0.5;
+        self.distance = self.distance.clamp(self.min_distance, self.max_distance);
+    }
+
     /// 聚焦到指定位置。
     pub fn focus_on(&mut self, point: Point3<f32>) {
         self.focal_point = point;
@@ -160,8 +171,8 @@ impl OrbitCamera {
     pub fn reset(&mut self) {
         self.focal_point = Point3::new(0.0, 0.0, 0.0);
         self.yaw = std::f32::consts::FRAC_PI_4;
-        self.pitch = -std::f32::consts::FRAC_PI_4;
-        self.distance = 10.0;
+        self.pitch = -0.1745;  // -10度，与默认值保持一致
+        self.distance = 20.0;  // 与默认值保持一致
     }
 
     /// 从屏幕坐标生成世界空间射线。
@@ -289,8 +300,8 @@ impl ViewportPanel {
             panning: false,
             viewport_size: (800.0, 600.0),
             rendered_texture: None,
-           render_state: None,
-           grid_size: 10.0,
+            render_state: None,
+            grid_size: 10.0,
             grid_subdivisions: 10,
             gpu_grid: None,
             gizmo_interaction: GizmoInteraction::new(),
@@ -325,29 +336,59 @@ impl ViewportPanel {
             }
         }
 
-        // 按键状态
-        let (right_down, middle_down) = ui.input(|input| {
+        // 处理WASD/方向键移动相机
+        if hovered {
+            let move_speed = self.camera.distance * 0.02;
+            ui.input(|input| {
+                let mut move_vec = Vector3::new(0.0, 0.0, 0.0);
+                
+                // WASD控制
+                if input.key_down(egui::Key::W) || input.key_down(egui::Key::ArrowUp) {
+                    move_vec += self.camera.forward_direction();
+                }
+                if input.key_down(egui::Key::S) || input.key_down(egui::Key::ArrowDown) {
+                    move_vec -= self.camera.forward_direction();
+                }
+                if input.key_down(egui::Key::A) || input.key_down(egui::Key::ArrowLeft) {
+                    move_vec -= self.camera.right_direction();
+                }
+                if input.key_down(egui::Key::D) || input.key_down(egui::Key::ArrowRight) {
+                    move_vec += self.camera.right_direction();
+                }
+                
+                if move_vec.magnitude() > 0.0 {
+                    move_vec = move_vec.normalize() * move_speed;
+                    self.camera.focal_point += move_vec;
+                }
+            });
+        }
+
+        // 按键状态（自定义风格）
+        let (left_down, right_down, _middle_down) = ui.input(|input| {
             (
+                input.pointer.button_down(egui::PointerButton::Primary),
                 input.pointer.button_down(egui::PointerButton::Secondary),
                 input.pointer.button_down(egui::PointerButton::Middle),
             )
         });
 
-        // 处理拖拽开始
+        // 处理拖拽开始（自定义风格）
         if hovered {
-            if right_down && !self.orbiting {
+            // 左键拖拽旋转
+            if left_down && !self.orbiting {
                 self.orbiting = true;
                 self.last_mouse_pos = pointer_pos;
             }
-            if middle_down && !self.panning {
+            // 右键拖拽平移
+            if right_down && !self.panning {
                 self.panning = true;
                 self.last_mouse_pos = pointer_pos;
             }
         }
 
-        // 处理拖拽更新
+        // 处理拖拽更新（自定义风格）
         if self.orbiting {
-            if right_down {
+            if left_down {
                 if let (Some(last), Some(curr)) = (self.last_mouse_pos, pointer_pos) {
                     let dx = curr.0 - last.0;
                     let dy = curr.1 - last.1;
@@ -361,7 +402,7 @@ impl ViewportPanel {
         }
 
         if self.panning {
-            if middle_down {
+            if right_down {
                 if let (Some(last), Some(curr)) = (self.last_mouse_pos, pointer_pos) {
                     let dx = curr.0 - last.0;
                     let dy = curr.1 - last.1;
@@ -610,6 +651,11 @@ impl ViewportPanel {
                     .size(11.0)
                     .color(egui::Color32::from_gray(180)),
             );
+            ui.label(
+                egui::RichText::new("LMB: Orbit | RMB: Pan | Scroll: Zoom | WASD/Arrows: Move")
+                    .size(10.0)
+                    .color(egui::Color32::from_gray(140)),
+            );
         });
     }
 }
@@ -650,22 +696,48 @@ impl EditorPanel for ViewportPanel {
         self.handle_input(ui, &rect_response, state);
         self.handle_gizmo_input(ui, &rect_response, state);
 
+        // 延迟初始化GPU网格渲染器
+        if self.gpu_grid.is_none() {
+            if let Some(ref render_state) = self.render_state {
+                self.gpu_grid = Some(GpuGridRenderer::new(
+                    &render_state.device,
+                    render_state.target_format,
+                ));
+            }
+        }
+
         // 绘制背景
         let bg_color = egui::Color32::from_gray(25);
         ui.painter().rect_filled(rect, 0.0, bg_color);
 
-        // 如果有渲染纹理，绘制纹理;否则绘制网格
-        if let Some(tex_id) = self.rendered_texture {
-            ui.painter().image(
-                tex_id,
-                rect,
-                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(1.0, 1.0)),
-                egui::Color32::WHITE,
-            );
+        // 使用GPU渲染网格
+        if let Some(ref mut gpu_grid) = self.gpu_grid {
+            if let Some(ref render_state) = self.render_state {
+                let viewport_px = (rect.width() as u32, rect.height() as u32);
+                if let Some(tex_id) = gpu_grid.render(
+                    ui.ctx(),
+                    &render_state.device,
+                    &render_state.queue,
+                    &self.camera,
+                    viewport_px,
+                    render_state.target_format,
+                ) {
+                    ui.painter().image(
+                        tex_id,
+                        rect,
+                        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(1.0, 1.0)),
+                        egui::Color32::WHITE,
+                    );
+                } else {
+                    // GPU渲染失败，回退到CPU渲染
+                    self.draw_grid(ui, rect);
+                }
+            } else {
+                // 没有render_state，使用CPU渲染
+                self.draw_grid(ui, rect);
+            }
         } else {
-            // GPU grid via LineRenderer + wgpu offscreen; CPU fallback
-            // GPU grid disabled (wgpu validation error with egui texture GC)
-            // TODO: fix device.poll(Maintain::Wait) vs egui texture lifecycle conflict
+            // GPU渲染器未初始化，使用CPU渲染
             self.draw_grid(ui, rect);
         }
 
@@ -839,11 +911,8 @@ impl ViewportPanel {
 
 struct GpuGridRenderer {
     line_renderer: render::LineRenderer,
-    color_texture: Option<render::wgpu::Texture>,
-    color_view: Option<render::wgpu::TextureView>,
-    depth_texture: Option<render::wgpu::Texture>,
-    depth_view: Option<render::wgpu::TextureView>,
-    tex_size: (u32, u32),
+    // 存储上一帧的纹理ID，用于在egui GC前清理
+    prev_texture_id: Option<egui::TextureId>,
 }
 
 impl GpuGridRenderer {
@@ -852,11 +921,7 @@ impl GpuGridRenderer {
         let line_renderer = render::LineRenderer::new(device, color_format, depth_format, 1);
         Self {
             line_renderer,
-            color_texture: None,
-            color_view: None,
-            depth_texture: None,
-            depth_view: None,
-            tex_size: (0, 0),
+            prev_texture_id: None,
         }
     }
 
@@ -870,56 +935,46 @@ impl GpuGridRenderer {
         color_format: render::wgpu::TextureFormat,
     ) -> Option<egui::TextureId> {
         let (w, h) = (viewport_px.0.max(1), viewport_px.1.max(1));
-        // Inline texture creation to avoid borrow conflicts with line_renderer
-        {
-            let aligned_w = ((w + 63) / 64) * 64;
-            if self.color_texture.is_none()
-                || self.tex_size.0 != aligned_w
-                || self.tex_size.1 != h
-            {
-                self.tex_size = (aligned_w, h);
-                let tex = device.create_texture(&render::wgpu::TextureDescriptor {
-                    label: Some("grid color texture"),
-                    size: render::wgpu::Extent3d {
-                        width: self.tex_size.0, height: self.tex_size.1, depth_or_array_layers: 1,
-                    },
-                    mip_level_count: 1, sample_count: 1,
-                    dimension: render::wgpu::TextureDimension::D2,
-                    format: color_format,
-                    usage: render::wgpu::TextureUsages::RENDER_ATTACHMENT
-                        | render::wgpu::TextureUsages::TEXTURE_BINDING
-                        | render::wgpu::TextureUsages::COPY_SRC,
-                    view_formats: &[],
-                });
-                self.color_view = Some(tex.create_view(&render::wgpu::TextureViewDescriptor::default()));
-                self.color_texture = Some(tex);
-                let dt = device.create_texture(&render::wgpu::TextureDescriptor {
-                    label: Some("grid depth texture"),
-                    size: render::wgpu::Extent3d {
-                        width: self.tex_size.0, height: self.tex_size.1, depth_or_array_layers: 1,
-                    },
-                    mip_level_count: 1, sample_count: 1,
-                    dimension: render::wgpu::TextureDimension::D2,
-                    format: render::wgpu::TextureFormat::Depth32Float,
-                    usage: render::wgpu::TextureUsages::RENDER_ATTACHMENT,
-                    view_formats: &[],
-                });
-                self.depth_view = Some(dt.create_view(&render::wgpu::TextureViewDescriptor::default()));
-                self.depth_texture = Some(dt);
-            }
-        }
-        // Now update camera and upload vertices (borrows self for line_renderer only)
-        {
-            let eye = camera.eye_position();
-            let vp = camera.view_projection_matrix();
-            self.line_renderer.update_camera(queue, vp.into(), [eye.x, eye.y, eye.z]);
-            let vertices = build_grid_vertices(eye, camera.distance);
-            self.line_renderer.upload(device, queue, &vertices);
-        }
-        // Then get texture views (borrows self for texture fields only)
-        let color_view = self.color_view.as_ref().unwrap();
-        let depth_view = self.depth_view.as_ref().unwrap();
-
+        
+        // 每帧创建新纹理，避免与egui GC冲突
+        let aligned_w = ((w + 63) / 64) * 64;
+        let tex_size = (aligned_w, h);
+        
+        let color_tex = device.create_texture(&render::wgpu::TextureDescriptor {
+            label: Some("grid color texture"),
+            size: render::wgpu::Extent3d {
+                width: tex_size.0, height: tex_size.1, depth_or_array_layers: 1,
+            },
+            mip_level_count: 1, sample_count: 1,
+            dimension: render::wgpu::TextureDimension::D2,
+            format: color_format,
+            usage: render::wgpu::TextureUsages::RENDER_ATTACHMENT
+                | render::wgpu::TextureUsages::TEXTURE_BINDING
+                | render::wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let color_view = color_tex.create_view(&render::wgpu::TextureViewDescriptor::default());
+        
+        let depth_tex = device.create_texture(&render::wgpu::TextureDescriptor {
+            label: Some("grid depth texture"),
+            size: render::wgpu::Extent3d {
+                width: tex_size.0, height: tex_size.1, depth_or_array_layers: 1,
+            },
+            mip_level_count: 1, sample_count: 1,
+            dimension: render::wgpu::TextureDimension::D2,
+            format: render::wgpu::TextureFormat::Depth32Float,
+            usage: render::wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let depth_view = depth_tex.create_view(&render::wgpu::TextureViewDescriptor::default());
+        
+        // 更新相机和顶点
+        let eye = camera.eye_position();
+        let vp = camera.view_projection_matrix();
+        self.line_renderer.update_camera(queue, vp.into(), [eye.x, eye.y, eye.z]);
+        let vertices = build_grid_vertices(eye, camera.distance);
+        self.line_renderer.upload(device, queue, &vertices);
+        
         let mut encoder = device.create_command_encoder(&render::wgpu::CommandEncoderDescriptor {
             label: Some("grid render encoder"),
         });
@@ -928,7 +983,7 @@ impl GpuGridRenderer {
             let mut pass = encoder.begin_render_pass(&render::wgpu::RenderPassDescriptor {
                 label: Some("grid render pass"),
                 color_attachments: &[Some(render::wgpu::RenderPassColorAttachment {
-                    view: color_view,
+                    view: &color_view,
                     resolve_target: None,
                     ops: render::wgpu::Operations {
                         load: render::wgpu::LoadOp::Clear(render::wgpu::Color { r: 0.02, g: 0.02, b: 0.03, a: 1.0 }),
@@ -936,7 +991,7 @@ impl GpuGridRenderer {
                     },
                 })],
                 depth_stencil_attachment: Some(render::wgpu::RenderPassDepthStencilAttachment {
-                    view: depth_view,
+                    view: &depth_view,
                     depth_ops: Some(render::wgpu::Operations {
                         load: render::wgpu::LoadOp::Clear(1.0),
                         store: render::wgpu::StoreOp::Store,
@@ -949,8 +1004,8 @@ impl GpuGridRenderer {
             self.line_renderer.draw(&mut pass);
         }
 
-        let bytes_per_row = (self.tex_size.0 * 4) as usize;
-        let buffer_size = bytes_per_row * self.tex_size.1 as usize;
+        let bytes_per_row = (tex_size.0 * 4) as usize;
+        let buffer_size = bytes_per_row * tex_size.1 as usize;
         let read_buffer = device.create_buffer(&render::wgpu::BufferDescriptor {
             label: Some("grid readback buffer"),
             size: buffer_size as render::wgpu::BufferAddress,
@@ -960,7 +1015,7 @@ impl GpuGridRenderer {
 
         encoder.copy_texture_to_buffer(
             render::wgpu::ImageCopyTexture {
-                texture: self.color_texture.as_ref().unwrap(),
+                texture: &color_tex,
                 mip_level: 0,
                 origin: render::wgpu::Origin3d::ZERO,
                 aspect: render::wgpu::TextureAspect::All,
@@ -970,10 +1025,10 @@ impl GpuGridRenderer {
                 layout: render::wgpu::ImageDataLayout {
                     offset: 0,
                     bytes_per_row: Some(bytes_per_row as u32),
-                    rows_per_image: Some(self.tex_size.1),
+                    rows_per_image: Some(tex_size.1),
                 },
             },
-            render::wgpu::Extent3d { width: self.tex_size.0, height: self.tex_size.1, depth_or_array_layers: 1 },
+            render::wgpu::Extent3d { width: tex_size.0, height: tex_size.1, depth_or_array_layers: 1 },
         );
 
         queue.submit([encoder.finish()]);
@@ -984,14 +1039,20 @@ impl GpuGridRenderer {
         let pixels = { let data = slice.get_mapped_range(); data.to_vec() };
         read_buffer.unmap();
 
-        let image = egui::ColorImage::from_rgba_unmultiplied([self.tex_size.0 as usize, self.tex_size.1 as usize], &pixels);
+        let image = egui::ColorImage::from_rgba_unmultiplied([tex_size.0 as usize, tex_size.1 as usize], &pixels);
 
-        // Create new texture each frame; egui GCs old ones at frame end
+        // 创建新纹理并保存ID
+        // 注意：egui会自动管理纹理生命周期，我们不需要手动释放
         let tex = ctx.load_texture("grid_render", image, egui::TextureOptions::LINEAR);
-        Some(tex.id())
+        let tex_id = tex.id();
+        
+        self.prev_texture_id = Some(tex_id);
+        
+        Some(tex_id)
     }
 }
 
+#[allow(dead_code)]
 fn screen_from_clip(clip: Vector4<f32>, rect: &egui::Rect) -> egui::Pos2 {
     egui::Pos2::new(
         rect.left() + (clip.x / clip.w * 0.5 + 0.5) * rect.width(),
@@ -999,21 +1060,25 @@ fn screen_from_clip(clip: Vector4<f32>, rect: &egui::Rect) -> egui::Pos2 {
     )
 }
 
-fn clip_grid_line(
-    p1: Point3<f32>, p2: Point3<f32>,
-    vp: &Matrix4<f32>, rect: &egui::Rect,
-) -> Option<(egui::Pos2, egui::Pos2)> {
-    let v4 = |p: Point3<f32>| Vector4::new(p.x, p.y, p.z, 1.0);
-    let c1 = vp * v4(p1);
-    let c2 = vp * v4(p2);
-    let (v1, v2) = (c1.w >= f32::EPSILON, c2.w >= f32::EPSILON);
-    let to_sp = |c: Vector4<f32>| screen_from_clip(c, rect);
-    match (v1, v2) {
-        (true,  true)  => Some((to_sp(c1), to_sp(c2))),
-        (true,  false) => { let t = (f32::EPSILON - c1.w) / (c2.w - c1.w); let p = p1 + (p2-p1)*t; let c = vp * v4(p); Some((to_sp(c1), to_sp(c))) }
-        (false, true)  => { let t = (f32::EPSILON - c1.w) / (c2.w - c1.w); let p = p1 + (p2-p1)*t; let c = vp * v4(p); Some((to_sp(c), to_sp(c2))) }
-        _ => None,
+/// 将世界坐标投影到屏幕坐标。如果点在相机后面，返回 None。
+fn world_to_screen_safe(world_pos: Point3<f32>, vp: &Matrix4<f32>, rect: &egui::Rect) -> Option<egui::Pos2> {
+    let clip = vp * Vector4::new(world_pos.x, world_pos.y, world_pos.z, 1.0);
+    
+    // 点在相机后面，跳过
+    if clip.w < 0.001 {
+        return None;
     }
+    
+    let ndc_x = clip.x / clip.w;
+    let ndc_y = clip.y / clip.w;
+    
+    // 完全不裁剪NDC范围，让egui自动处理屏幕外绘制
+    // 网格线端点可能在NDC空间超出视口几百倍，但只要线段穿过视口就应该显示
+    
+    let screen_x = rect.left() + (ndc_x * 0.5 + 0.5) * rect.width();
+    let screen_y = rect.top() + (1.0 - (ndc_y * 0.5 + 0.5)) * rect.height();
+    
+    Some(egui::Pos2::new(screen_x, screen_y))
 }
 
 fn draw_grid_impl(
@@ -1037,11 +1102,19 @@ fn draw_grid_impl(
         else { 50.0 };
 
     // 网格范围覆盖更远
-    let half_extent = (dist * 4.0).max(20.0).min(5000.0);
+    let half_extent = (dist * 8.0).max(50.0).min(5000.0);  // 从4.0增加到8.0，最小值从20增加到50
     let half_cells = (half_extent / cell_size).ceil() as i32;
     let extent = half_cells as f32 * cell_size;
     let major_step = 5;
-    let camera_fade_dist = dist * 6.0;
+    let camera_fade_dist = dist * 12.0;  // 从6.0增加到12.0，让相机距离淡出更平缓
+    
+    // 以相机在XZ平面的投影位置为中心生成网格
+    let cam_x = eye.x;
+    let cam_z = eye.z;
+    
+    // 计算网格偏移，使网格对齐到cell_size的整数倍
+    let grid_offset_x = (cam_x / cell_size).round() * cell_size;
+    let grid_offset_z = (cam_z / cell_size).round() * cell_size;
 
     // 颜色基值（非预乘，alpha 单独预乘）
     let minor_base = (80, 80, 80);
@@ -1062,11 +1135,42 @@ fn draw_grid_impl(
 
     // --- 绘制 X 方向线（沿 X 轴，Z 变化）---
     for i in -half_cells..=half_cells {
-        let z = i as f32 * cell_size;
-        let p1 = Point3::new(-extent, 0.0, z);
-        let p2 = Point3::new(extent, 0.0, z);
+        let z = i as f32 * cell_size + grid_offset_z;
+        let p1 = Point3::new(-extent + grid_offset_x, 0.0, z);
+        let p2 = Point3::new(extent + grid_offset_x, 0.0, z);
 
-        let Some((sp1, sp2)) = clip_grid_line(p1, p2, &vp, &rect) else { continue; };
+        // 转换到屏幕坐标
+        let sp1 = world_to_screen_safe(p1, &vp, &rect);
+        let sp2 = world_to_screen_safe(p2, &vp, &rect);
+        
+        // 如果两个端点都不可见，跳过
+        if sp1.is_none() && sp2.is_none() {
+            continue;
+        }
+        
+        // 至少有一个端点可见，使用可见的端点绘制
+        // egui会自动裁剪超出屏幕的部分
+        let (sp1, sp2) = match (sp1, sp2) {
+            (Some(s1), Some(s2)) => (s1, s2),
+            (Some(s1), None) => {
+                // 一个端点可见，另一个不可见，使用可见端点和远处点
+                let far_point = Point3::new(0.0, 0.0, z);
+                if let Some(sf) = world_to_screen_safe(far_point, &vp, &rect) {
+                    (s1, sf)
+                } else {
+                    continue;
+                }
+            },
+            (None, Some(s2)) => {
+                let far_point = Point3::new(0.0, 0.0, z);
+                if let Some(sf) = world_to_screen_safe(far_point, &vp, &rect) {
+                    (sf, s2)
+                } else {
+                    continue;
+                }
+            },
+            (None, None) => continue,
+        };
 
         // 线条中点 → 相机眼（XZ 平面距离）
         let dz = z - eye.z;
@@ -1074,16 +1178,17 @@ fn draw_grid_impl(
         let cam_dist = (dx * dx + dz * dz).sqrt();
         let cam_alpha = 1.0 - (cam_dist / camera_fade_dist).clamp(0.0, 1.0);
 
-        // 边缘淡出：t ∈ [0, 0.75) → 1.0, [0.75, 1.0] → 渐变到 0
+        // 边缘淡出：t ∈ [0, 0.90) → 1.0, [0.90, 1.0] → 渐变到 0
+        // 从0.75改为0.90，让更多网格线完整显示
         let edge_t = z.abs() / extent;
-        let edge_alpha = if edge_t < 0.75 { 1.0 }
-            else { 1.0 - ((edge_t - 0.75) / 0.25).clamp(0.0, 1.0) };
+        let edge_alpha = if edge_t < 0.90 { 1.0 }
+            else { 1.0 - ((edge_t - 0.90) / 0.10).clamp(0.0, 1.0) };
 
         let alpha_f = cam_alpha * edge_alpha;
         let alpha = (alpha_f * 255.0) as u8;
         if alpha < 4 { continue; }
 
-        let is_center = i == 0;
+        let is_center = (z - grid_offset_z).abs() < cell_size * 0.5;  // 判断是否是中心线（Z=0的线）
         let is_major = is_center || i % major_step == 0;
 
         if is_center {
@@ -1103,26 +1208,56 @@ fn draw_grid_impl(
 
     // --- 绘制 Z 方向线（沿 Z 轴，X 变化）---
     for i in -half_cells..=half_cells {
-        let x = i as f32 * cell_size;
-        let p1 = Point3::new(x, 0.0, -extent);
-        let p2 = Point3::new(x, 0.0, extent);
+        let x = i as f32 * cell_size + grid_offset_x;
+        let p1 = Point3::new(x, 0.0, -extent + grid_offset_z);
+        let p2 = Point3::new(x, 0.0, extent + grid_offset_z);
 
-        let Some((sp1, sp2)) = clip_grid_line(p1, p2, &vp, &rect) else { continue; };
+        // 转换到屏幕坐标
+        let sp1 = world_to_screen_safe(p1, &vp, &rect);
+        let sp2 = world_to_screen_safe(p2, &vp, &rect);
+        
+        // 如果两个端点都不可见，跳过
+        if sp1.is_none() && sp2.is_none() {
+            continue;
+        }
+        
+        // 至少有一个端点可见，使用可见的端点绘制
+        let (sp1, sp2) = match (sp1, sp2) {
+            (Some(s1), Some(s2)) => (s1, s2),
+            (Some(s1), None) => {
+                let far_point = Point3::new(x, 0.0, 0.0);
+                if let Some(sf) = world_to_screen_safe(far_point, &vp, &rect) {
+                    (s1, sf)
+                } else {
+                    continue;
+                }
+            },
+            (None, Some(s2)) => {
+                let far_point = Point3::new(x, 0.0, 0.0);
+                if let Some(sf) = world_to_screen_safe(far_point, &vp, &rect) {
+                    (sf, s2)
+                } else {
+                    continue;
+                }
+            },
+            (None, None) => continue,
+        };
 
         let dx = x - eye.x;
         let dz = 0.0 - eye.z;
         let cam_dist = (dx * dx + dz * dz).sqrt();
         let cam_alpha = 1.0 - (cam_dist / camera_fade_dist).clamp(0.0, 1.0);
 
+        // 边缘淡出：t ∈ [0, 0.90) → 1.0, [0.90, 1.0] → 渐变到 0
         let edge_t = x.abs() / extent;
-        let edge_alpha = if edge_t < 0.75 { 1.0 }
-            else { 1.0 - ((edge_t - 0.75) / 0.25).clamp(0.0, 1.0) };
+        let edge_alpha = if edge_t < 0.90 { 1.0 }
+            else { 1.0 - ((edge_t - 0.90) / 0.10).clamp(0.0, 1.0) };
 
         let alpha_f = cam_alpha * edge_alpha;
         let alpha = (alpha_f * 255.0) as u8;
         if alpha < 4 { continue; }
 
-        let is_center = i == 0;
+        let is_center = (x - grid_offset_x).abs() < cell_size * 0.5;  // 判断是否是中心线（X=0的线）
         let is_major = is_center || i % major_step == 0;
 
         if is_center {
@@ -1142,6 +1277,7 @@ fn draw_grid_impl(
 }
 /// 网格专用世界→屏幕投影，允许点超出视口范围。
 /// 与 `world_to_screen` 的区别：不裁剪 NDC `w < 0` 以外的范围。
+#[allow(dead_code)]
 fn camera_grid_project(
     camera: &OrbitCamera,
     world_pos: Point3<f32>,
