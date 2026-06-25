@@ -13,7 +13,7 @@ use crate::panel_layer::PanelLayer;
 use crate::panels::{EditorPanel, EditorState, PendingTransform};
 use cgmath::{InnerSpace, Matrix4, Point3, SquareMatrix, Vector3, Vector4, perspective, Rad};
 use math::AABB;
-use render::grid::build_grid_vertices;
+use render::LineVertex;
 
 // ---------------------------------------------------------------------------
 // OrbitCamera - 编辑器摄像机
@@ -696,49 +696,31 @@ impl EditorPanel for ViewportPanel {
         self.handle_input(ui, &rect_response, state);
         self.handle_gizmo_input(ui, &rect_response, state);
 
-        // 延迟初始化GPU网格渲染器
-        if self.gpu_grid.is_none() {
-            if let Some(ref render_state) = self.render_state {
-                self.gpu_grid = Some(GpuGridRenderer::new(
-                    &render_state.device,
-                    render_state.target_format,
-                ));
-            }
-        }
-
         // 绘制背景
         let bg_color = egui::Color32::from_gray(25);
         ui.painter().rect_filled(rect, 0.0, bg_color);
 
-        // 使用GPU渲染网格
-        if let Some(ref mut gpu_grid) = self.gpu_grid {
-            if let Some(ref render_state) = self.render_state {
-                let viewport_px = (rect.width() as u32, rect.height() as u32);
-                if let Some(tex_id) = gpu_grid.render(
-                    ui.ctx(),
-                    &render_state.device,
-                    &render_state.queue,
-                    &self.camera,
-                    viewport_px,
-                    render_state.target_format,
-                ) {
+        // GPU 网格渲染
+        if let Some(ref rs) = self.render_state {
+            if self.gpu_grid.is_none() {
+                self.gpu_grid = Some(GpuGridRenderer::new(&rs.device));
+            }
+            if let Some(ref mut gpu) = self.gpu_grid {
+                let w = (rect.width() as u32).max(1);
+                let h = (rect.height() as u32).max(1);
+                let mut renderer = rs.renderer.write();
+                if let Some(tex_id) = gpu.render(&rs.device, &rs.queue, &mut renderer, &self.camera, (w, h)) {
+                    drop(renderer); // release lock before painting
                     ui.painter().image(
                         tex_id,
                         rect,
-                        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(1.0, 1.0)),
+                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
                         egui::Color32::WHITE,
                     );
-                } else {
-                    // GPU渲染失败，回退到CPU渲染
-                    self.draw_grid(ui, rect);
                 }
-            } else {
-                // 没有render_state，使用CPU渲染
-                self.draw_grid(ui, rect);
             }
         } else {
-            // GPU渲染器未初始化，使用CPU渲染
-            self.draw_grid(ui, rect);
+            self.draw_grid(ui, rect);  // 无 wgpu 时回退 CPU
         }
 
         // 绘制物理碰撞体调试线框
@@ -910,88 +892,146 @@ impl ViewportPanel {
 // ---------------------------------------------------------------------------
 
 struct GpuGridRenderer {
+    /// LineRenderer pipeline created with Rgba8UnormSrgb (matches offscreen texture)
     line_renderer: render::LineRenderer,
-    // 存储上一帧的纹理ID，用于在egui GC前清理
-    prev_texture_id: Option<egui::TextureId>,
+    /// Persistent offscreen color texture (Rgba8UnormSrgb, required by register_native_texture)
+    color_tex: Option<render::wgpu::Texture>,
+    color_view: Option<render::wgpu::TextureView>,
+    /// Depth texture for the offscreen render pass
+    depth_tex: Option<render::wgpu::Texture>,
+    depth_view: Option<render::wgpu::TextureView>,
+    /// Stable TextureId registered with egui_wgpu Renderer (not subject to egui texture GC)
+    tex_id: Option<egui::TextureId>,
+    /// Current offscreen texture size
+    current_size: (u32, u32),
 }
 
 impl GpuGridRenderer {
-    fn new(device: &render::wgpu::Device, color_format: render::wgpu::TextureFormat) -> Self {
-        let depth_format = render::wgpu::TextureFormat::Depth32Float;
-        let line_renderer = render::LineRenderer::new(device, color_format, depth_format, 1);
+    /// The offscreen color texture format required by `register_native_texture`.
+    const OFFSCREEN_FORMAT: render::wgpu::TextureFormat = render::wgpu::TextureFormat::Rgba8UnormSrgb;
+    const DEPTH_FORMAT: render::wgpu::TextureFormat = render::wgpu::TextureFormat::Depth32Float;
+
+    fn new(device: &render::wgpu::Device) -> Self {
+        // Create LineRenderer pipeline with Rgba8UnormSrgb to match our offscreen texture
+        let line_renderer = render::LineRenderer::new(
+            device,
+            Self::OFFSCREEN_FORMAT,
+            Self::DEPTH_FORMAT,
+            1, // sample_count
+        );
         Self {
             line_renderer,
-            prev_texture_id: None,
+            color_tex: None,
+            color_view: None,
+            depth_tex: None,
+            depth_view: None,
+            tex_id: None,
+            current_size: (0, 0),
         }
     }
 
-    fn render(
+    /// Create or recreate offscreen textures when viewport size changes.
+    /// Also registers the texture with egui_wgpu Renderer to get a stable TextureId.
+    fn ensure_textures(
         &mut self,
-        ctx: &egui::Context,
         device: &render::wgpu::Device,
-        queue: &render::wgpu::Queue,
-        camera: &OrbitCamera,
-        viewport_px: (u32, u32),
-        color_format: render::wgpu::TextureFormat,
-    ) -> Option<egui::TextureId> {
-        let (w, h) = (viewport_px.0.max(1), viewport_px.1.max(1));
-        
-        // 每帧创建新纹理，避免与egui GC冲突
-        let aligned_w = ((w + 63) / 64) * 64;
-        let tex_size = (aligned_w, h);
-        
+        renderer: &mut egui_wgpu::Renderer,
+        w: u32,
+        h: u32,
+    ) {
+        if w == self.current_size.0 && h == self.current_size.1 && self.tex_id.is_some() {
+            return; // already up to date
+        }
+        let w = w.max(1);
+        let h = h.max(1);
+
+        // Create color texture (Rgba8UnormSrgb)
         let color_tex = device.create_texture(&render::wgpu::TextureDescriptor {
-            label: Some("grid color texture"),
-            size: render::wgpu::Extent3d {
-                width: tex_size.0, height: tex_size.1, depth_or_array_layers: 1,
-            },
-            mip_level_count: 1, sample_count: 1,
+            label: Some("grid_offscreen_color"),
+            size: render::wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
             dimension: render::wgpu::TextureDimension::D2,
-            format: color_format,
+            format: Self::OFFSCREEN_FORMAT,
             usage: render::wgpu::TextureUsages::RENDER_ATTACHMENT
-                | render::wgpu::TextureUsages::TEXTURE_BINDING
-                | render::wgpu::TextureUsages::COPY_SRC,
+                | render::wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
         let color_view = color_tex.create_view(&render::wgpu::TextureViewDescriptor::default());
-        
+
+        // Create depth texture
         let depth_tex = device.create_texture(&render::wgpu::TextureDescriptor {
-            label: Some("grid depth texture"),
-            size: render::wgpu::Extent3d {
-                width: tex_size.0, height: tex_size.1, depth_or_array_layers: 1,
-            },
-            mip_level_count: 1, sample_count: 1,
+            label: Some("grid_offscreen_depth"),
+            size: render::wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
             dimension: render::wgpu::TextureDimension::D2,
-            format: render::wgpu::TextureFormat::Depth32Float,
+            format: Self::DEPTH_FORMAT,
             usage: render::wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
         let depth_view = depth_tex.create_view(&render::wgpu::TextureViewDescriptor::default());
-        
-        // 更新相机和顶点
+
+        // Register with egui_wgpu to get a stable TextureId
+        let tex_id = renderer.register_native_texture(
+            device,
+            &color_view,
+            render::wgpu::FilterMode::Linear,
+        );
+
+        self.color_tex = Some(color_tex);
+        self.color_view = Some(color_view);
+        self.depth_tex = Some(depth_tex);
+        self.depth_view = Some(depth_view);
+        self.tex_id = Some(tex_id);
+        self.current_size = (w, h);
+    }
+
+    /// Render the grid to the offscreen texture. Returns the stable TextureId for display.
+    fn render(
+        &mut self,
+        device: &render::wgpu::Device,
+        queue: &render::wgpu::Queue,
+        renderer: &mut egui_wgpu::Renderer,
+        camera: &OrbitCamera,
+        viewport_px: (u32, u32),
+    ) -> Option<egui::TextureId> {
+        let (w, h) = (viewport_px.0.max(1), viewport_px.1.max(1));
+
+        // Ensure offscreen textures exist and match viewport size
+        self.ensure_textures(device, renderer, w, h);
+
+        let color_view = self.color_view.as_ref()?;
+        let depth_view = self.depth_view.as_ref()?;
+        let tex_id = self.tex_id?;
+
+        // Update camera and grid vertices
         let eye = camera.eye_position();
         let vp = camera.view_projection_matrix();
         self.line_renderer.update_camera(queue, vp.into(), [eye.x, eye.y, eye.z]);
-        let vertices = build_grid_vertices(eye, camera.distance);
+        let vertices = build_camera_grid_vertices(eye, camera.distance);
         self.line_renderer.upload(device, queue, &vertices);
-        
+
+        // Encode the grid render pass
         let mut encoder = device.create_command_encoder(&render::wgpu::CommandEncoderDescriptor {
-            label: Some("grid render encoder"),
+            label: Some("grid_render_encoder"),
         });
 
         {
             let mut pass = encoder.begin_render_pass(&render::wgpu::RenderPassDescriptor {
-                label: Some("grid render pass"),
+                label: Some("grid_render_pass"),
                 color_attachments: &[Some(render::wgpu::RenderPassColorAttachment {
-                    view: &color_view,
+                    view: color_view,
                     resolve_target: None,
                     ops: render::wgpu::Operations {
-                        load: render::wgpu::LoadOp::Clear(render::wgpu::Color { r: 0.02, g: 0.02, b: 0.03, a: 1.0 }),
+                        load: render::wgpu::LoadOp::Clear(render::wgpu::Color {
+                            r: 0.0, g: 0.0, b: 0.0, a: 0.0,
+                        }),
                         store: render::wgpu::StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: Some(render::wgpu::RenderPassDepthStencilAttachment {
-                    view: &depth_view,
+                    view: depth_view,
                     depth_ops: Some(render::wgpu::Operations {
                         load: render::wgpu::LoadOp::Clear(1.0),
                         store: render::wgpu::StoreOp::Store,
@@ -1004,52 +1044,89 @@ impl GpuGridRenderer {
             self.line_renderer.draw(&mut pass);
         }
 
-        let bytes_per_row = (tex_size.0 * 4) as usize;
-        let buffer_size = bytes_per_row * tex_size.1 as usize;
-        let read_buffer = device.create_buffer(&render::wgpu::BufferDescriptor {
-            label: Some("grid readback buffer"),
-            size: buffer_size as render::wgpu::BufferAddress,
-            usage: render::wgpu::BufferUsages::MAP_READ | render::wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        encoder.copy_texture_to_buffer(
-            render::wgpu::ImageCopyTexture {
-                texture: &color_tex,
-                mip_level: 0,
-                origin: render::wgpu::Origin3d::ZERO,
-                aspect: render::wgpu::TextureAspect::All,
-            },
-            render::wgpu::ImageCopyBuffer {
-                buffer: &read_buffer,
-                layout: render::wgpu::ImageDataLayout {
-                    offset: 0,
-                    bytes_per_row: Some(bytes_per_row as u32),
-                    rows_per_image: Some(tex_size.1),
-                },
-            },
-            render::wgpu::Extent3d { width: tex_size.0, height: tex_size.1, depth_or_array_layers: 1 },
-        );
-
         queue.submit([encoder.finish()]);
 
-        let slice = read_buffer.slice(..);
-        slice.map_async(render::wgpu::MapMode::Read, |_| {});
-        device.poll(render::wgpu::Maintain::Wait);
-        let pixels = { let data = slice.get_mapped_range(); data.to_vec() };
-        read_buffer.unmap();
-
-        let image = egui::ColorImage::from_rgba_unmultiplied([tex_size.0 as usize, tex_size.1 as usize], &pixels);
-
-        // 创建新纹理并保存ID
-        // 注意：egui会自动管理纹理生命周期，我们不需要手动释放
-        let tex = ctx.load_texture("grid_render", image, egui::TextureOptions::LINEAR);
-        let tex_id = tex.id();
-        
-        self.prev_texture_id = Some(tex_id);
-        
         Some(tex_id)
     }
+}
+
+/// Generate grid line vertices centered on the camera's XZ projection.
+/// Used by GpuGridRenderer for GPU-side grid rendering.
+fn build_camera_grid_vertices(eye: Point3<f32>, distance: f32) -> Vec<LineVertex> {
+    // Adaptive LOD
+    let cell_size = if distance < 5.0 { 0.5 }
+        else if distance < 15.0 { 1.0 }
+        else if distance < 50.0 { 5.0 }
+        else if distance < 150.0 { 10.0 }
+        else { 50.0 };
+
+    let half_extent = (distance * 8.0).max(50.0).min(5000.0);
+    let half_cells = (half_extent / cell_size).ceil() as i32;
+    let extent = half_cells as f32 * cell_size;
+    let major_step = 5;
+    let camera_fade_dist = distance * 12.0;
+
+    // Center grid on camera XZ projection, aligned to cell_size
+    let grid_offset_x = (eye.x / cell_size).round() * cell_size;
+    let grid_offset_z = (eye.z / cell_size).round() * cell_size;
+
+    // Colors (premultiplied alpha will be applied per-vertex)
+    let minor_color = [0.31, 0.31, 0.31, 1.0];
+    let major_color = [0.63, 0.63, 0.63, 1.0];
+    let axis_x_color = [0.94, 0.27, 0.27, 1.0];
+    let axis_z_color = [0.24, 0.35, 0.94, 1.0];
+
+    let mut verts = Vec::new();
+
+    let mut push_line = |p1: Point3<f32>, p2: Point3<f32>, color: [f32; 4]| {
+        verts.push(LineVertex { position: [p1.x, p1.y, p1.z], color });
+        verts.push(LineVertex { position: [p2.x, p2.y, p2.z], color });
+    };
+
+    let fade_alpha = |mx: f32, mz: f32, edge: f32, extent: f32| -> f32 {
+        let dx = mx - eye.x;
+        let dz = mz - eye.z;
+        let cam_dist = (dx * dx + dz * dz).sqrt();
+        let cam_alpha = 1.0 - (cam_dist / camera_fade_dist).clamp(0.0, 1.0);
+        let edge_t = edge.abs() / extent;
+        let edge_alpha = if edge_t < 0.90 { 1.0 }
+            else { 1.0 - ((edge_t - 0.90) / 0.10).clamp(0.0, 1.0) };
+        (cam_alpha * edge_alpha).max(0.0)
+    };
+
+    // X-direction lines (along X axis, Z varies)
+    for i in -half_cells..=half_cells {
+        let z = i as f32 * cell_size + grid_offset_z;
+        let p1 = Point3::new(-extent + grid_offset_x, 0.0, z);
+        let p2 = Point3::new(extent + grid_offset_x, 0.0, z);
+        let alpha = fade_alpha(0.0, z, z - grid_offset_z, extent);
+        if alpha < 0.02 { continue; }
+        let is_center = (z - grid_offset_z).abs() < cell_size * 0.5;
+        let is_major = is_center || i % major_step == 0;
+        let base = if is_center { axis_x_color }
+            else if is_major { major_color }
+            else { minor_color };
+        let color = [base[0], base[1], base[2], base[3] * alpha];
+        push_line(p1, p2, color);
+    }
+
+    // Z-direction lines (along Z axis, X varies)
+    for i in -half_cells..=half_cells {
+        let x = i as f32 * cell_size + grid_offset_x;
+        let p1 = Point3::new(x, 0.0, -extent + grid_offset_z);
+        let p2 = Point3::new(x, 0.0, extent + grid_offset_z);
+        let alpha = fade_alpha(x, 0.0, x - grid_offset_x, extent);
+        if alpha < 0.02 { continue; }
+        let is_center = (x - grid_offset_x).abs() < cell_size * 0.5;
+        let is_major = is_center || i % major_step == 0;
+        let base = if is_center { axis_z_color }
+            else if is_major { major_color }
+            else { minor_color };
+        let color = [base[0], base[1], base[2], base[3] * alpha];
+        push_line(p1, p2, color);
+    }
+
+    verts
 }
 
 #[allow(dead_code)]
