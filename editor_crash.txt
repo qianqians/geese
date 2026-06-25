@@ -1,0 +1,14 @@
+PanicException: Error in Queue::submit: Validation Error
+
+Caused by:
+  Texture with 'egui_texid_Managed(2)' label has been destroyed
+
+Traceback (most recent call last):
+  File "D:\Personal\geese\run_editor.py", line 12, in <module>
+    pydesktop.open_editor('D:/Personal/geese/projects/My')
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pyo3_runtime.PanicException: Error in Queue::submit: Validation Error
+
+Caused by:
+  Texture with 'egui_texid_Managed(2)' label has been destroyed
+
