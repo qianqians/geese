@@ -1,9 +1,15 @@
-﻿import sys, traceback, os
-sys.path.insert(0, 'D:/Personal/geese/desktop/target/release')
+import sys, traceback, os
+import importlib.machinery, importlib.util
+
+# Load the .dll directly (cargo build outputs .dll, not .pyd)
+_dll = 'D:/Personal/geese/desktop/target/release/pydesktop.dll'
+_loader = importlib.machinery.ExtensionFileLoader('pydesktop', _dll)
+_spec = importlib.util.spec_from_loader('pydesktop', _loader, origin=_dll)
+pydesktop = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(pydesktop)
+
 try:
-    from pydesktop import open_editor
-    print('Import OK', flush=True)
-    open_editor('D:/Personal/geese/projects/My')
+    pydesktop.open_editor('D:/Personal/geese/projects/My')
     print('Editor exited normally', flush=True)
 except SystemExit as e:
     print(f'SystemExit: {e.code}', flush=True)
@@ -13,6 +19,5 @@ except BaseException as e:
         traceback.print_exc(file=f)
     print(f'ERROR: {type(e).__name__}: {e}', flush=True)
 
-# 写入退出码
 with open('D:/Personal/geese/editor_exit.txt', 'w') as f:
     f.write('exited')

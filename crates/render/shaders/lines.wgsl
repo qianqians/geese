@@ -1,4 +1,4 @@
-﻿struct Camera {
+struct Camera {
     view_projection: mat4x4<f32>,
     inverse_view_projection: mat4x4<f32>,
     camera_position: vec4<f32>,
