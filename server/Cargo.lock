@@ -4574,11 +4574,13 @@ name = "wss"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "close_handle",
  "futures-util",
  "native-tls",
  "net",
  "queue",
+ "rand 0.8.5",
  "tokio",
  "tokio-native-tls",
  "tokio-tungstenite",

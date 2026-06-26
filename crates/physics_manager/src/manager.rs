@@ -400,7 +400,7 @@ fn iso_from_parts(t: [f32; 3], rot: (f32, f32, f32, f32)) -> physics::math::Iso3
 
 fn find_free_port(start_port: u16) -> Result<u16, String> {
     for port in start_port..start_port + 100 {
-        if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_err() {
+        if std::net::TcpListener::bind(format!("127.0.0.1:{}", port)).is_ok() {
             return Ok(port);
         }
     }

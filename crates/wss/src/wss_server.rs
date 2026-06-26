@@ -29,18 +29,19 @@ pub trait WSSListenCallback {
 impl WSSServer {
     pub async fn listen_wss(
         host:String, 
-        pfx:String, 
+        pfx:String,
+        pfx_password: String,
         close: Arc<Mutex<CloseHandle>>,
         f:Arc<Mutex<Box<dyn WSSListenCallback + Send + 'static>>>) -> Result<WSSServer, Box<dyn std::error::Error>>
     {
         trace!("wss accept start:{}!", host);
 
-        let mut file = File::open(pfx).unwrap();
+        let mut file = File::open(pfx)?;
         let mut pkcs12 = vec![];
-        file.read_to_end(&mut pkcs12).unwrap();
-        let pkcs12 = Identity::from_pkcs12(&pkcs12, "hacktheplanet")?;
+        file.read_to_end(&mut pkcs12)?;
+        let pkcs12 = Identity::from_pkcs12(&pkcs12, &pfx_password)?;
         
-        let _listener = TcpListener::bind(host).await.expect("Can't listen");
+        let _listener = TcpListener::bind(host).await?;
         let acceptor = TlsAcceptor::builder(pkcs12).build()?;
         let _tokio_acceptor = TokioTlsAcceptor::from(acceptor);
 
@@ -101,7 +102,7 @@ impl WSSServer {
         f:Arc<Mutex<Box<dyn WSSListenCallback + Send + 'static>>>) -> Result<WSSServer, Box<dyn std::error::Error>> 
     {
         trace!("ws accept start:{}!", host);
-        let _listener = TcpListener::bind(host).await.expect("Can't listen");
+        let _listener = TcpListener::bind(host).await?;
         let _f_clone = f.clone();
 
         let _join = tokio::spawn(async move {

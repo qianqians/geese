@@ -592,7 +592,7 @@ impl Editor {
             );
 
             // 切换到远程物理服务器
-            let python_path = "python3";
+            let python_path = if cfg!(windows) { "python" } else { "python3" };
             let server_script = concat!(
                 env!("CARGO_MANIFEST_DIR"),
                 "/scripts/physics_editor_server.py"

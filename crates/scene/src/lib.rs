@@ -83,7 +83,11 @@ fn load_indices(prim: &Primitive, buffers: &[gltf::buffer::Data]) -> Vec<u32> {
 fn load_primitive(prim: &Primitive, buffers: &[gltf::buffer::Data], out: &mut ModelMesh) {
     let reader = prim.reader(|buffer| Some(buffers[buffer.index()].0.as_slice()));
 
-    let positions: Vec<_> = reader.read_positions().unwrap().collect();
+    // Skip primitives without positions (invalid GLTF)
+    let positions: Vec<_> = match reader.read_positions() {
+        Some(iter) => iter.collect(),
+        None => return,
+    };
     let normals = reader.read_normals();
     let has_normals = normals.is_some();
     let normals: Vec<_> = normals

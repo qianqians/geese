@@ -35,14 +35,16 @@ use crate::client_proxy_manager::{
 #[derive(Deserialize, Serialize, Debug)]
 pub struct WSSCfg {
     client_wss_port: u16,
-    client_wss_pfx: String
+    client_wss_pfx: String,
+    client_wss_password: String
 }
 
 impl WSSCfg {
-    pub fn new(_port: u16, _pfx: String) -> WSSCfg {
+    pub fn new(_port: u16, _pfx: String, _password: String) -> WSSCfg {
         WSSCfg {
             client_wss_port: _port,
-            client_wss_pfx: _pfx
+            client_wss_pfx: _pfx,
+            client_wss_password: _password
         }
     }
 }
@@ -116,7 +118,8 @@ impl GateServer {
                 let client_wss_host = format!("0.0.0.0:{}", _cfg.client_wss_port);
                 Some(WSSServer::listen_wss(
                     client_wss_host, 
-                    _cfg.client_wss_pfx, 
+                    _cfg.client_wss_pfx,
+                    _cfg.client_wss_password,
                     _close.clone(),
                     WSSClientProxyManager::new(_conn_mgr_clone.clone())).await?)
             }
