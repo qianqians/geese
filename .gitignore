@@ -19,4 +19,9 @@ Cargo.lock
 *.log
 *.log.*
 
+# Debug/crash dump files
+editor_error.log
+editor_crash.txt
+editor_exit.txt
+
 dump.rdb

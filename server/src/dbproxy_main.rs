@@ -19,7 +19,13 @@ async fn main() {
     let _name = format!("dbproxy_{}", Uuid::new_v4());
 
     let args: Vec<String> = env::args().collect();
-    let cfg_file = &args[1];
+    let cfg_file = match args.get(1) {
+        Some(path) => path,
+        None => {
+            eprintln!("Usage: {} <config_file>", args.first().map(|s| s.as_str()).unwrap_or("dbproxy"));
+            std::process::exit(1);
+        }
+    };
     let cfg_data = match load_data_from_file(cfg_file.to_string()) {
         Err(e) => {
             println!("DBProxy load_data_from_file faild {}, {}!", cfg_file, e);
