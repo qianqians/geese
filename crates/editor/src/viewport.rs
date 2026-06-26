@@ -23,8 +23,8 @@ use render::LineVertex;
 ///
 /// 交互方式：
 /// - 右键拖拽：绕焦点旋转（yaw/pitch）
-/// - 中键拖拽：平移焦点
 /// - 滚轮：缩放距离
+/// - WASD/方向键：移动焦点
 #[derive(Debug, Clone)]
 pub struct OrbitCamera {
     /// 摄像机围绕的焦点
@@ -58,10 +58,10 @@ pub struct OrbitCamera {
 impl Default for OrbitCamera {
     fn default() -> Self {
         Self {
-            focal_point: Point3::new(0.0, 0.0, 0.0),
+            focal_point: Point3::new(0.0, 10.0, 0.0),  // 焦点抬高，网格沉到视口底部
             yaw: std::f32::consts::FRAC_PI_4,  // 45度水平角
-            pitch: -0.1745,  // -10度俯角（约等于-π/18），相机与XZ平面保持10度夹角
-            distance: 20.0,  // 从10.0增加到20.0，相机离地面更高
+            pitch: -0.5236,  // -30度俯角
+            distance: 30.0,  // 相机距离
             min_distance: 0.5,
             max_distance: 200.0,
             aspect_ratio: 16.0 / 9.0,
@@ -169,10 +169,10 @@ impl OrbitCamera {
 
     /// 重置为默认视角。
     pub fn reset(&mut self) {
-        self.focal_point = Point3::new(0.0, 0.0, 0.0);
+        self.focal_point = Point3::new(0.0, 10.0, 0.0);  // 与默认值保持一致
         self.yaw = std::f32::consts::FRAC_PI_4;
-        self.pitch = -0.1745;  // -10度，与默认值保持一致
-        self.distance = 20.0;  // 与默认值保持一致
+        self.pitch = -0.5236;  // -30度，与默认值保持一致
+        self.distance = 30.0;  // 与默认值保持一致
     }
 
     /// 从屏幕坐标生成世界空间射线。
@@ -270,8 +270,6 @@ pub struct ViewportPanel {
     last_mouse_pos: Option<(f32, f32)>,
     /// 是否正在轨道旋转
     orbiting: bool,
-    /// 是否正在平移
-    panning: bool,
     /// 视口实际大小
     viewport_size: (f32, f32),
     /// 渲染纹理 ID（由外部设置，渲染场景到纹理后传入）
@@ -297,7 +295,6 @@ impl ViewportPanel {
             gizmo_mode: GizmoMode::Translate,
             last_mouse_pos: None,
             orbiting: false,
-            panning: false,
             viewport_size: (800.0, 600.0),
             rendered_texture: None,
             render_state: None,
@@ -364,9 +361,8 @@ impl ViewportPanel {
         }
 
         // 按键状态（自定义风格）
-        let (left_down, right_down, _middle_down) = ui.input(|input| {
+        let (right_down, _middle_down) = ui.input(|input| {
             (
-                input.pointer.button_down(egui::PointerButton::Primary),
                 input.pointer.button_down(egui::PointerButton::Secondary),
                 input.pointer.button_down(egui::PointerButton::Middle),
             )
@@ -374,21 +370,16 @@ impl ViewportPanel {
 
         // 处理拖拽开始（自定义风格）
         if hovered {
-            // 左键拖拽旋转
-            if left_down && !self.orbiting {
+            // 右键拖拽旋转
+            if right_down && !self.orbiting {
                 self.orbiting = true;
-                self.last_mouse_pos = pointer_pos;
-            }
-            // 右键拖拽平移
-            if right_down && !self.panning {
-                self.panning = true;
                 self.last_mouse_pos = pointer_pos;
             }
         }
 
         // 处理拖拽更新（自定义风格）
         if self.orbiting {
-            if left_down {
+            if right_down {
                 if let (Some(last), Some(curr)) = (self.last_mouse_pos, pointer_pos) {
                     let dx = curr.0 - last.0;
                     let dy = curr.1 - last.1;
@@ -397,20 +388,6 @@ impl ViewportPanel {
                 }
             } else {
                 self.orbiting = false;
-                self.last_mouse_pos = None;
-            }
-        }
-
-        if self.panning {
-            if right_down {
-                if let (Some(last), Some(curr)) = (self.last_mouse_pos, pointer_pos) {
-                    let dx = curr.0 - last.0;
-                    let dy = curr.1 - last.1;
-                    self.camera.pan(dx, dy);
-                    self.last_mouse_pos = Some(curr);
-                }
-            } else {
-                self.panning = false;
                 self.last_mouse_pos = None;
             }
         }
@@ -433,7 +410,7 @@ impl ViewportPanel {
                 input.pointer.button_clicked(egui::PointerButton::Primary)
             });
                 if let Some(pos) = pointer_pos {
-            if clicked && !self.orbiting && !self.panning {
+            if clicked && !self.orbiting {
                     let rect = response.rect;
                     let local_x = pos.0 - rect.left();
                     let local_y = pos.1 - rect.top();
@@ -652,7 +629,7 @@ impl ViewportPanel {
                     .color(egui::Color32::from_gray(180)),
             );
             ui.label(
-                egui::RichText::new("LMB: Orbit | RMB: Pan | Scroll: Zoom | WASD/Arrows: Move")
+                egui::RichText::new("RMB: Orbit | Scroll: Zoom | WASD/Arrows: Move")
                     .size(10.0)
                     .color(egui::Color32::from_gray(140)),
             );
@@ -1046,6 +1023,14 @@ impl GpuGridRenderer {
 
         queue.submit([encoder.finish()]);
 
+        // Notify egui_wgpu that the texture content has changed
+        renderer.update_egui_texture_from_wgpu_texture(
+            device,
+            color_view,
+            render::wgpu::FilterMode::Linear,
+            tex_id,
+        );
+
         Some(tex_id)
     }
 }
@@ -1060,11 +1045,14 @@ fn build_camera_grid_vertices(eye: Point3<f32>, distance: f32) -> Vec<LineVertex
         else if distance < 150.0 { 10.0 }
         else { 50.0 };
 
-    let half_extent = (distance * 8.0).max(50.0).min(5000.0);
+    // Grid extent: large enough to always cover visible ground area
+    // At shallow pitch angles, visible ground extends very far
+    let half_extent = (distance * 50.0).max(100.0).min(5000.0);
     let half_cells = (half_extent / cell_size).ceil() as i32;
     let extent = half_cells as f32 * cell_size;
     let major_step = 5;
-    let camera_fade_dist = distance * 12.0;
+    // Camera fade distance: very large to avoid premature fading
+    let camera_fade_dist = distance * 80.0;
 
     // Center grid on camera XZ projection, aligned to cell_size
     let grid_offset_x = (eye.x / cell_size).round() * cell_size;
@@ -1089,8 +1077,9 @@ fn build_camera_grid_vertices(eye: Point3<f32>, distance: f32) -> Vec<LineVertex
         let cam_dist = (dx * dx + dz * dz).sqrt();
         let cam_alpha = 1.0 - (cam_dist / camera_fade_dist).clamp(0.0, 1.0);
         let edge_t = edge.abs() / extent;
-        let edge_alpha = if edge_t < 0.90 { 1.0 }
-            else { 1.0 - ((edge_t - 0.90) / 0.10).clamp(0.0, 1.0) };
+        // Edge fade: very gradual, only at extreme edges
+        let edge_alpha = if edge_t < 0.97 { 1.0 }
+            else { 1.0 - ((edge_t - 0.97) / 0.03).clamp(0.0, 1.0) };
         (cam_alpha * edge_alpha).max(0.0)
     };
 
