@@ -6,8 +6,13 @@
 //! - [`AssetCache`]：按 `(TypeId, path)` 去重的缓存，避免重复解码。
 //! - [`LoadError`]：统一错误类型。
 //!
-//! 骨架阶段实现同步加载;后续“可用级”将加入异步加载（tokio）、文件热重载
+//! 骨架阶段实现同步加载;后续"可用级"将加入异步加载（tokio）、文件热重载
 //! （notify）、KTX2/Basis 纹理解码、meshopt 顶点优化等。
+
+pub mod meta;
+pub mod database;
+pub mod dependency_scanner;
+pub mod bundle;
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;

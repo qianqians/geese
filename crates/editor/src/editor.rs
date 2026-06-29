@@ -3,6 +3,7 @@
 //! [`Editor`] 是一体化编辑器的顶层入口，管理面板布局、菜单栏、工具栏和全局状态。
 
 use crate::asset_browser::AssetBrowser;
+use crate::bundle_panel::BundlePanel;
 use crate::commands::CommandHistory;
 use crate::commands::TransformCommand;
 use crate::editor_mode::EditorMode;
@@ -14,6 +15,7 @@ use crate::panels::{EditorLayout, EditorState};
 use crate::physics_debug::PhysicsDebugRenderer;
 use crate::play_mode::PlayMode;
 use crate::viewport::ViewportPanel;
+use asset::database::AssetDatabase;
 use physics_client::BodySnapshot;
 use physics_manager::{PhysicsManager, PhysicsSource};
 
@@ -43,6 +45,12 @@ pub struct Editor {
     gltf_import_dialog: GltfImportDialog,
     /// 资源浏览器是否需要重新扫描
     asset_needs_scan: bool,
+    /// 资源数据库
+    asset_database: AssetDatabase,
+    /// Bundle 打包面板
+    bundle_panel: BundlePanel,
+    /// Bundle 面板是否可见
+    bundle_panel_visible: bool,
     /// 统一物理管理器（支持本地/远程/二者同时）
     physics: PhysicsManager,
     /// 物理碰撞体调试渲染器
@@ -77,6 +85,15 @@ impl Editor {
         let manifest_path = format!("{}/.scene.json", project_path);
         physics.load_scene(&manifest_path);
 
+        // 初始化资源数据库（扫描 assets 目录，自动生成 .meta 文件）
+        let asset_database = match AssetDatabase::open(&state.project_path) {
+            Ok(db) => db,
+            Err(e) => {
+                eprintln!("[Editor] AssetDatabase init failed: {e}");
+                AssetDatabase::new_empty(&state.project_path)
+            }
+        };
+
         Self {
             state,
             command_history: CommandHistory::default(),
@@ -91,6 +108,9 @@ impl Editor {
             asset_browser: AssetBrowser::new(),
             gltf_import_dialog: GltfImportDialog::new(),
             asset_needs_scan: true,
+            asset_database,
+            bundle_panel: BundlePanel::new(),
+            bundle_panel_visible: false,
             physics,
             physics_debug: PhysicsDebugRenderer::new(),
             rt,
@@ -169,6 +189,22 @@ impl Editor {
         // 1. 快捷键始终生效
         self.handle_shortcuts(ctx);
 
+        // 1.5 资源数据库扫描
+        if self.asset_needs_scan {
+            let report = self.asset_database.refresh();
+            if !report.errors.is_empty() {
+                for err in &report.errors {
+                    eprintln!("[Editor] Asset scan error: {err}");
+                }
+            }
+            eprintln!(
+                "[Editor] Asset scan: {} new, {} removed, {} updated",
+                report.new_assets, report.removed, report.updated
+            );
+            self.asset_browser.scan_directory(&self.asset_database);
+            self.asset_needs_scan = false;
+        }
+
         // 2. 同步可拾取对象列表到视口
         self.viewport.pickable_objects.clear();
         for (entity_id, &(pos, _, scl)) in &self.state.transform_cache {
@@ -185,11 +221,22 @@ impl Editor {
         // 3. 编辑器主布局（菜单栏 + 侧栏 + 视口 + 底部栏）
         self.show_editor_layout(ctx);
 
+        // 3.5 Bundle 打包面板（浮动窗口）
+        if self.bundle_panel_visible {
+            egui::Window::new("Bundle Builder")
+                .open(&mut self.bundle_panel_visible)
+                .default_pos([100.0, 100.0])
+                .default_width(300.0)
+                .show(ctx, |ui| {
+                    self.bundle_panel.show_panel(ui, &self.asset_database);
+                });
+        }
+
 
 
         // 4. GLTF 导入对话框（模态，始终检测）
         let was_visible = self.gltf_import_dialog.visible;
-        self.gltf_import_dialog.show_dialog(ctx, &mut self.state);
+        self.gltf_import_dialog.show_dialog(ctx, &mut self.state, &mut self.asset_database);
         // 对话框关闭时刷新资源浏览器
         if was_visible && !self.gltf_import_dialog.visible && self.gltf_import_dialog.import_success {
             self.asset_needs_scan = true;
@@ -317,6 +364,8 @@ impl Editor {
                     if ui.checkbox(&mut iv, "Inspector").clicked() { self.state.panel_layer.set_visible(PanelLayer::Inspector, iv); ui.close_menu(); }
                     let mut av = self.state.panel_layer.is_visible(&PanelLayer::AssetBrowser);
                     if ui.checkbox(&mut av, "Asset Browser").clicked() { self.state.panel_layer.set_visible(PanelLayer::AssetBrowser, av); ui.close_menu(); }
+                    ui.separator();
+                    if ui.checkbox(&mut self.bundle_panel_visible, "Bundle Panel").clicked() { ui.close_menu(); }
                 });
                 ui.menu_button("Help", |ui| {
                     if ui.button("About Geese Editor").clicked() { ui.close_menu(); }

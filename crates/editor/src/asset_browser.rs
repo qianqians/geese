@@ -1,17 +1,21 @@
 //! 资源浏览器（Asset Browser）。
 //!
 //! 浏览项目 assets 目录，支持按类型过滤和拖拽导入。
+//! 数据源从 AssetDatabase 获取，而非直接扫描文件系统。
 
 use crate::panels::{EditorPanel, EditorState};
+use asset::database::AssetDatabase;
+use asset::meta::AssetTypeKind;
 
 // ---------------------------------------------------------------------------
-// AssetEntry - 资源条目
+// AssetEntry - 资源条目（UI 展示用）
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
 pub struct AssetEntry {
     pub name: String,
     pub path: String,
+    pub uuid: String,
     pub asset_type: AssetType,
     pub size_bytes: u64,
 }
@@ -40,6 +44,19 @@ impl AssetType {
         }
     }
 
+    /// 从 AssetTypeKind 转换。
+    fn from_kind(kind: AssetTypeKind) -> Self {
+        match kind {
+            AssetTypeKind::Model => AssetType::Model,
+            AssetTypeKind::Texture => AssetType::Texture,
+            AssetTypeKind::Audio => AssetType::Audio,
+            AssetTypeKind::Scene => AssetType::Scene,
+            AssetTypeKind::Avatar => AssetType::Avatar,
+            AssetTypeKind::Material | AssetTypeKind::Other => AssetType::Other,
+        }
+    }
+
+    #[allow(dead_code)]
     fn from_extension(ext: &str) -> Self {
         match ext.to_lowercase().as_str() {
             "gltf" | "glb" => AssetType::Model,
@@ -50,6 +67,7 @@ impl AssetType {
         }
     }
 
+    #[allow(dead_code)]
     /// 根据文件名判断资源类型（支持复合后缀如 `.scene.json`、`.avatar.json`）。
     fn from_filename(name: &str) -> Self {
         let lower = name.to_lowercase();
@@ -126,7 +144,7 @@ enum ViewMode {
 impl AssetBrowser {
     pub fn new() -> Self {
         Self {
-            current_path: "assets/".into(),
+            current_path: "assets".into(),
             entries: Vec::new(),
             filter: AssetFilter::All,
             selected_index: None,
@@ -134,49 +152,59 @@ impl AssetBrowser {
         }
     }
 
-    /// 扫描真实文件系统目录，填充 entries。
-    pub fn scan_directory(&mut self, project_path: &str) {
-        let dir = format!("{}/{}", project_path, self.current_path);
+    /// 从 AssetDatabase 扫描当前目录，填充 entries。
+    pub fn scan_directory(&mut self, database: &AssetDatabase) {
         self.entries.clear();
         self.selected_index = None;
 
-        let Ok(read_dir) = std::fs::read_dir(&dir) else {
-            return;
-        };
+        // 获取当前目录下的直接子条目
+        let db_entries = database.entries_in_directory(&self.current_path);
 
-        for entry in read_dir {
-            let Ok(entry) = entry else { continue };
-            let path = entry.path();
-            let name = path
+        for db_entry in db_entries {
+            let name = std::path::Path::new(&db_entry.path)
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("")
                 .to_string();
 
-            if name.starts_with('.') {
-                continue;
-            }
+            let asset_type = AssetType::from_kind(db_entry.asset_type);
 
-            let is_dir = path.is_dir();
-            let asset_type = if is_dir {
-                AssetType::Folder
-            } else {
-                AssetType::from_filename(&name)
-            };
-
-            let size_bytes = if is_dir {
-                0
-            } else {
-                entry.metadata().map(|m| m.len()).unwrap_or(0)
-            };
-
-            let rel_path = format!("{}{}", self.current_path, name);
             self.entries.push(AssetEntry {
                 name,
-                path: rel_path,
+                path: db_entry.path.clone(),
+                uuid: db_entry.uuid.clone(),
                 asset_type,
-                size_bytes,
+                size_bytes: db_entry.file_size,
             });
+        }
+
+        // 同时扫描子目录（文件系统层面）
+        let dir = format!("{}/{}", database.project_root().display(), self.current_path);
+        if let Ok(read_dir) = std::fs::read_dir(&dir) {
+            for entry in read_dir.flatten() {
+                let path = entry.path();
+                if !path.is_dir() {
+                    continue;
+                }
+                let name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                if name.starts_with('.') {
+                    continue;
+                }
+
+                let rel_path = format!("{}/{}", self.current_path, name);
+                self.entries.push(AssetEntry {
+                    name,
+                    path: rel_path,
+                    uuid: String::new(), // 目录没有 UUID
+                    asset_type: AssetType::Folder,
+                    size_bytes: 0,
+                });
+            }
         }
 
         // 目录在前，文件在后
@@ -230,7 +258,7 @@ impl EditorPanel for AssetBrowser {
         // 路径导航栏
         ui.horizontal(|ui| {
             if ui.button("📁").on_hover_text("Go to project root").clicked() {
-                self.current_path = "assets/".into();
+                self.current_path = "assets".into();
             }
             ui.label(format!("📂 {}", self.current_path));
         });
@@ -275,6 +303,18 @@ impl EditorPanel for AssetBrowser {
                                         self.selected_index = Some(i);
                                     }
                                     ui.label(Self::format_size(entry.size_bytes));
+                                    // 显示 UUID（截断）
+                                    if !entry.uuid.is_empty() {
+                                        let short_uuid = &entry.uuid[..8.min(entry.uuid.len())];
+                                        ui.label(
+                                            egui::RichText::new(short_uuid)
+                                                .monospace()
+                                                .size(10.0)
+                                                .color(egui::Color32::GRAY),
+                                        );
+                                    } else {
+                                        ui.label("");
+                                    }
                                     ui.end_row();
                                 }
                             });
@@ -337,5 +377,19 @@ impl EditorPanel for AssetBrowser {
         ui.add_space(4.0);
         ui.separator();
         ui.label(format!("{} items", filtered.len()));
+
+        // 选中条目时显示 UUID 信息
+        if let Some(idx) = self.selected_index {
+            if let Some(entry) = self.entries.get(idx) {
+                if !entry.uuid.is_empty() {
+                    ui.label(
+                        egui::RichText::new(format!("UUID: {}", entry.uuid))
+                            .monospace()
+                            .size(10.0)
+                            .color(egui::Color32::GRAY),
+                    );
+                }
+            }
+        }
     }
 }
