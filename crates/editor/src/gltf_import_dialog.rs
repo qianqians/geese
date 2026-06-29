@@ -6,6 +6,7 @@
 //! 2. 生成对应的 `.scene.json` 或 `.avatar.json` 清单文件
 
 use crate::panels::{EditorPanel, EditorState};
+use asset::database::AssetDatabase;
 use scene::avatar_manifest::AvatarManifest;
 use scene::manifest::{ModelRef, SceneManifest, TransformDef};
 
@@ -85,7 +86,7 @@ impl GltfImportDialog {
     }
 
     /// 执行导入操作。
-    fn do_import(&mut self, project_path: &str) {
+    fn do_import(&mut self, project_path: &str, asset_database: &mut AssetDatabase) {
         if self.source_path.is_empty() || self.resource_name.is_empty() {
             self.status_message = Some("Please select a file and enter a name.".into());
             self.import_success = false;
@@ -140,6 +141,9 @@ impl GltfImportDialog {
                     Some(format!("Imported successfully: {}", manifest_path));
                 self.import_success = true;
                 self.imported_name = Some(self.resource_name.clone());
+                // 刷新资源数据库，为新复制的文件生成 .meta
+                let report = asset_database.refresh();
+                eprintln!("[Editor] Post-import scan: {} new assets", report.new_assets);
             }
             Err(e) => {
                 self.status_message = Some(format!("Import failed: {}", e));
@@ -207,14 +211,14 @@ impl EditorPanel for GltfImportDialog {
         "Import GLTF"
     }
 
-    fn show(&mut self, ui: &mut egui::Ui, state: &mut EditorState) {
-        self.show_dialog(ui.ctx(), state);
+    fn show(&mut self, _ui: &mut egui::Ui, _state: &mut EditorState) {
+        // 对话框通过 show_dialog() 在 Editor::update() 中直接调用，不使用面板渲染
     }
 }
 
 impl GltfImportDialog {
     /// 渲染对话框（接受 `&egui::Context`，便于在任意位置调用）。
-    pub fn show_dialog(&mut self, ctx: &egui::Context, state: &mut EditorState) {
+    pub fn show_dialog(&mut self, ctx: &egui::Context, state: &mut EditorState, asset_database: &mut AssetDatabase) {
         if !self.visible {
             return;
         }
@@ -322,7 +326,7 @@ impl GltfImportDialog {
             });
 
         if do_import {
-            self.do_import(&state.project_path);
+            self.do_import(&state.project_path, asset_database);
         }
         if close {
             self.visible = false;

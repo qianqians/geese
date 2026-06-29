@@ -6,6 +6,7 @@
 //! 启动 Launcher → 选择模板 → 生成工程 → 打开 Editor。
 
 pub mod asset_browser;
+pub mod bundle_panel;
 pub mod commands;
 pub mod editor;
 pub mod editor_mode;
