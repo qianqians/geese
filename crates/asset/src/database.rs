@@ -96,6 +96,9 @@ impl AssetDatabase {
     pub fn scan(&mut self) -> Result<ScanReport, DatabaseError> {
         let mut report = ScanReport::default();
 
+        // 保存旧路径集合用于检测删除
+        let old_paths: HashSet<String> = self.path_to_uuid.keys().cloned().collect();
+
         // 清空现有索引
         self.entries.clear();
         self.path_to_uuid.clear();
@@ -184,24 +187,16 @@ impl AssetDatabase {
         // 扫描依赖（需要所有条目已注册）
         self.scan_all_dependencies();
 
-        // 检测已删除的文件（在索引中但不在磁盘上）
-        let orphan_paths: Vec<String> = self
-            .path_to_uuid
-            .keys()
-            .filter(|p| !disk_files.contains(p.as_str()))
-            .cloned()
-            .collect();
-
-        for path in orphan_paths {
-            if let Some(uuid) = self.path_to_uuid.remove(&path) {
-                self.entries.remove(&uuid);
+        // 检测已删除的文件（在旧索引中但不在磁盘上）
+        for old_path in &old_paths {
+            if !disk_files.contains(old_path.as_str()) {
+                // 清理孤立的 .meta 文件
+                let abs_path = self.project_root.join(old_path);
+                let meta_path = meta::meta_path_for(&abs_path);
+                if meta_path.exists() {
+                    let _ = std::fs::remove_file(&meta_path);
+                }
                 report.removed += 1;
-            }
-            // 清理孤立的 .meta 文件
-            let abs_path = self.project_root.join(&path);
-            let meta_path = meta::meta_path_for(&abs_path);
-            if meta_path.exists() {
-                let _ = std::fs::remove_file(&meta_path);
             }
         }
 
