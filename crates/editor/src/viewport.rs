@@ -58,10 +58,10 @@ pub struct OrbitCamera {
 impl Default for OrbitCamera {
     fn default() -> Self {
         Self {
-            focal_point: Point3::new(0.0, 10.0, 0.0),  // 焦点抬高，网格沉到视口底部
+            focal_point: Point3::new(0.0, 15.0, 0.0),  // 焦点抬高，网格沉到视口底部
             yaw: std::f32::consts::FRAC_PI_4,  // 45度水平角
             pitch: -0.5236,  // -30度俯角
-            distance: 30.0,  // 相机距离
+            distance: 35.0,  // 相机距离
             min_distance: 0.5,
             max_distance: 200.0,
             aspect_ratio: 16.0 / 9.0,
@@ -169,10 +169,10 @@ impl OrbitCamera {
 
     /// 重置为默认视角。
     pub fn reset(&mut self) {
-        self.focal_point = Point3::new(0.0, 10.0, 0.0);  // 与默认值保持一致
+        self.focal_point = Point3::new(0.0, 15.0, 0.0);  // 与默认值保持一致
         self.yaw = std::f32::consts::FRAC_PI_4;
         self.pitch = -0.5236;  // -30度，与默认值保持一致
-        self.distance = 30.0;  // 与默认值保持一致
+        self.distance = 35.0;  // 与默认值保持一致
     }
 
     /// 从屏幕坐标生成世界空间射线。
