@@ -27,6 +27,9 @@ pub struct SceneManifest {
     /// 程序化内联对象（不依赖外部 GLTF 文件）
     #[serde(default)]
     pub objects: Vec<SceneObjectDef>,
+    /// Prefab 实例引用列表（场景加载时自动实例化）
+    #[serde(default)]
+    pub prefab_instances: Vec<PrefabInstanceDef>,
 }
 
 impl SceneManifest {
@@ -39,6 +42,7 @@ impl SceneManifest {
             environment: Environment::default(),
             spawn_points: vec![],
             objects: vec![],
+            prefab_instances: vec![],
         }
     }
 }
@@ -165,6 +169,18 @@ pub struct SpawnPoint {
     pub position: [f32; 3],
     /// 朝向欧拉角（度），(yaw, pitch, roll)
     pub rotation: [f32; 3],
+}
+
+/// Prefab 实例引用——场景加载时自动实例化指定 Prefab。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrefabInstanceDef {
+    /// 场景内唯一标识
+    pub id: String,
+    /// 引用的 Prefab 资源 UUID
+    pub prefab_uuid: String,
+    /// 应用到 Prefab 实例的世界变换
+    #[serde(default)]
+    pub transform: TransformDef,
 }
 
 #[cfg(test)]

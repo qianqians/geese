@@ -30,6 +30,9 @@ pub struct SceneObject {
     pub joint_matrices: Vec<[[f32; 4]; 4]>,
     /// 脏标记：新创建对象全脏，collect_dirty 后清零。
     pub dirty: DirtyFlags,
+    /// 如果此对象由 Prefab 实例化而来，记录来源 Prefab UUID。
+    /// 用于支持 "刷新 Prefab 实例" 功能。
+    pub prefab_source: Option<String>,
 }
 
 impl RenderObject for SceneObject {

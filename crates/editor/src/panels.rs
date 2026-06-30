@@ -12,6 +12,19 @@ use physics_client::BodySnapshot;
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
+// EditorAction - 面板请求的编辑器操作
+// ---------------------------------------------------------------------------
+
+/// 面板通过 EditorState 请求 Editor 执行的操作。
+#[derive(Debug, Clone)]
+pub enum EditorAction {
+    /// 将指定节点及其子树保存为 Prefab
+    SaveAsPrefab { node_id: String },
+    /// 在指定位置实例化 Prefab
+    InstantiatePrefab { prefab_uuid: String, position: [f32; 3] },
+}
+
+// ---------------------------------------------------------------------------
 // PendingTransform - Inspector 写回的变换变更
 // ---------------------------------------------------------------------------
 
@@ -50,6 +63,8 @@ pub struct EditorState {
     pub transform_cache: HashMap<String, ([f32; 3], [f32; 3], [f32; 3])>,
     /// Inspector 写回的待提交变换变更
     pub pending_transform: Option<PendingTransform>,
+    /// 面板请求的待处理操作队列
+    pub pending_actions: Vec<EditorAction>,
 }
 
 impl EditorState {
@@ -63,6 +78,7 @@ impl EditorState {
             physics_debug_bodies: Vec::new(),
             transform_cache: HashMap::new(),
             pending_transform: None,
+            pending_actions: Vec::new(),
         }
     }
 }

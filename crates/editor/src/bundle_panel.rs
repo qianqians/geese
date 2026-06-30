@@ -138,6 +138,7 @@ impl BundlePanel {
             AssetTypeKind::Scene => "🎬",
             AssetTypeKind::Avatar => "🧑",
             AssetTypeKind::Material => "🎨",
+            AssetTypeKind::Prefab => "📦",
             AssetTypeKind::Other => "📄",
         }
     }
