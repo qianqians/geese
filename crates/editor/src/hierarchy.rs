@@ -2,7 +2,7 @@
 //!
 //! 树形展示场景节点父子关系，支持选择、搜索、右键菜单和可见性切换。
 
-use crate::panels::{EditorPanel, EditorState};
+use crate::panels::{EditorAction, EditorPanel, EditorState};
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
@@ -148,6 +148,11 @@ pub struct HierarchyPanel {
 }
 
 impl HierarchyPanel {
+    /// 返回场景节点树的只读引用。
+    pub fn tree(&self) -> &SceneNodeTree {
+        &self.tree
+    }
+
     /// 从外部添加场景节点到层次树
     pub fn add_scene_node(&mut self, data: SceneNodeData) {
         self.tree.add_node(data);
@@ -313,6 +318,13 @@ impl HierarchyPanel {
                 }
                 if ui.button("➕ Create Empty Child").clicked() {
                     ui.close_menu();
+                }
+                ui.separator();
+                if ui.button("📦 Save as Prefab").clicked() {
+                    ui.close_menu();
+                    state.pending_actions.push(EditorAction::SaveAsPrefab {
+                        node_id: node_id.to_string(),
+                    });
                 }
                 ui.separator();
                 if ui.button("🗑 Delete").clicked() {

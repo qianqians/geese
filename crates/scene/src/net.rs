@@ -45,6 +45,9 @@ pub struct SceneObjectNetMsg {
     /// 程序化对象的尺寸
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dimensions: Option<[f32; 3]>,
+    /// 来源 Prefab UUID（Prefab 实例化对象携带）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prefab_uuid: Option<String>,
 }
 
 /// 场景对象的网络类型。
@@ -56,6 +59,8 @@ pub enum SceneObjectNetType {
     Plane,
     /// 程序化立方体
     Cube,
+    /// Prefab 实例（携带 prefab_uuid 元数据）
+    PrefabInstance,
 }
 
 impl Serialize for SceneObjectNetType {
@@ -64,6 +69,7 @@ impl Serialize for SceneObjectNetType {
             Self::MeshRef => serializer.serialize_str("mesh_ref"),
             Self::Plane => serializer.serialize_str("plane"),
             Self::Cube => serializer.serialize_str("cube"),
+            Self::PrefabInstance => serializer.serialize_str("prefab_instance"),
         }
     }
 }
@@ -75,7 +81,8 @@ impl<'de> Deserialize<'de> for SceneObjectNetType {
             "mesh_ref" => Ok(Self::MeshRef),
             "plane" => Ok(Self::Plane),
             "cube" => Ok(Self::Cube),
-            _ => Err(serde::de::Error::unknown_variant(&s, &["mesh_ref", "plane", "cube"])),
+            "prefab_instance" => Ok(Self::PrefabInstance),
+            _ => Err(serde::de::Error::unknown_variant(&s, &["mesh_ref", "plane", "cube", "prefab_instance"])),
         }
     }
 }
@@ -126,6 +133,7 @@ impl SceneObjectNetMsg {
             }),
             color: None,
             dimensions: None,
+            prefab_uuid: None,
         }
     }
 
@@ -154,6 +162,7 @@ impl SceneObjectNetMsg {
             mesh_ref: None,
             color: Some(color),
             dimensions: Some(dimensions),
+            prefab_uuid: None,
         }
     }
 

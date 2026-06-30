@@ -14,7 +14,9 @@ use math::AABB;
 use render::{Material, MaterialLibrary, MeshFlags, ModelMesh, Vertex, AlphaMode};
 use uuid::Uuid;
 
+use asset::database::AssetDatabase;
 use crate::manifest::{SceneManifest, TransformDef};
+use crate::prefab_loader;
 use crate::scene::Scene;
 use crate::scene_object::SceneObject;
 use crate::scene_object::DirtyFlags;
@@ -36,15 +38,18 @@ pub fn load_scene_from_file(scene_path: &str, max_objects: usize, max_depth: usi
     file.read_to_string(&mut content)?;
     let manifest: SceneManifest = serde_json::from_str(&content)?;
 
-    load_scene_from_manifest(&manifest, &base_dir, max_objects, max_depth)
+    load_scene_from_manifest(&manifest, &base_dir, max_objects, max_depth, None)
 }
 
 /// 从已解析的 `SceneManifest` 构建场景。
+///
+/// `database` 用于解析 Prefab UUID 到文件路径；为 `None` 时跳过 Prefab 实例化。
 pub fn load_scene_from_manifest(
     manifest: &SceneManifest,
     base_path: &str,
     max_objects: usize,
     max_depth: usize,
+    database: Option<&AssetDatabase>,
 ) -> Result<Scene, Box<dyn std::error::Error>> {
     let mut all_nodes: Vec<SceneNode> = vec![];
     let mut all_objects: Vec<SceneObject> = vec![];
@@ -114,6 +119,47 @@ pub fn load_scene_from_manifest(
         all_skins.append(&mut scene.skins);
     }
 
+    // 构建中间 Scene，供 Prefab 实例化和程序化对象添加
+    let mut scene = Scene::new(
+        all_nodes,
+        all_objects,
+        all_materials,
+        all_animations,
+        all_skins,
+        global_bounds,
+        max_objects,
+        max_depth,
+    );
+
+    // 1.5. 处理 Prefab 实例引用
+    if !manifest.prefab_instances.is_empty() {
+        if let Some(db) = database {
+            for prefab_def in &manifest.prefab_instances {
+                let entry = db.entry_by_uuid(&prefab_def.prefab_uuid)
+                    .ok_or_else(|| format!(
+                        "[loader] Prefab UUID '{}' not found in database (instance '{}')",
+                        prefab_def.prefab_uuid, prefab_def.id
+                    ))?;
+                let prefab_abs_path = db.project_root().join(&entry.path);
+                let prefab_manifest = prefab_loader::load_prefab_manifest(
+                    &prefab_abs_path.to_string_lossy()
+                )?;
+                prefab_loader::instantiate_prefab(
+                    &mut scene,
+                    &prefab_manifest,
+                    &prefab_def.transform,
+                    db,
+                    8, // max depth for nested prefabs
+                )?;
+            }
+        } else {
+            eprintln!(
+                "[loader] {} prefab instance(s) in manifest but no AssetDatabase provided; skipping",
+                manifest.prefab_instances.len()
+            );
+        }
+    }
+
     // 2. 处理程序化内联对象
     for obj_def in &manifest.objects {
         let (mesh, color) = match obj_def.object_type.as_str() {
@@ -128,15 +174,15 @@ pub fn load_scene_from_manifest(
             _ => continue,
         };
 
-        let material_idx = all_materials.materials.len();
-        all_materials.materials.push(create_pbr_material(&obj_def.object_type, color));
+        let material_idx = scene.materials.materials.len();
+        scene.materials.materials.push(create_pbr_material(&obj_def.object_type, color));
 
         let mut obj_mesh = mesh;
         obj_mesh.material = Some(render::MaterialHandle(material_idx));
 
         add_procedural_object(
-            &mut all_nodes,
-            &mut all_objects,
+            &mut scene.nodes,
+            &mut scene.objects,
             obj_mesh,
             obj_def.position,
             obj_def.rotation_euler.unwrap_or([0.0, 0.0, 0.0]),
@@ -150,34 +196,28 @@ pub fn load_scene_from_manifest(
             obj_def.scale[1] * 0.5,
             obj_def.scale[2] * 0.5,
         );
-        global_bounds = merge_aabb(
-            global_bounds,
+        scene.bounds = merge_aabb(
+            scene.bounds,
             AABB::new(pos - half, pos + half),
         );
     }
 
     // 3. 处理环境光照
-    setup_environment(&manifest.environment, &mut all_nodes, &mut all_objects);
+    setup_environment(&manifest.environment, &mut scene.nodes, &mut scene.objects);
 
     // 4. 如果没有任何内容，使用默认 bounds
-    if global_bounds.min.x == std::f32::MAX {
-        global_bounds = AABB::new(
+    if scene.bounds.min.x == std::f32::MAX {
+        scene.bounds = AABB::new(
             Point3::new(-100.0, -100.0, -100.0),
             Point3::new(100.0, 100.0, 100.0),
         );
     }
 
-    // 5. 添加方向光作为 tagged objects（从 environment 提取）
-    Ok(Scene::new(
-        all_nodes,
-        all_objects,
-        all_materials,
-        all_animations,
-        all_skins,
-        global_bounds,
-        max_objects,
-        max_depth,
-    ))
+    // 5. 重建索引（static/dynamic 分类）和八叉树
+    scene.rebuild_object_indices();
+    scene.rebuild_octree();
+
+    Ok(scene)
 }
 
 // ---------------------------------------------------------------------------
@@ -185,7 +225,7 @@ pub fn load_scene_from_manifest(
 // ---------------------------------------------------------------------------
 
 /// 构建 4x4 变换矩阵，用于 AABB 变换。
-fn build_transform_matrix(tf: &TransformDef) -> Matrix4<f32> {
+pub(crate) fn build_transform_matrix(tf: &TransformDef) -> Matrix4<f32> {
     use cgmath::Rotation3;
     let translation = Matrix4::from_translation(Vector3::new(
         tf.translation[0],
@@ -200,7 +240,7 @@ fn build_transform_matrix(tf: &TransformDef) -> Matrix4<f32> {
 }
 
 /// 对 GLTF 根节点应用外部变换。
-fn apply_transform_to_root(node: &mut SceneNode, tf: &TransformDef) {
+pub(crate) fn apply_transform_to_root(node: &mut SceneNode, tf: &TransformDef) {
     use cgmath::Rotation3;
     let rot = cgmath::Quaternion::from_angle_y(Rad(tf.rotation[1].to_radians()))
         * cgmath::Quaternion::from_angle_x(Rad(tf.rotation[0].to_radians()))
@@ -212,7 +252,7 @@ fn apply_transform_to_root(node: &mut SceneNode, tf: &TransformDef) {
 }
 
 /// 偏移 SceneNode 中的所有索引引用。
-fn offset_node_indices(
+pub(crate) fn offset_node_indices(
     node: &mut SceneNode,
     node_offset: usize,
     object_offset: usize,
@@ -232,7 +272,7 @@ fn offset_node_indices(
 }
 
 /// 合并两个 AABB。
-fn merge_aabb(a: AABB, b: AABB) -> AABB {
+pub(crate) fn merge_aabb(a: AABB, b: AABB) -> AABB {
     AABB {
         min: Point3::new(
             a.min.x.min(b.min.x),
@@ -275,7 +315,7 @@ fn transform_aabb_merge(mut target: AABB, matrix: Matrix4<f32>) -> AABB {
 }
 
 /// 添加程序化生成的对象。
-fn add_procedural_object(
+pub(crate) fn add_procedural_object(
     nodes: &mut Vec<SceneNode>,
     objects: &mut Vec<SceneObject>,
     mesh: ModelMesh,
@@ -322,6 +362,7 @@ fn add_procedural_object(
         normal_matrix: model_matrix.invert().unwrap_or(Matrix4::identity()).transpose().into(),
         joint_matrices: vec![],
         dirty: DirtyFlags::all(),
+        prefab_source: None,
     });
 }
 
@@ -340,7 +381,7 @@ fn setup_environment(
 // 程序化网格生成（plane / cube）
 // ---------------------------------------------------------------------------
 
-fn create_plane_mesh_procedural(size_x: f32, size_z: f32) -> ModelMesh {
+pub(crate) fn create_plane_mesh_procedural(size_x: f32, size_z: f32) -> ModelMesh {
     let hx = size_x * 0.5;
     let hz = size_z * 0.5;
 
@@ -393,7 +434,7 @@ fn create_plane_mesh_procedural(size_x: f32, size_z: f32) -> ModelMesh {
     mesh
 }
 
-fn create_cube_mesh_procedural(sx: f32, sy: f32, sz: f32) -> ModelMesh {
+pub(crate) fn create_cube_mesh_procedural(sx: f32, sy: f32, sz: f32) -> ModelMesh {
     let hx = sx * 0.5;
     let hy = sy * 0.5;
     let hz = sz * 0.5;
@@ -457,7 +498,7 @@ fn create_cube_mesh_procedural(sx: f32, sy: f32, sz: f32) -> ModelMesh {
     mesh
 }
 
-fn create_pbr_material(name: &str, color: [f32; 3]) -> Material {
+pub(crate) fn create_pbr_material(name: &str, color: [f32; 3]) -> Material {
     Material {
         name: Some(name.to_string()),
         base_color_factor: [color[0], color[1], color[2], 1.0],
@@ -483,7 +524,7 @@ mod tests {
     #[test]
     fn load_empty_manifest() {
         let manifest = SceneManifest::empty("EmptyTest");
-        let scene = load_scene_from_manifest(&manifest, ".", 100, 4);
+        let scene = load_scene_from_manifest(&manifest, ".", 100, 4, None);
         assert!(scene.is_ok());
         let scene = scene.unwrap();
         assert!(scene.objects().is_empty());
@@ -509,7 +550,7 @@ mod tests {
             tag: None,
         });
 
-        let scene = load_scene_from_manifest(&manifest, ".", 100, 4);
+        let scene = load_scene_from_manifest(&manifest, ".", 100, 4, None);
         assert!(scene.is_ok());
         let scene = scene.unwrap();
         assert!(scene.objects().len() >= 2);

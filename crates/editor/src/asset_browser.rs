@@ -28,6 +28,7 @@ pub enum AssetType {
     Texture,
     Audio,
     Avatar,
+    Prefab,
     Other,
 }
 
@@ -40,6 +41,7 @@ impl AssetType {
             AssetType::Texture => "🖼",
             AssetType::Audio => "🔊",
             AssetType::Avatar => "🧑",
+            AssetType::Prefab => "📦",
             AssetType::Other => "📄",
         }
     }
@@ -52,6 +54,7 @@ impl AssetType {
             AssetTypeKind::Audio => AssetType::Audio,
             AssetTypeKind::Scene => AssetType::Scene,
             AssetTypeKind::Avatar => AssetType::Avatar,
+            AssetTypeKind::Prefab => AssetType::Prefab,
             AssetTypeKind::Material | AssetTypeKind::Other => AssetType::Other,
         }
     }
@@ -68,13 +71,15 @@ impl AssetType {
     }
 
     #[allow(dead_code)]
-    /// 根据文件名判断资源类型（支持复合后缀如 `.scene.json`、`.avatar.json`）。
+    /// 根据文件名判断资源类型（支持复合后缀如 `.scene.json`、`.avatar.json`、`.prefab.json`）。
     fn from_filename(name: &str) -> Self {
         let lower = name.to_lowercase();
         if lower.ends_with(".scene.json") {
             AssetType::Scene
         } else if lower.ends_with(".avatar.json") {
             AssetType::Avatar
+        } else if lower.ends_with(".prefab.json") {
+            AssetType::Prefab
         } else if let Some(ext) = std::path::Path::new(name).extension().and_then(|e| e.to_str()) {
             Self::from_extension(ext)
         } else {
@@ -109,6 +114,7 @@ enum AssetFilter {
     Audio,
     Scenes,
     Avatars,
+    Prefabs,
 }
 
 impl AssetFilter {
@@ -120,6 +126,7 @@ impl AssetFilter {
             AssetFilter::Audio => "Audio",
             AssetFilter::Scenes => "Scenes",
             AssetFilter::Avatars => "Avatars",
+            AssetFilter::Prefabs => "Prefabs",
         }
     }
 
@@ -131,6 +138,7 @@ impl AssetFilter {
             AssetFilter::Audio => matches!(asset_type, AssetType::Audio),
             AssetFilter::Scenes => matches!(asset_type, AssetType::Scene),
             AssetFilter::Avatars => matches!(asset_type, AssetType::Avatar),
+            AssetFilter::Prefabs => matches!(asset_type, AssetType::Prefab),
         }
     }
 }
@@ -267,7 +275,7 @@ impl EditorPanel for AssetBrowser {
 
         // 过滤器
         ui.horizontal(|ui| {
-            for filter in &[AssetFilter::All, AssetFilter::Models, AssetFilter::Textures, AssetFilter::Audio, AssetFilter::Scenes, AssetFilter::Avatars] {
+            for filter in &[AssetFilter::All, AssetFilter::Models, AssetFilter::Textures, AssetFilter::Audio, AssetFilter::Scenes, AssetFilter::Avatars, AssetFilter::Prefabs] {
                 let selected = self.filter == *filter;
                 if ui.selectable_label(selected, filter.label()).clicked() {
                     self.filter = *filter;

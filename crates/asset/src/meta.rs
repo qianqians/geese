@@ -38,6 +38,8 @@ pub enum AssetTypeKind {
     Avatar,
     /// 材质（未来）：.material.json
     Material,
+    /// 预制体：.prefab.json
+    Prefab,
     /// 其他
     Other,
 }
@@ -55,7 +57,7 @@ impl AssetTypeKind {
         }
     }
 
-    /// 从文件名推断资源类型（支持复合后缀如 `.scene.json`、`.avatar.json`）。
+    /// 从文件名推断资源类型（支持复合后缀如 `.scene.json`、`.avatar.json`、`.prefab.json`）。
     pub fn from_filename(name: &str) -> Self {
         let lower = name.to_lowercase();
         if lower.ends_with(".scene.json") {
@@ -64,6 +66,8 @@ impl AssetTypeKind {
             AssetTypeKind::Avatar
         } else if lower.ends_with(".material.json") {
             AssetTypeKind::Material
+        } else if lower.ends_with(".prefab.json") {
+            AssetTypeKind::Prefab
         } else if let Some(ext) = Path::new(name).extension().and_then(|e| e.to_str()) {
             Self::from_extension(ext)
         } else {

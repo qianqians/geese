@@ -90,6 +90,16 @@ impl Scene {
         &self.dynamic_indices
     }
 
+    /// 静态对象索引的可变引用（供 prefab_loader 等内部使用）。
+    pub(crate) fn static_indices_mut(&mut self) -> &mut Vec<usize> {
+        &mut self.static_indices
+    }
+
+    /// 动态对象索引的可变引用（供 prefab_loader 等内部使用）。
+    pub(crate) fn dynamic_indices_mut(&mut self) -> &mut Vec<usize> {
+        &mut self.dynamic_indices
+    }
+
     /// 取场景全部对象引用。
     pub fn objects(&self) -> Vec<&SceneObject> {
         self.objects.iter().collect()
@@ -477,6 +487,7 @@ impl Scene {
                 .into(),
             joint_matrices: vec![],
             dirty: DirtyFlags::all(),
+            prefab_source: None,
         });
 
         if is_static {
@@ -515,7 +526,7 @@ impl Scene {
     }
 
     /// 重新构建 static_indices / dynamic_indices。
-    fn rebuild_object_indices(&mut self) {
+    pub(crate) fn rebuild_object_indices(&mut self) {
         (self.static_indices, self.dynamic_indices) =
             classify_objects(&self.nodes, &self.objects, &self.animations);
     }
@@ -588,6 +599,7 @@ mod tests {
             normal_matrix: Matrix4::from_scale(1.0).into(),
             joint_matrices: Vec::new(),
             dirty: DirtyFlags::all(),
+            prefab_source: None,
         }
     }
 

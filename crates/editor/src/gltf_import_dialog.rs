@@ -171,6 +171,7 @@ impl GltfImportDialog {
             environment: Default::default(),
             spawn_points: vec![],
             objects: vec![],
+            prefab_instances: vec![],
         };
 
         let json = serde_json::to_string_pretty(&manifest)?;

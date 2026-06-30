@@ -11,13 +11,16 @@ use crate::gltf_import_dialog::GltfImportDialog;
 use crate::hierarchy::{HierarchyPanel, SceneNodeData, NodeType};
 use crate::inspector::InspectorPanel;
 use crate::panel_layer::PanelLayer;
-use crate::panels::{EditorLayout, EditorState};
+use crate::panels::{EditorAction, EditorLayout, EditorState};
 use crate::physics_debug::PhysicsDebugRenderer;
 use crate::play_mode::PlayMode;
 use crate::viewport::ViewportPanel;
 use asset::database::AssetDatabase;
+use asset::meta;
 use physics_client::BodySnapshot;
 use physics_manager::{PhysicsManager, PhysicsSource};
+use scene::prefab_manifest::{PrefabManifest, PrefabNodeDef, PrefabMeshDef};
+use scene::manifest::TransformDef;
 
 use cgmath::{Point3, Vector3};
 use std::cell::RefCell;
@@ -188,6 +191,9 @@ impl Editor {
         }
         // 1. 快捷键始终生效
         self.handle_shortcuts(ctx);
+
+        // 1.3 处理面板请求的 Prefab 操作
+        self.process_prefab_actions();
 
         // 1.5 资源数据库扫描
         if self.asset_needs_scan {
@@ -606,6 +612,200 @@ impl Editor {
                     [scl.x, scl.y, scl.z],
                 ),
             );
+        }
+    }
+
+    /// 处理面板请求的 Prefab 操作（Save as Prefab / Instantiate Prefab）。
+    fn process_prefab_actions(&mut self) {
+        let actions: Vec<EditorAction> = self.state.pending_actions.drain(..).collect();
+        for action in actions {
+            match action {
+                EditorAction::SaveAsPrefab { node_id } => {
+                    self.handle_save_as_prefab(&node_id);
+                }
+                EditorAction::InstantiatePrefab { prefab_uuid, position } => {
+                    self.handle_instantiate_prefab(&prefab_uuid, position);
+                }
+            }
+        }
+    }
+
+    /// 将选中节点及其子树保存为 .prefab.json 文件。
+    fn handle_save_as_prefab(&mut self, node_id: &str) {
+        let node = match self.hierarchy.tree().get(node_id) {
+            Some(n) => n.clone(),
+            None => {
+                eprintln!("[Editor] SaveAsPrefab: node '{}' not found", node_id);
+                return;
+            }
+        };
+
+        // 收集子树中所有节点
+        let mut all_node_ids = vec![node_id.to_string()];
+        self.collect_subtree_nodes(node_id, &mut all_node_ids);
+
+        // 构建 PrefabManifest
+        let mut prefab_nodes: Vec<PrefabNodeDef> = Vec::new();
+        let mut id_to_index: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+
+        for (idx, nid) in all_node_ids.iter().enumerate() {
+            id_to_index.insert(nid.clone(), idx);
+        }
+
+        for nid in &all_node_ids {
+            let n = match self.hierarchy.tree().get(nid) {
+                Some(n) => n.clone(),
+                None => continue,
+            };
+
+            // 获取变换
+            let transform = self
+                .state
+                .transform_cache
+                .get(nid)
+                .map(|&(pos, rot, scl)| TransformDef {
+                    translation: pos,
+                    rotation: rot,
+                    scale: scl,
+                })
+                .unwrap_or_default();
+
+            let children: Vec<usize> = n
+                .children
+                .iter()
+                .filter_map(|cid| id_to_index.get(cid).copied())
+                .collect();
+
+            // 根据节点类型确定 mesh 定义
+            let mesh = match n.node_type {
+                NodeType::Mesh => {
+                    // 尝试从 transform_cache 推断是否为 GLTF 模型的一部分
+                    // 简化：使用 Procedural cube 作为占位
+                    Some(PrefabMeshDef::Procedural {
+                        object_type: "cube".to_string(),
+                        color: [0.5, 0.5, 0.5],
+                        dimensions: [1.0, 1.0, 1.0],
+                    })
+                }
+                _ => None,
+            };
+
+            prefab_nodes.push(PrefabNodeDef {
+                name: n.name.clone(),
+                transform,
+                children,
+                mesh,
+                prefab_ref: None,
+                overrides: None,
+            });
+        }
+
+        let root_indices: Vec<usize> = vec![0]; // 选中的节点是根
+
+        let manifest = PrefabManifest {
+            version: "1.0".to_string(),
+            name: node.name.clone(),
+            nodes: prefab_nodes,
+            root_nodes: root_indices,
+        };
+
+        // 写入文件
+        let sanitized_name = node.name.replace(|c: char| !c.is_alphanumeric() && c != '_' && c != '-', "_");
+        let prefab_path = format!(
+            "{}/assets/{}.prefab.json",
+            self.state.project_path, sanitized_name
+        );
+
+        match serde_json::to_string_pretty(&manifest) {
+            Ok(json) => {
+                if let Err(e) = std::fs::write(&prefab_path, json) {
+                    eprintln!("[Editor] Failed to write prefab '{}': {}", prefab_path, e);
+                    return;
+                }
+                eprintln!("[Editor] Prefab saved to '{}'", prefab_path);
+
+                // 生成 .meta 文件
+                let prefab_abs = std::path::Path::new(&prefab_path);
+                if let Err(e) = meta::create_meta_for(prefab_abs) {
+                    eprintln!("[Editor] Failed to create meta for prefab: {}", e);
+                }
+
+                // 触发资源重新扫描
+                self.asset_needs_scan = true;
+            }
+            Err(e) => {
+                eprintln!("[Editor] Failed to serialize prefab: {}", e);
+            }
+        }
+    }
+
+    /// 在指定位置实例化 Prefab。
+    fn handle_instantiate_prefab(&mut self, prefab_uuid: &str, position: [f32; 3]) {
+        let entry = match self.asset_database.entry_by_uuid(prefab_uuid) {
+            Some(e) => e.clone(),
+            None => {
+                eprintln!("[Editor] Prefab UUID '{}' not found in database", prefab_uuid);
+                return;
+            }
+        };
+
+        let prefab_abs_path = self.asset_database.project_root().join(&entry.path);
+        let manifest = match scene::prefab_loader::load_prefab_manifest(
+            &prefab_abs_path.to_string_lossy(),
+        ) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("[Editor] Failed to load prefab '{}': {}", entry.path, e);
+                return;
+            }
+        };
+
+        // 构建变换（待运行时 Scene 集成后使用）
+        let _world_transform = TransformDef {
+            translation: position,
+            rotation: [0.0, 0.0, 0.0],
+            scale: [1.0, 1.0, 1.0],
+        };
+
+        // TODO: 实际场景加载后，调用 instantiate_prefab 将结果合并到运行时 Scene
+        // 当前 Editor 使用 HierarchyPanel 管理节点，暂时将 Prefab 根节点加入层级
+        for &root_idx in &manifest.root_nodes {
+            if let Some(node_def) = manifest.nodes.get(root_idx) {
+                let eid = format!("prefab_{}", uuid::Uuid::new_v4());
+                let ntype = if node_def.mesh.is_some() {
+                    NodeType::Mesh
+                } else {
+                    NodeType::Empty
+                };
+                self.hierarchy.add_scene_node(SceneNodeData {
+                    id: eid.clone(),
+                    name: node_def.name.clone(),
+                    children: vec![],
+                    parent: None,
+                    visible: true,
+                    locked: false,
+                    node_type: ntype,
+                });
+                self.state.transform_cache.insert(
+                    eid,
+                    (position, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+                );
+            }
+        }
+
+        eprintln!(
+            "[Editor] Instantiated prefab '{}' ({}) at {:?}",
+            manifest.name, prefab_uuid, position
+        );
+    }
+
+    /// 递归收集节点子树中所有节点 ID。
+    fn collect_subtree_nodes(&self, node_id: &str, out: &mut Vec<String>) {
+        if let Some(node) = self.hierarchy.tree().get(node_id) {
+            for child_id in &node.children {
+                out.push(child_id.clone());
+                self.collect_subtree_nodes(child_id, out);
+            }
         }
     }
 

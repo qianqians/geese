@@ -225,6 +225,74 @@ impl EditorCommand for CreateEntityCommand {
     }
 }
 
+/// 实例化 Prefab 命令。
+///
+/// 记录从 Prefab 创建的实体，支持 undo（删除实例化实体）和 redo（重新实例化）。
+pub struct InstantiatePrefabCommand {
+    /// 被实例化的 Prefab UUID
+    pub prefab_uuid: String,
+    /// 实例化位置
+    pub position: Point3<f32>,
+    /// 实例化后创建的实体 ID 列表
+    pub created_entity_ids: Vec<String>,
+    /// 实例化回调：prefab_uuid, position → 创建的 entity_ids
+    pub on_instantiate: Option<Box<dyn Fn(&str, Point3<f32>) -> Vec<String>>>,
+    /// 删除回调：entity_id
+    pub on_remove: Option<Box<dyn Fn(&str)>>,
+    executed: bool,
+}
+
+impl InstantiatePrefabCommand {
+    pub fn new(prefab_uuid: String, position: Point3<f32>) -> Self {
+        Self {
+            prefab_uuid,
+            position,
+            created_entity_ids: Vec::new(),
+            on_instantiate: None,
+            on_remove: None,
+            executed: false,
+        }
+    }
+
+    /// 设置实例化回调。
+    pub fn with_callbacks<F, G>(mut self, on_instantiate: F, on_remove: G) -> Self
+    where
+        F: Fn(&str, Point3<f32>) -> Vec<String> + 'static,
+        G: Fn(&str) + 'static,
+    {
+        self.on_instantiate = Some(Box::new(on_instantiate));
+        self.on_remove = Some(Box::new(on_remove));
+        self
+    }
+}
+
+impl EditorCommand for InstantiatePrefabCommand {
+    fn execute(&mut self) -> bool {
+        if let Some(ref on_instantiate) = self.on_instantiate {
+            self.created_entity_ids = on_instantiate(&self.prefab_uuid, self.position);
+        }
+        self.executed = true;
+        !self.created_entity_ids.is_empty()
+    }
+
+    fn undo(&mut self) -> bool {
+        if !self.executed {
+            return false;
+        }
+        if let Some(ref on_remove) = self.on_remove {
+            for entity_id in &self.created_entity_ids {
+                on_remove(entity_id);
+            }
+        }
+        self.executed = false;
+        true
+    }
+
+    fn description(&self) -> &str {
+        "Instantiate Prefab"
+    }
+}
+
 /// 重父子关系命令。
 pub struct ReparentCommand {
     /// 目标实体 ID

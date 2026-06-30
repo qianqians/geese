@@ -3,6 +3,8 @@ pub mod octree;
 mod scene;
 pub mod scene_object;
 pub mod manifest;
+pub mod prefab_manifest;
+pub mod prefab_loader;
 pub mod avatar_manifest;
 pub mod loader;
 pub mod net;
@@ -227,6 +229,7 @@ fn load_gltf_mesh(
             normal_matrix: Matrix4::from_scale(1.0).into(),
             joint_matrices: Vec::new(),
             dirty: DirtyFlags::all(),
+            prefab_source: None,
         });
         object_indices.push(object_index);
     }
