@@ -37,6 +37,13 @@ pub enum EditorAction {
         half_height: f32,
         radius: f32,
     },
+    /// 修改动画标记
+    ModifyAnimationMarker {
+        clip_index: usize,
+        time: f32,
+        name: String,
+        remove: bool,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +110,10 @@ pub struct EditorState {
     pub dragged_asset_name: Option<String>,
     /// 视口/层级面板显示的拖放提示
     pub drop_target_hint: Option<DropTargetHint>,
+    /// 动画剪辑信息: (name, duration, index)
+    pub animation_clips: Vec<(String, f32, usize)>,
+    /// 每个剪辑的标记列表: Vec<(time, name)>
+    pub animation_markers: Vec<Vec<(f32, String)>>,
 }
 
 impl EditorState {
@@ -122,6 +133,8 @@ impl EditorState {
             drag_source: None,
             dragged_asset_name: None,
             drop_target_hint: None,
+            animation_clips: Vec::new(),
+            animation_markers: Vec::new(),
         }
     }
 }

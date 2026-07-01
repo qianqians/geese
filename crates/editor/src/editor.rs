@@ -2,6 +2,7 @@
 //!
 //! [`Editor`] 是一体化编辑器的顶层入口，管理面板布局、菜单栏、工具栏和全局状态。
 
+use crate::animation_panel::AnimationPanel;
 use crate::asset_browser::AssetBrowser;
 use crate::bundle_panel::BundlePanel;
 use crate::commands::CommandHistory;
@@ -11,16 +12,18 @@ use crate::gltf_import_dialog::GltfImportDialog;
 use crate::hierarchy::{HierarchyPanel, SceneNodeData, NodeType};
 use crate::inspector::InspectorPanel;
 use crate::panel_layer::PanelLayer;
-use crate::panels::{EditorAction, EditorLayout, EditorState};
+use crate::panels::{EditorAction, EditorLayout, EditorPanel, EditorState};
 use crate::physics_debug::PhysicsDebugRenderer;
 use crate::play_mode::PlayMode;
 use crate::viewport::ViewportPanel;
 use asset::database::AssetDatabase;
 use asset::meta;
+use avatar::AnimationMarker;
 use physics_client::BodySnapshot;
 use physics_manager::{PhysicsManager, PhysicsSource};
 use scene::prefab_manifest::{PrefabManifest, PrefabNodeDef, PrefabMeshDef};
 use scene::manifest::TransformDef;
+use scene::Scene;
 
 use cgmath::{Point3, Vector3};
 use std::cell::RefCell;
@@ -73,6 +76,10 @@ pub struct Editor {
         Option<tokio::sync::oneshot::Receiver<Result<Vec<BodySnapshot>, String>>>,
     /// 物理模拟开关（编辑器全局控制）
     physics_enabled: bool,
+    /// 动画面板
+    animation_panel: AnimationPanel,
+    /// 可选场景引用（供动画预览等使用）
+    scene: Option<Scene>,
 }
 
 impl Editor {
@@ -125,6 +132,8 @@ impl Editor {
             last_transform_old: None,
             pending_physics: None,
             physics_enabled: true,
+            animation_panel: AnimationPanel::new(),
+            scene: None,
         }
     }
 
@@ -195,6 +204,12 @@ impl Editor {
         // 1. 快捷键始终生效
         self.handle_shortcuts(ctx);
 
+        // 1.1 同步动画数据到 EditorState（供 AnimationPanel 使用）
+        self.sync_animation_data();
+
+        // 1.2 动画面板预览驱动
+        self.update_animation_preview(dt);
+
         // 1.3 处理面板请求的 Prefab 操作
         self.process_prefab_actions();
 
@@ -241,7 +256,20 @@ impl Editor {
                 });
         }
 
-
+        // 3.6 动画面板（浮动窗口）
+        if self.state.panel_layer.is_visible(&PanelLayer::Animation) {
+            let mut open = true;
+            egui::Window::new("Animation")
+                .open(&mut open)
+                .default_pos([400.0, 500.0])
+                .default_size([700.0, 280.0])
+                .show(ctx, |ui| {
+                    self.animation_panel.show(ui, &mut self.state);
+                });
+            if !open {
+                self.state.panel_layer.set_visible(PanelLayer::Animation, false);
+            }
+        }
 
         // 4. GLTF 导入对话框（模态，始终检测）
         let was_visible = self.gltf_import_dialog.visible;
@@ -389,7 +417,10 @@ impl Editor {
                     let mut av = self.state.panel_layer.is_visible(&PanelLayer::AssetBrowser);
                     if ui.checkbox(&mut av, "Asset Browser").clicked() { self.state.panel_layer.set_visible(PanelLayer::AssetBrowser, av); ui.close_menu(); }
                     ui.separator();
-                    if ui.checkbox(&mut self.bundle_panel_visible, "Bundle Panel").clicked() { ui.close_menu(); }
+                    let mut anim_vis = self.state.panel_layer.is_visible(&PanelLayer::Animation);
+                    if ui.checkbox(&mut anim_vis, "Animation").clicked() { self.state.panel_layer.set_visible(PanelLayer::Animation, anim_vis); ui.close_menu(); }
+                    let mut bv = self.bundle_panel_visible;
+                    if ui.checkbox(&mut bv, "Bundle Panel").clicked() { self.bundle_panel_visible = bv; ui.close_menu(); }
                 });
                 ui.menu_button("Help", |ui| {
                     if ui.button("About Geese Editor").clicked() { ui.close_menu(); }
@@ -642,6 +673,87 @@ impl Editor {
         }
     }
 
+    /// 同步 Scene 中的动画数据到 EditorState。
+    fn sync_animation_data(&mut self) {
+        let Some(ref scene) = self.scene else { return };
+
+        self.state.animation_clips.clear();
+        for (i, clip) in scene.animations.iter().enumerate() {
+            self.state.animation_clips.push((
+                clip.name.clone().unwrap_or_else(|| format!("Clip {}", i)),
+                clip.duration,
+                i,
+            ));
+        }
+
+        self.state.animation_markers.clear();
+        for clip in &scene.animations {
+            let markers: Vec<(f32, String)> = clip
+                .markers
+                .iter()
+                .map(|m| (m.time, m.name.clone()))
+                .collect();
+            self.state.animation_markers.push(markers);
+        }
+    }
+
+    /// 驱动动画预览播放。
+    fn update_animation_preview(&mut self, dt: f32) {
+        self.animation_panel.update_timer(dt);
+
+        let Some(ref mut scene) = self.scene else { return };
+        if !self.animation_panel.preview_playing {
+            return;
+        }
+        let Some(clip_idx) = self.animation_panel.selected_clip else {
+            return;
+        };
+        let Some(clip) = scene.animations.get(clip_idx) else {
+            return;
+        };
+        let _ = clip;
+
+        let mut player = avatar::AnimationPlayer::new(clip_idx);
+        player.time = self.animation_panel.preview_time;
+        player.playing = self.animation_panel.preview_playing;
+        player.speed = self.animation_panel.preview_speed;
+        player.looping = self.animation_panel.preview_looping;
+        scene.update_animation(&mut player, dt);
+        self.animation_panel.preview_time = player.time;
+
+        // 收集触发事件
+        let events = scene.drain_marker_events();
+        if !events.is_empty() {
+            self.animation_panel.on_markers_fired(&events);
+        }
+    }
+
+    /// 处理动画标记的增删操作。
+    fn handle_modify_animation_marker(
+        &mut self,
+        clip_index: usize,
+        time: f32,
+        name: String,
+        remove: bool,
+    ) {
+        let Some(ref mut scene) = self.scene else { return };
+        let Some(clip) = scene.animations.get_mut(clip_index) else {
+            return;
+        };
+        if remove {
+            clip.markers.retain(|m| m.time != time || m.name != name);
+        } else {
+            // 避免重复
+            if !clip.markers.iter().any(|m| m.time == time && m.name == name) {
+                clip.markers.push(AnimationMarker { time, name });
+                // 保持按时间排序
+                clip
+                    .markers
+                    .sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
+            }
+        }
+    }
+
     /// 处理面板请求的 Prefab 操作（Save as Prefab / Instantiate Prefab）。
     fn process_prefab_actions(&mut self) {
         let actions: Vec<EditorAction> = self.state.pending_actions.drain(..).collect();
@@ -660,6 +772,9 @@ impl Editor {
                         "[Editor] ToggleCharacterController: node={}, enabled={}, move_speed={}, jump_impulse={}, air_control={}, half_height={}, radius={}",
                         node_id, enabled, move_speed, jump_impulse, air_control, half_height, radius
                     );
+                }
+                EditorAction::ModifyAnimationMarker { clip_index, time, name, remove } => {
+                    self.handle_modify_animation_marker(clip_index, time, name, remove);
                 }
             }
         }

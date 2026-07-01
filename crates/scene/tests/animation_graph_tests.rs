@@ -17,6 +17,7 @@ fn test_state_machine_single_state() {
         name: Some("idle".to_string()),
         duration: 1.0,
         channels: vec![],
+        markers: vec![],
     }];
 
     let active = sm.update(0.5, &clips);
@@ -53,11 +54,13 @@ fn test_state_machine_transition() {
             name: Some("idle".to_string()),
             duration: 1.0,
             channels: vec![],
+            markers: vec![],
         },
         AnimationClip {
             name: Some("walk".to_string()),
             duration: 2.0,
             channels: vec![],
+            markers: vec![],
         },
     ];
 
@@ -107,11 +110,13 @@ fn test_blend1d() {
             name: Some("idle".to_string()),
             duration: 1.0,
             channels: vec![],
+            markers: vec![],
         },
         AnimationClip {
             name: Some("run".to_string()),
             duration: 1.0,
             channels: vec![],
+            markers: vec![],
         },
     ];
 
@@ -174,16 +179,19 @@ fn test_transition_conditions() {
             name: Some("idle".to_string()),
             duration: 1.0,
             channels: vec![],
+            markers: vec![],
         },
         AnimationClip {
             name: Some("run".to_string()),
             duration: 1.0,
             channels: vec![],
+            markers: vec![],
         },
         AnimationClip {
             name: Some("crouch".to_string()),
             duration: 1.0,
             channels: vec![],
+            markers: vec![],
         },
     ];
 
