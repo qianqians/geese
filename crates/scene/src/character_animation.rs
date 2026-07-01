@@ -46,6 +46,8 @@ pub struct CharacterAnimationGraph {
     velocity_param: String,
     /// 着地参数名
     grounded_param: String,
+    /// 垂直速度参数名
+    vertical_velocity_param: String,
 }
 
 impl CharacterAnimationGraph {
@@ -68,12 +70,14 @@ impl CharacterAnimationGraph {
     ) -> Self {
         let velocity_param = "physics_velocity".to_string();
         let grounded_param = "physics_grounded".to_string();
+        let vertical_velocity_param = "physics_vertical_velocity".to_string();
 
         let mut machine = AnimationStateMachine::new(state_names::IDLE.to_string());
 
         // 设置速度参数（初始为 0）
         machine.set_float(&velocity_param, 0.0);
         machine.set_bool(&grounded_param, true);
+        machine.set_float(&vertical_velocity_param, 0.0);
 
         // --- Idle 状态 ---
         let idle_state = AnimationState {
@@ -233,20 +237,43 @@ impl CharacterAnimationGraph {
             };
             machine.add_state(fall_state);
 
-            // Jump → Fall: 待扩展（基于速度 y 分量）
+            // Jump → Fall: 垂直速度 < 0（下落）
+            machine.add_transition(
+                state_names::JUMP,
+                Transition {
+                    target_state: state_names::FALL.to_string(),
+                    duration: 0.1,
+                    condition: TransitionCondition::FloatLess(
+                        vertical_velocity_param.clone(),
+                        0.0,
+                    ),
+                },
+            );
+
+            // Fall → Idle: 着地
+            machine.add_transition(
+                state_names::FALL,
+                Transition {
+                    target_state: state_names::IDLE.to_string(),
+                    duration: 0.15,
+                    condition: TransitionCondition::Bool(grounded_param.clone(), true),
+                },
+            );
         }
 
         Self {
             machine,
             velocity_param,
             grounded_param,
+            vertical_velocity_param,
         }
     }
 
-    /// 每帧更新：根据角色速度与着地状态驱动状态机。
+    /// 每帧更新：根据角色速度、垂直速度与着地状态驱动状态机。
     ///
     /// # Arguments
     /// * `velocity` - 水平速度大小 (m/s)
+    /// * `vertical_velocity` - 垂直速度 (m/s，正=上升，负=下落)
     /// * `grounded` - 是否着地
     /// * `dt` - 帧时间
     /// * `clips` - 动画剪辑数组
@@ -255,11 +282,13 @@ impl CharacterAnimationGraph {
     pub fn update(
         &mut self,
         velocity: f32,
+        vertical_velocity: f32,
         grounded: bool,
         dt: f32,
         clips: &[AnimationClip],
     ) -> Vec<ActiveAnimation> {
         self.machine.set_float(&self.velocity_param, velocity);
+        self.machine.set_float(&self.vertical_velocity_param, vertical_velocity);
         self.machine.set_bool(&self.grounded_param, grounded);
         self.machine.update(dt, clips)
     }
@@ -304,11 +333,11 @@ mod tests {
         ];
 
         // 初始速度 0 → Idle
-        let active = graph.update(0.0, true, 0.1, &clips);
+        let active = graph.update(0.0, 0.0, true, 0.1, &clips);
         assert_eq!(graph.machine.current_state(), state_names::IDLE);
 
         // 速度进入 Walk 区间
-        let active = graph.update(1.0, true, 0.3, &clips);
+        let active = graph.update(1.0, 0.0, true, 0.3, &clips);
         // 应该正在切换或已切换到 Walk
         let state = graph.machine.current_state();
         assert!(
@@ -331,10 +360,10 @@ mod tests {
             make_dummy_clip("jump", 1.0),
         ];
 
-        graph.update(0.0, true, 0.1, &clips);
+        graph.update(0.0, 0.0, true, 0.1, &clips);
         assert_eq!(graph.machine.current_state(), state_names::IDLE);
 
-        graph.update(0.0, false, 0.3, &clips);
+        graph.update(0.0, 0.0, false, 0.3, &clips);
         let state = graph.machine.current_state();
         assert!(
             state == state_names::JUMP || graph.machine.is_transitioning(),

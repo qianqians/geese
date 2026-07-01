@@ -28,6 +28,8 @@ pub struct SceneNodeData {
     pub node_type: NodeType,
     /// 资产来源 UUID（如果来自 GLTF 导入，记录其 .meta UUID）
     pub asset_source_uuid: Option<String>,
+    /// 嵌套 Prefab 引用的 UUID（如果该节点是 prefab_ref 实例）
+    pub prefab_ref_uuid: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -173,6 +175,7 @@ impl HierarchyPanel {
             locked: false,
             node_type: NodeType::Empty,
             asset_source_uuid: None,
+            prefab_ref_uuid: None,
         });
         tree.add_node(SceneNodeData {
             id: "room".into(),
@@ -183,6 +186,7 @@ impl HierarchyPanel {
             locked: false,
             node_type: NodeType::Empty,
             asset_source_uuid: None,
+            prefab_ref_uuid: None,
         });
         tree.add_node(SceneNodeData {
             id: "floor".into(),
@@ -193,6 +197,7 @@ impl HierarchyPanel {
             locked: false,
             node_type: NodeType::Mesh,
             asset_source_uuid: None,
+            prefab_ref_uuid: None,
         });
         tree.add_node(SceneNodeData {
             id: "walls".into(),
@@ -203,6 +208,7 @@ impl HierarchyPanel {
             locked: false,
             node_type: NodeType::Mesh,
             asset_source_uuid: None,
+            prefab_ref_uuid: None,
         });
         tree.add_node(SceneNodeData {
             id: "light_main".into(),
@@ -213,6 +219,7 @@ impl HierarchyPanel {
             locked: false,
             node_type: NodeType::Light,
             asset_source_uuid: None,
+            prefab_ref_uuid: None,
         });
         tree.add_node(SceneNodeData {
             id: "outdoor".into(),
@@ -223,6 +230,7 @@ impl HierarchyPanel {
             locked: false,
             node_type: NodeType::Empty,
             asset_source_uuid: None,
+            prefab_ref_uuid: None,
         });
         tree.add_node(SceneNodeData {
             id: "player_spawn".into(),
@@ -233,6 +241,7 @@ impl HierarchyPanel {
             locked: false,
             node_type: NodeType::PlayerSpawn,
             asset_source_uuid: None,
+            prefab_ref_uuid: None,
         });
 
         Self {
@@ -397,6 +406,7 @@ impl EditorPanel for HierarchyPanel {
                         locked: false,
                         node_type: NodeType::Empty,
                         asset_source_uuid: None,
+                        prefab_ref_uuid: None,
                     });
                 }
             });

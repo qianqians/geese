@@ -222,6 +222,16 @@ impl EditorPanel for InspectorPanel {
                             let label = if self.cc_enabled { "Remove Controller" } else { "Add Controller" };
                             if ui.button(label).clicked() {
                                 self.cc_enabled = !self.cc_enabled;
+                                // 推送 EditorAction，让 Editor 处理角色控制器的添加/移除
+                                state.pending_actions.push(EditorAction::ToggleCharacterController {
+                                    node_id: entity_id.clone(),
+                                    enabled: self.cc_enabled,
+                                    move_speed: self.cc_move_speed,
+                                    jump_impulse: self.cc_jump_impulse,
+                                    air_control: self.cc_air_control,
+                                    half_height: self.cc_half_height,
+                                    radius: self.cc_radius,
+                                });
                             }
                         });
                         if self.cc_enabled {

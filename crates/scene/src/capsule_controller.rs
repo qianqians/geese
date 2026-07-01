@@ -126,16 +126,17 @@ impl CapsuleController {
         };
 
         let origin = iso.translation;
-        // 从胶囊体底部向下检测（留一点余量）
+        // 从胶囊体底部外部向下检测（射线起点置于胶囊体之外，避免命中自身）
         let ray_origin = Vec3::new(
             origin.x,
-            origin.y - self.half_height - self.radius + 0.05,
+            origin.y - self.half_height - self.radius - 0.02,
             origin.z,
         );
         let ray_dir = Vec3::new(0.0, -1.0, 0.0);
         let max_toi = 0.3; // 检测距离
 
-        if let Some(hit) = physics_scene.cast_ray(ray_origin, ray_dir, max_toi, true) {
+        // 排除自身刚体，防止射线命中角色碰撞体
+        if let Some(hit) = physics_scene.cast_ray_excluding(ray_origin, ray_dir, max_toi, true, self.body_handle) {
             let normal = Vec3::new(hit.normal.0, hit.normal.1, hit.normal.2);
             // 法线朝上（地面）则视为着地
             self.grounded = normal.y > 0.5;

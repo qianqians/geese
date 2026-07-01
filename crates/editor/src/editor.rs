@@ -327,6 +327,7 @@ impl Editor {
                     locked: false,
                     node_type: ntype,
                     asset_source_uuid: asset_uuid,
+                    prefab_ref_uuid: None,
                 });
 
                 tx_cache.entry(eid).or_insert((
@@ -429,6 +430,9 @@ impl Editor {
                 let phy_label = if self.physics_enabled { "Physics ON" } else { "Physics OFF" };
                 if ui.add_sized([72.0, 22.0], egui::Button::new(phy_label)).clicked() {
                     self.physics_enabled = !self.physics_enabled;
+                    // 联动：同步到场景的 physics_enabled 标志
+                    // （当 desktop 应用读取 Editor 时，会通过此标志同步到 Scene）
+                    eprintln!("[Editor] Physics {}", if self.physics_enabled { "enabled" } else { "disabled" });
                 }
 
                 // Physics Debug
@@ -649,6 +653,14 @@ impl Editor {
                 EditorAction::InstantiatePrefab { prefab_uuid, position, parent_node_id } => {
                     self.handle_instantiate_prefab(&prefab_uuid, position, parent_node_id);
                 }
+                EditorAction::ToggleCharacterController { node_id, enabled, move_speed, jump_impulse, air_control, half_height, radius } => {
+                    // 角色控制器切换：由 Editor 处理物理集成
+                    // TODO: 当 Editor 持有 Scene 引用时，调用 scene.character_physics 相关 API
+                    eprintln!(
+                        "[Editor] ToggleCharacterController: node={}, enabled={}, move_speed={}, jump_impulse={}, air_control={}, half_height={}, radius={}",
+                        node_id, enabled, move_speed, jump_impulse, air_control, half_height, radius
+                    );
+                }
             }
         }
     }
@@ -700,24 +712,31 @@ impl Editor {
                 .collect();
 
             // 根据节点类型和资产来源确定 mesh 定义
-            let mesh = match n.node_type {
-                NodeType::Mesh => {
-                    // 优先使用 asset_source_uuid（来自 GLTF 导入的模型引用）
-                    if let Some(ref model_uuid) = n.asset_source_uuid {
-                        Some(PrefabMeshDef::ModelRef {
-                            model_uuid: model_uuid.clone(),
-                            mesh_name: None,
-                        })
-                    } else {
-                        // 无 GLTF 来源，使用程序化占位
-                        Some(PrefabMeshDef::Procedural {
-                            object_type: "cube".to_string(),
-                            color: [0.5, 0.5, 0.5],
-                            dimensions: [1.0, 1.0, 1.0],
-                        })
+            // 如果节点有 prefab_ref_uuid，则保存为嵌套 prefab 引用（mesh 与 prefab_ref 互斥）
+            let (mesh, prefab_ref, overrides) = if let Some(ref prefab_uuid) = n.prefab_ref_uuid {
+                // 嵌套 Prefab 引用：保留 prefab_ref 而非 mesh
+                (None, Some(prefab_uuid.clone()), None)
+            } else {
+                let mesh = match n.node_type {
+                    NodeType::Mesh => {
+                        // 优先使用 asset_source_uuid（来自 GLTF 导入的模型引用）
+                        if let Some(ref model_uuid) = n.asset_source_uuid {
+                            Some(PrefabMeshDef::ModelRef {
+                                model_uuid: model_uuid.clone(),
+                                mesh_name: None,
+                            })
+                        } else {
+                            // 无 GLTF 来源，使用程序化占位
+                            Some(PrefabMeshDef::Procedural {
+                                object_type: "cube".to_string(),
+                                color: [0.5, 0.5, 0.5],
+                                dimensions: [1.0, 1.0, 1.0],
+                            })
+                        }
                     }
-                }
-                _ => None,
+                    _ => None,
+                };
+                (mesh, None, None)
             };
 
             prefab_nodes.push(PrefabNodeDef {
@@ -725,8 +744,8 @@ impl Editor {
                 transform,
                 children,
                 mesh,
-                prefab_ref: None,
-                overrides: None,
+                prefab_ref,
+                overrides,
             });
         }
 
@@ -745,6 +764,21 @@ impl Editor {
             "{}/assets/{}.prefab.json",
             self.state.project_path, sanitized_name
         );
+
+        // 文件覆盖保护：如果文件已存在，添加后缀避免覆盖
+        let prefab_path = if std::path::Path::new(&prefab_path).exists() {
+            let base = format!(
+                "{}/assets/{}_copy",
+                self.state.project_path, sanitized_name
+            );
+            eprintln!(
+                "[Editor] Prefab file already exists at '{}', saving as '{}_copy.prefab.json' instead",
+                prefab_path, base
+            );
+            format!("{}.prefab.json", base)
+        } else {
+            prefab_path
+        };
 
         match serde_json::to_string_pretty(&manifest) {
             Ok(json) => {
@@ -833,6 +867,9 @@ impl Editor {
                 _ => None,
             };
 
+            // 检查是否有嵌套 prefab_ref
+            let prefab_ref_uuid = node_def.prefab_ref.clone();
+
             node_datas.push(SceneNodeData {
                 id: eid.clone(),
                 name: node_def.name.clone(),
@@ -842,6 +879,7 @@ impl Editor {
                 locked: false,
                 node_type: ntype,
                 asset_source_uuid: asset_uuid,
+                prefab_ref_uuid,
             });
 
             // 变换：根节点使用世界位置，子节点使用 manifest 中的变换

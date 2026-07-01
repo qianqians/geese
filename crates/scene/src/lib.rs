@@ -2,10 +2,13 @@ mod material;
 pub mod octree;
 mod scene;
 pub mod scene_object;
+#[cfg(feature = "physics")]
 pub mod capsule_controller;
 pub mod character_animation;
+#[cfg(feature = "physics")]
 pub mod character_physics;
 pub mod manifest;
+#[cfg(feature = "physics")]
 pub mod ragdoll;
 pub mod prefab_manifest;
 pub mod prefab_loader;
@@ -22,8 +25,11 @@ pub use octree::Octree;
 pub use scene::Scene;
 pub use scene_object::SceneObject;
 pub use scene_object::DirtyFlags;
+#[cfg(feature = "physics")]
 pub use capsule_controller::CapsuleController;
+#[cfg(feature = "physics")]
 pub use character_physics::{CharacterControllerType, CharacterPhysics};
+#[cfg(feature = "physics")]
 pub use ragdoll::{RagdollBuilder, RagdollConfig, RagdollInstance, JointTypeStrategy};
 pub use character_animation::{CharacterAnimationGraph, SpeedThresholds};
 
@@ -299,7 +305,21 @@ pub fn import_scene(
     max_depth: usize,
 ) -> Result<Scene, Box<dyn std::error::Error>> {
     let (gltf, buffers, images) = load(path)?;
-    let materials = load_material_library(&gltf, &images);
+    import_scene_from_data(&gltf, &buffers, &images, max_objects, max_depth)
+}
+
+/// 从预加载的 GLTF 数据构建场景。
+///
+/// 与 [`import_scene`] 功能相同，但接受已解析的 GLTF 数据而非文件路径。
+/// 配合 `asset::GltfDataLoader` + `asset::AssetCache` 使用可避免重复解析同一文件。
+pub fn import_scene_from_data(
+    gltf: &gltf::Document,
+    buffers: &[gltf::buffer::Data],
+    images: &[gltf::image::Data],
+    max_objects: usize,
+    max_depth: usize,
+) -> Result<Scene, Box<dyn std::error::Error>> {
+    let materials = load_material_library(gltf, images);
 
     let mut bounds: AABB = AABB::new(
         Point3::new(-100.0, -100.0, -100.0),
@@ -324,13 +344,13 @@ pub fn import_scene(
             );
         }
     }
-    let (skins, skin_map) = load_skins(&gltf, &buffers, &node_map);
+    let (skins, skin_map) = load_skins(gltf, buffers, &node_map);
 
     for scene in gltf.scenes() {
         for node in scene.nodes() {
             load_node_meshes(
                 &node,
-                &buffers,
+                buffers,
                 &mut nodes,
                 &mut objects,
                 &node_map,
@@ -338,7 +358,7 @@ pub fn import_scene(
             );
         }
     }
-    let animations = load_animations(&gltf, &buffers, &node_map);
+    let animations = load_animations(gltf, buffers, &node_map);
 
     Ok(Scene::new(
         nodes,

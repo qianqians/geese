@@ -246,6 +246,16 @@ impl AssetDatabase {
                 }
             }
         }
+
+        // 循环依赖检测：扫描完成后检查 Prefab 之间是否存在环路
+        let all_metas = self.all_metas();
+        let cycles = dependency_scanner::check_prefab_cycle(&all_metas);
+        if !cycles.is_empty() {
+            for cycle in &cycles {
+                let chain = cycle.join(" → ");
+                eprintln!("[asset] cycle dependency detected: {}", chain);
+            }
+        }
     }
 
     /// 按 UUID 查询条目。
@@ -323,6 +333,27 @@ impl AssetDatabase {
     /// 返回项目根目录。
     pub fn project_root(&self) -> &Path {
         &self.project_root
+    }
+
+    /// 构建所有资源的 UUID→AssetMeta 映射（用于循环依赖检测等）。
+    ///
+    /// 从内存中的 `entries` 构建，不重新读取磁盘 .meta 文件。
+    pub fn all_metas(&self) -> HashMap<String, crate::meta::AssetMeta> {
+        self.entries
+            .values()
+            .map(|e| {
+                (
+                    e.uuid.clone(),
+                    crate::meta::AssetMeta {
+                        version: 1,
+                        uuid: e.uuid.clone(),
+                        asset_type: e.asset_type,
+                        dependencies: e.dependencies.clone(),
+                        import_settings: serde_json::Value::Null,
+                    },
+                )
+            })
+            .collect()
     }
 }
 
