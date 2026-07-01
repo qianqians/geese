@@ -2,7 +2,7 @@
 //!
 //! 树形展示场景节点父子关系，支持选择、搜索、右键菜单和可见性切换。
 
-use crate::panels::{EditorAction, EditorPanel, EditorState};
+use crate::panels::{DropTargetHint, EditorAction, EditorPanel, EditorState};
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
@@ -26,6 +26,8 @@ pub struct SceneNodeData {
     pub locked: bool,
     /// 节点类型标签
     pub node_type: NodeType,
+    /// 资产来源 UUID（如果来自 GLTF 导入，记录其 .meta UUID）
+    pub asset_source_uuid: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -170,6 +172,7 @@ impl HierarchyPanel {
             visible: true,
             locked: false,
             node_type: NodeType::Empty,
+            asset_source_uuid: None,
         });
         tree.add_node(SceneNodeData {
             id: "room".into(),
@@ -179,6 +182,7 @@ impl HierarchyPanel {
             visible: true,
             locked: false,
             node_type: NodeType::Empty,
+            asset_source_uuid: None,
         });
         tree.add_node(SceneNodeData {
             id: "floor".into(),
@@ -188,6 +192,7 @@ impl HierarchyPanel {
             visible: true,
             locked: false,
             node_type: NodeType::Mesh,
+            asset_source_uuid: None,
         });
         tree.add_node(SceneNodeData {
             id: "walls".into(),
@@ -197,6 +202,7 @@ impl HierarchyPanel {
             visible: true,
             locked: false,
             node_type: NodeType::Mesh,
+            asset_source_uuid: None,
         });
         tree.add_node(SceneNodeData {
             id: "light_main".into(),
@@ -206,6 +212,7 @@ impl HierarchyPanel {
             visible: true,
             locked: false,
             node_type: NodeType::Light,
+            asset_source_uuid: None,
         });
         tree.add_node(SceneNodeData {
             id: "outdoor".into(),
@@ -215,6 +222,7 @@ impl HierarchyPanel {
             visible: true,
             locked: false,
             node_type: NodeType::Empty,
+            asset_source_uuid: None,
         });
         tree.add_node(SceneNodeData {
             id: "player_spawn".into(),
@@ -224,6 +232,7 @@ impl HierarchyPanel {
             visible: true,
             locked: false,
             node_type: NodeType::PlayerSpawn,
+            asset_source_uuid: None,
         });
 
         Self {
@@ -308,6 +317,22 @@ impl HierarchyPanel {
                 state.selected_entity = Some(node_id.to_string());
             }
 
+            // 拖放悬停检测：拖拽资产到节点上时，标记为潜在父节点
+            let drag_active = state.dragged_asset_uuid.is_some()
+                && state.drag_source.as_deref() == Some("AssetBrowser");
+            if drag_active && response.hovered() {
+                state.drop_target_hint = Some(DropTargetHint::Hierarchy {
+                    target_node_id: Some(node_id.to_string()),
+                });
+                // 高亮当前悬停节点
+                let rect = response.rect;
+                ui.painter().rect_filled(
+                    rect,
+                    0.0,
+                    egui::Color32::from_rgba_premultiplied(60, 100, 255, 60),
+                );
+            }
+
             // 右键菜单
             response.context_menu(|ui| {
                 if ui.button("✏ Rename").clicked() {
@@ -371,6 +396,7 @@ impl EditorPanel for HierarchyPanel {
                         visible: true,
                         locked: false,
                         node_type: NodeType::Empty,
+                        asset_source_uuid: None,
                     });
                 }
             });
@@ -386,8 +412,12 @@ impl EditorPanel for HierarchyPanel {
         );
         ui.add_space(4.0);
 
+        // 检测拖拽状态
+        let drag_active = state.dragged_asset_uuid.is_some()
+            && state.drag_source.as_deref() == Some("AssetBrowser");
+
         // 节点树
-        egui::ScrollArea::vertical()
+        let scroll_response = egui::ScrollArea::vertical()
             .id_salt("hierarchy_scroll")
             .show(ui, |ui| {
                 if self.search_text.is_empty() {
@@ -396,6 +426,16 @@ impl EditorPanel for HierarchyPanel {
                     for root_id in &root_ids {
                         self.render_node(ui, root_id, state, 0);
                     }
+
+                    // 拖拽时留出空白区域供 drop 到根级别
+                    if drag_active && root_ids.is_empty() {
+                        ui.add_space(40.0);
+                        ui.label(
+                            egui::RichText::new("Drop here to add root node")
+                                .color(egui::Color32::from_gray(120))
+                                .size(12.0),
+                        );
+                    }
                 } else {
                     // 搜索模式：平铺显示匹配节点
                     let matched = self.tree.find(&self.search_text);
@@ -403,12 +443,63 @@ impl EditorPanel for HierarchyPanel {
                         if let Some(node) = self.tree.get(id) {
                             let is_selected = state.selected_entity.as_deref() == Some(id);
                             let label = format!("{} {}", node.node_type.icon(), node.name);
-                            if ui.selectable_label(is_selected, label).clicked() {
+                            let resp = ui.selectable_label(is_selected, label);
+                            if resp.clicked() {
                                 state.selected_entity = Some(id.clone());
+                            }
+                            if drag_active && resp.hovered() {
+                                state.drop_target_hint = Some(DropTargetHint::Hierarchy {
+                                    target_node_id: Some(id.clone()),
+                                });
                             }
                         }
                     }
                 }
             });
+
+        // ── 拖放高亮边框 ──
+        if drag_active {
+            let scroll_rect = scroll_response.inner_rect;
+            let highlight = egui::Color32::from_rgba_premultiplied(60, 100, 255, 80);
+            let stroke = egui::Stroke::new(2.0, egui::Color32::from_rgb(80, 130, 255));
+            ui.painter().rect_filled(scroll_rect, 0.0, highlight);
+            ui.painter().rect_stroke(scroll_rect, 4.0, stroke);
+
+            // 在空白区域 drop → 根节点
+            let hovered = ui.rect_contains_pointer(scroll_rect);
+            if hovered && state.drop_target_hint.is_none() {
+                state.drop_target_hint = Some(DropTargetHint::Hierarchy {
+                    target_node_id: None,
+                });
+            }
+        }
+
+        // ── 鼠标释放时消费拖放 ──
+        if drag_active {
+            let released = ui.input(|input| {
+                input.pointer.button_released(egui::PointerButton::Primary)
+            });
+            if released {
+                let scroll_rect = scroll_response.inner_rect;
+                if ui.rect_contains_pointer(scroll_rect) {
+                    let parent_id = match &state.drop_target_hint {
+                        Some(DropTargetHint::Hierarchy { target_node_id }) => target_node_id.clone(),
+                        _ => None,
+                    };
+                    let prefab_uuid = state.dragged_asset_uuid.clone().unwrap_or_default();
+                    state.pending_actions.push(EditorAction::InstantiatePrefab {
+                        prefab_uuid,
+                        position: [0.0, 0.0, 0.0],
+                        parent_node_id: parent_id,
+                    });
+                }
+                // 清除拖拽状态
+                state.dragged_asset_uuid = None;
+                state.dragged_asset_type = None;
+                state.dragged_asset_name = None;
+                state.drag_source = None;
+                state.drop_target_hint = None;
+            }
+        }
     }
 }

@@ -20,8 +20,26 @@ use std::collections::HashMap;
 pub enum EditorAction {
     /// 将指定节点及其子树保存为 Prefab
     SaveAsPrefab { node_id: String },
-    /// 在指定位置实例化 Prefab
-    InstantiatePrefab { prefab_uuid: String, position: [f32; 3] },
+    /// 在指定位置实例化 Prefab（拖放或菜单触发）
+    InstantiatePrefab {
+        prefab_uuid: String,
+        position: [f32; 3],
+        /// 目标父节点 ID（Hierarchy 拖放时指定，None 为根节点）
+        parent_node_id: Option<String>,
+    },
+}
+
+// ---------------------------------------------------------------------------
+// DropTargetHint - 拖放目标提示
+// ---------------------------------------------------------------------------
+
+/// 拖放时在目标面板显示的提示信息。
+#[derive(Debug, Clone)]
+pub enum DropTargetHint {
+    /// 在视口上拖放，显示世界坐标预览位置
+    Viewport { world_pos: [f32; 3] },
+    /// 在层级面板上拖放，显示插入目标节点
+    Hierarchy { target_node_id: Option<String> },
 }
 
 // ---------------------------------------------------------------------------
@@ -65,6 +83,16 @@ pub struct EditorState {
     pub pending_transform: Option<PendingTransform>,
     /// 面板请求的待处理操作队列
     pub pending_actions: Vec<EditorAction>,
+    /// 当前拖拽的资产 UUID（非空时表示正在拖拽中）
+    pub dragged_asset_uuid: Option<String>,
+    /// 拖拽资产的类型（用于 Viewport 区分模型/Prefab）
+    pub dragged_asset_type: Option<crate::asset_browser::AssetType>,
+    /// 拖拽来源面板名称（"AssetBrowser"）
+    pub drag_source: Option<String>,
+    /// 拖拽资产的名称（用于预览标签）
+    pub dragged_asset_name: Option<String>,
+    /// 视口/层级面板显示的拖放提示
+    pub drop_target_hint: Option<DropTargetHint>,
 }
 
 impl EditorState {
@@ -79,6 +107,11 @@ impl EditorState {
             transform_cache: HashMap::new(),
             pending_transform: None,
             pending_actions: Vec::new(),
+            dragged_asset_uuid: None,
+            dragged_asset_type: None,
+            drag_source: None,
+            dragged_asset_name: None,
+            drop_target_hint: None,
         }
     }
 }

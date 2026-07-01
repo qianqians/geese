@@ -286,11 +286,17 @@ impl Editor {
                 Err(e) => { eprintln!("[Editor] Cannot parse GLTF: {e}"); continue; }
             };
 
+            // 查找该 GLTF 模型在 AssetDatabase 中的 UUID（用于 Prefab 导出）
+            let model_uuid = self.asset_database
+                .entry_by_path(&model.path)
+                .map(|e| e.uuid.clone());
+
             fn walk_gltf_node(
                 node: &gltf::Node,
                 parent_id: Option<String>,
                 hierarchy: &mut HierarchyPanel,
                 tx_cache: &mut std::collections::HashMap<String, ([f32;3],[f32;3],[f32;3])>,
+                model_uuid: Option<String>,
             ) {
                 let eid = format!("node_{}", node.index());
                 let nname = node.name().unwrap_or("Node").to_string();
@@ -298,9 +304,16 @@ impl Editor {
 
                 let cids: Vec<String> = node.children().map(|c| {
                     let cid = format!("node_{}", c.index());
-                    walk_gltf_node(&c, Some(eid.clone()), hierarchy, tx_cache);
+                    walk_gltf_node(&c, Some(eid.clone()), hierarchy, tx_cache, model_uuid.clone());
                     cid
                 }).collect();
+
+                // Mesh 节点记录其来源 GLTF 模型的 UUID
+                let asset_uuid = if ntype == NodeType::Mesh {
+                    model_uuid.clone()
+                } else {
+                    None
+                };
 
                 hierarchy.add_scene_node(SceneNodeData {
                     id: eid.clone(),
@@ -310,6 +323,7 @@ impl Editor {
                     visible: true,
                     locked: false,
                     node_type: ntype,
+                    asset_source_uuid: asset_uuid,
                 });
 
                 tx_cache.entry(eid).or_insert((
@@ -321,7 +335,7 @@ impl Editor {
 
             for gltf_scene in document.scenes() {
                 for node in gltf_scene.nodes() {
-                    walk_gltf_node(&node, None, &mut self.hierarchy, &mut self.state.transform_cache);
+                    walk_gltf_node(&node, None, &mut self.hierarchy, &mut self.state.transform_cache, model_uuid.clone());
                 }
             }
             eprintln!("[Editor] Loaded '{}' into hierarchy", model.id);
@@ -623,8 +637,8 @@ impl Editor {
                 EditorAction::SaveAsPrefab { node_id } => {
                     self.handle_save_as_prefab(&node_id);
                 }
-                EditorAction::InstantiatePrefab { prefab_uuid, position } => {
-                    self.handle_instantiate_prefab(&prefab_uuid, position);
+                EditorAction::InstantiatePrefab { prefab_uuid, position, parent_node_id } => {
+                    self.handle_instantiate_prefab(&prefab_uuid, position, parent_node_id);
                 }
             }
         }
@@ -676,16 +690,23 @@ impl Editor {
                 .filter_map(|cid| id_to_index.get(cid).copied())
                 .collect();
 
-            // 根据节点类型确定 mesh 定义
+            // 根据节点类型和资产来源确定 mesh 定义
             let mesh = match n.node_type {
                 NodeType::Mesh => {
-                    // 尝试从 transform_cache 推断是否为 GLTF 模型的一部分
-                    // 简化：使用 Procedural cube 作为占位
-                    Some(PrefabMeshDef::Procedural {
-                        object_type: "cube".to_string(),
-                        color: [0.5, 0.5, 0.5],
-                        dimensions: [1.0, 1.0, 1.0],
-                    })
+                    // 优先使用 asset_source_uuid（来自 GLTF 导入的模型引用）
+                    if let Some(ref model_uuid) = n.asset_source_uuid {
+                        Some(PrefabMeshDef::ModelRef {
+                            model_uuid: model_uuid.clone(),
+                            mesh_name: None,
+                        })
+                    } else {
+                        // 无 GLTF 来源，使用程序化占位
+                        Some(PrefabMeshDef::Procedural {
+                            object_type: "cube".to_string(),
+                            color: [0.5, 0.5, 0.5],
+                            dimensions: [1.0, 1.0, 1.0],
+                        })
+                    }
                 }
                 _ => None,
             };
@@ -739,8 +760,9 @@ impl Editor {
         }
     }
 
-    /// 在指定位置实例化 Prefab。
-    fn handle_instantiate_prefab(&mut self, prefab_uuid: &str, position: [f32; 3]) {
+    /// 在指定位置实例化 Prefab（递归实例化所有子节点）。
+    /// `parent_node_id` 指定新实例的父节点（None 为根节点）。
+    fn handle_instantiate_prefab(&mut self, prefab_uuid: &str, position: [f32; 3], parent_node_id: Option<String>) {
         let entry = match self.asset_database.entry_by_uuid(prefab_uuid) {
             Some(e) => e.clone(),
             None => {
@@ -760,42 +782,79 @@ impl Editor {
             }
         };
 
-        // 构建变换（待运行时 Scene 集成后使用）
-        let _world_transform = TransformDef {
-            translation: position,
-            rotation: [0.0, 0.0, 0.0],
-            scale: [1.0, 1.0, 1.0],
-        };
+        // 构建 manifest 索引 → 生成的实体 ID 映射
+        let node_count = manifest.nodes.len();
+        let mut idx_to_eid: Vec<String> = Vec::with_capacity(node_count);
+        for _ in 0..node_count {
+            idx_to_eid.push(format!("prefab_{}", uuid::Uuid::new_v4()));
+        }
 
-        // TODO: 实际场景加载后，调用 instantiate_prefab 将结果合并到运行时 Scene
-        // 当前 Editor 使用 HierarchyPanel 管理节点，暂时将 Prefab 根节点加入层级
-        for &root_idx in &manifest.root_nodes {
-            if let Some(node_def) = manifest.nodes.get(root_idx) {
-                let eid = format!("prefab_{}", uuid::Uuid::new_v4());
-                let ntype = if node_def.mesh.is_some() {
-                    NodeType::Mesh
-                } else {
-                    NodeType::Empty
-                };
-                self.hierarchy.add_scene_node(SceneNodeData {
-                    id: eid.clone(),
-                    name: node_def.name.clone(),
-                    children: vec![],
-                    parent: None,
-                    visible: true,
-                    locked: false,
-                    node_type: ntype,
-                });
-                self.state.transform_cache.insert(
-                    eid,
-                    (position, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
-                );
-            }
+        // 第一遍：为每个节点创建 SceneNodeData（暂不设置 children，先收集信息）
+        let mut node_datas: Vec<SceneNodeData> = Vec::with_capacity(node_count);
+
+        for (idx, node_def) in manifest.nodes.iter().enumerate() {
+            let eid = idx_to_eid[idx].clone();
+            let ntype = if node_def.mesh.is_some() {
+                NodeType::Mesh
+            } else {
+                NodeType::Empty
+            };
+
+            // 子节点的实际实体 ID 列表（第二遍填充后会被重新设置）
+            let children_eids: Vec<String> = node_def
+                .children
+                .iter()
+                .map(|&child_idx| idx_to_eid[child_idx].clone())
+                .collect();
+
+            // 父节点实体 ID
+            let parent_eid = if manifest.root_nodes.contains(&idx) {
+                // 根节点：使用指定的 parent_node_id
+                parent_node_id.clone()
+            } else {
+                // 非根节点：找到第一个父节点引用
+                manifest.nodes.iter().enumerate()
+                    .find(|(_pidx, pdef)| pdef.children.contains(&idx))
+                    .map(|(pidx, _)| idx_to_eid[pidx].clone())
+            };
+
+            // 提取 asset_source_uuid（如果 mesh 是 ModelRef 类型）
+            let asset_uuid = match &node_def.mesh {
+                Some(PrefabMeshDef::ModelRef { model_uuid, .. }) => Some(model_uuid.clone()),
+                _ => None,
+            };
+
+            node_datas.push(SceneNodeData {
+                id: eid.clone(),
+                name: node_def.name.clone(),
+                children: children_eids,
+                parent: parent_eid,
+                visible: true,
+                locked: false,
+                node_type: ntype,
+                asset_source_uuid: asset_uuid,
+            });
+
+            // 变换：根节点使用世界位置，子节点使用 manifest 中的变换
+            let node_pos = if manifest.root_nodes.contains(&idx) {
+                position
+            } else {
+                node_def.transform.translation
+            };
+            self.state.transform_cache.insert(
+                eid,
+                (node_pos, node_def.transform.rotation, node_def.transform.scale),
+            );
+        }
+
+        // 第二遍：将所有节点添加到层级树
+        for node_data in node_datas {
+            self.hierarchy.add_scene_node(node_data);
         }
 
         eprintln!(
-            "[Editor] Instantiated prefab '{}' ({}) at {:?}",
-            manifest.name, prefab_uuid, position
+            "[Editor] Instantiated prefab '{}' ({}) with {} nodes at {:?}",
+            manifest.name, prefab_uuid, node_count, position
         );
     }
 

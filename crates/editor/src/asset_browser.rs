@@ -46,6 +46,11 @@ impl AssetType {
         }
     }
 
+    /// 是否可拖拽到场景（仅 Model 和 Prefab）。
+    pub fn is_draggable(&self) -> bool {
+        matches!(self, AssetType::Model | AssetType::Prefab)
+    }
+
     /// 从 AssetTypeKind 转换。
     fn from_kind(kind: AssetTypeKind) -> Self {
         match kind {
@@ -244,7 +249,7 @@ impl EditorPanel for AssetBrowser {
         "Asset Browser"
     }
 
-    fn show(&mut self, ui: &mut egui::Ui, _state: &mut EditorState) {
+    fn show(&mut self, ui: &mut egui::Ui, state: &mut EditorState) {
         // 标题栏
         ui.horizontal(|ui| {
             ui.strong("Assets");
@@ -307,8 +312,19 @@ impl EditorPanel for AssetBrowser {
                                         entry.asset_type.icon(),
                                         entry.name
                                     );
-                                    if ui.selectable_label(is_selected, label).clicked() {
+                                    let response = ui.selectable_label(is_selected, label);
+                                    if response.clicked() {
                                         self.selected_index = Some(i);
+                                    }
+                                    // 拖拽启动：仅 Model/Prefab 可拖拽，文件夹不拖拽
+                                    if response.drag_started()
+                                        && entry.asset_type.is_draggable()
+                                        && !entry.uuid.is_empty()
+                                    {
+                                        state.dragged_asset_uuid = Some(entry.uuid.clone());
+                                        state.dragged_asset_type = Some(entry.asset_type);
+                                        state.dragged_asset_name = Some(entry.name.clone());
+                                        state.drag_source = Some("AssetBrowser".to_string());
                                     }
                                     ui.label(Self::format_size(entry.size_bytes));
                                     // 显示 UUID（截断）
@@ -370,6 +386,16 @@ impl EditorPanel for AssetBrowser {
                             if resp.response.clicked() {
                                 self.selected_index = Some(i);
                             }
+                            // 拖拽启动：仅 Model/Prefab 可拖拽
+                            if resp.response.drag_started()
+                                && entry.asset_type.is_draggable()
+                                && !entry.uuid.is_empty()
+                            {
+                                state.dragged_asset_uuid = Some(entry.uuid.clone());
+                                state.dragged_asset_type = Some(entry.asset_type);
+                                state.dragged_asset_name = Some(entry.name.clone());
+                                state.drag_source = Some("AssetBrowser".to_string());
+                            }
 
                             col += 1;
                             if col >= cols {
@@ -397,6 +423,63 @@ impl EditorPanel for AssetBrowser {
                             .color(egui::Color32::GRAY),
                     );
                 }
+            }
+        }
+
+        // ── 拖拽预览浮层 ──
+        let drag_active = state.dragged_asset_uuid.is_some()
+            && state.drag_source.as_deref() == Some("AssetBrowser");
+
+        // 取消拖拽：ESC 或 右键
+        if drag_active {
+            ui.ctx().request_repaint();
+            let cancel = ui.input(|input| {
+                input.key_pressed(egui::Key::Escape)
+                    || input.pointer.button_clicked(egui::PointerButton::Secondary)
+            });
+            if cancel {
+                state.dragged_asset_uuid = None;
+                state.dragged_asset_type = None;
+                state.dragged_asset_name = None;
+                state.drag_source = None;
+                state.drop_target_hint = None;
+                return;
+            }
+
+            // 鼠标松开时清除拖拽（目标面板未消费）
+            let released = ui.input(|input| {
+                input.pointer.button_released(egui::PointerButton::Primary)
+            });
+            if released {
+                // 不清除状态 — 让目标面板的下一帧消费它
+                // 但若下一帧还在 AssetBrowser 手中（未被消费），自行清除
+            }
+        }
+
+        // 在 AssetBrowser 面板上方渲染拖拽预览
+        if drag_active {
+            if let Some(mouse_pos) = ui.input(|input| input.pointer.hover_pos()) {
+                let preview_label = state
+                    .dragged_asset_name
+                    .as_deref()
+                    .unwrap_or("Asset");
+                let icon_str = match state.dragged_asset_type {
+                    Some(AssetType::Model) => "🔷",
+                    Some(AssetType::Prefab) => "📦",
+                    _ => "📦",
+                };
+                let label = format!("{} {}", icon_str, preview_label);
+                egui::Area::new("drag_preview".into())
+                    .fixed_pos(mouse_pos + egui::vec2(12.0, 12.0))
+                    .order(egui::Order::Foreground)
+                    .interactable(false)
+                    .show(ui.ctx(), |ui| {
+                        ui.label(
+                            egui::RichText::new(label)
+                                .size(12.0)
+                                .background_color(egui::Color32::from_rgba_premultiplied(40, 40, 60, 220)),
+                        );
+                    });
             }
         }
     }
