@@ -8,7 +8,8 @@ use render::MaterialLibrary;
 use render::{RenderQueue, SceneRenderer};
 
 use avatar::{
-    AnimatedProperty, AnimationClip, AnimationOutputs, AnimationPlayer, SceneNode, Skin,
+    AnimatedProperty, AnimationClip, AnimationOutputs, AnimationPlayer,
+    SceneNode, Skin, check_markers_crossed,
     quat_dot, quat_exp, quat_log, sample_clip, sample_indices, sample_quat, sample_vec3,
 };
 use avatar::AnimationStateMachine;
@@ -19,6 +20,13 @@ use crate::{Octree, SceneObject};
 use crate::scene_object::DirtyFlags;
 #[cfg(feature = "physics")]
 use physics::scene::PhysicsScene;
+
+pub struct MarkerEvent {
+    pub marker_name: String,
+    pub clip_index: usize,
+    pub clip_name: Option<String>,
+    pub entity_id: Option<String>,
+}
 
 pub struct Scene {
     pub nodes: Vec<SceneNode>,
@@ -44,6 +52,10 @@ pub struct Scene {
     pub physics_enabled: bool,
     /// 角色动画蓝图列表（Phase 4 动画混合）
     pub character_anim_graphs: Vec<CharacterAnimationGraph>,
+    /// 本帧触发的动画标记事件，由外部消费者 drain。
+    pub marker_events: Vec<MarkerEvent>,
+    /// 动画图每个剪辑的上次时间（用于标记跨越检测）
+    graph_prev_times: HashMap<usize, f32>,
 }
 
 impl Scene {
@@ -82,6 +94,8 @@ impl Scene {
             character_physics: Vec::new(),
             physics_enabled: true,
             character_anim_graphs: Vec::new(),
+            marker_events: Vec::new(),
+            graph_prev_times: HashMap::new(),
         };
         scene.update_world_transforms();
         scene.rebuild_octree();
@@ -156,7 +170,25 @@ impl Scene {
             return;
         };
 
+        let prev_time = player.time;
         player.advance(dt, clip.duration);
+
+        // 检测标记跨越
+        if !clip.markers.is_empty() {
+            let crossed = check_markers_crossed(
+                &clip.markers, prev_time, player.time, clip.duration,
+            );
+            for idx in crossed {
+                let m = &clip.markers[idx];
+                self.marker_events.push(MarkerEvent {
+                    marker_name: m.name.clone(),
+                    clip_index: player.clip,
+                    clip_name: clip.name.clone(),
+                    entity_id: None,
+                });
+            }
+        }
+
         sample_clip(clip, player.time, &mut self.nodes);
         self.update_world_transforms();
         // 静态 octree 不需要每帧重建——动态对象的 aabb 已在 update_world_transforms 中更新，
@@ -167,6 +199,30 @@ impl Scene {
         use cgmath::Vector3;
 
         let active = graph.update(dt, &self.animations);
+
+        // 检测标记跨越（仅主动画 weight > 0.5 触发，避免过渡时两边同时触发）
+        for anim in &active {
+            if anim.weight > 0.5 {
+                if let Some(clip) = self.animations.get(anim.clip) {
+                    if !clip.markers.is_empty() {
+                        let prev = self.graph_prev_times.get(&anim.clip).copied().unwrap_or(0.0);
+                        let crossed = check_markers_crossed(
+                            &clip.markers, prev, anim.time, clip.duration,
+                        );
+                        for idx in crossed {
+                            let m = &clip.markers[idx];
+                            self.marker_events.push(MarkerEvent {
+                                marker_name: m.name.clone(),
+                                clip_index: anim.clip,
+                                clip_name: clip.name.clone(),
+                                entity_id: None,
+                            });
+                        }
+                    }
+                }
+                self.graph_prev_times.insert(anim.clip, anim.time);
+            }
+        }
 
         if active.len() == 1 && (active[0].weight - 1.0).abs() < f32::EPSILON {
             if let Some(clip) = self.animations.get(active[0].clip) {
@@ -616,6 +672,11 @@ impl Scene {
         std::mem::take(&mut self.deleted_ids)
     }
 
+    /// 消费本帧所有已触发的动画标记事件。
+    pub fn drain_marker_events(&mut self) -> Vec<MarkerEvent> {
+        std::mem::take(&mut self.marker_events)
+    }
+
     // -----------------------------------------------------------------------
     // 内部辅助方法
     // -----------------------------------------------------------------------
@@ -819,6 +880,7 @@ mod tests {
                     Vector3::new(1.0, 0.0, 0.0),
                 ]),
             }],
+            markers: vec![],
         }];
 
         let (statics, dynamics) = classify_objects(&nodes, &objects, &animations);

@@ -20,6 +20,8 @@ pub enum PanelLayer {
     Inspector = 3,
     /// 浮动工具栏（最顶层）
     Toolbar = 4,
+    /// 动画面板
+    Animation = 5,
 }
 
 /// 面板层级管理器。
@@ -41,6 +43,7 @@ impl Default for PanelLayerManager {
         visibility.insert(PanelLayer::Hierarchy, true);
         visibility.insert(PanelLayer::Inspector, true);
         visibility.insert(PanelLayer::Toolbar, true);
+        visibility.insert(PanelLayer::Animation, true);
 
         Self {
             visibility,

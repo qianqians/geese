@@ -64,11 +64,20 @@ impl SceneNode {
     }
 }
 
+/// 动画时间轴上的命名标记点。
+/// 当动画播放跨越此时间点时，触发同名事件。
+#[derive(Clone, Debug)]
+pub struct AnimationMarker {
+    pub time: f32,
+    pub name: String,
+}
+
 #[derive(Clone, Debug)]
 pub struct AnimationClip {
     pub name: Option<String>,
     pub duration: f32,
     pub channels: Vec<AnimationChannel>,
+    pub markers: Vec<AnimationMarker>,
 }
 
 #[derive(Clone, Debug)]
@@ -136,6 +145,42 @@ impl AnimationPlayer {
             self.playing = false;
         }
     }
+}
+
+/// 检查两个时间点之间跨越的所有标记（处理循环回绕）。
+/// prev_time: 上一帧的时间
+/// curr_time: 当前帧的时间
+/// duration: 动画总时长
+/// 返回被跨越的标记索引列表。
+pub fn check_markers_crossed(
+    markers: &[AnimationMarker],
+    prev_time: f32,
+    curr_time: f32,
+    duration: f32,
+) -> Vec<usize> {
+    if markers.is_empty() || duration <= 0.0 {
+        return vec![];
+    }
+
+    let mut result = Vec::new();
+
+    if curr_time >= prev_time {
+        // 正常前进（含循环回绕边界内的前进）
+        for (i, m) in markers.iter().enumerate() {
+            if m.time > prev_time && m.time <= curr_time {
+                result.push(i);
+            }
+        }
+    } else {
+        // 循环回绕: prev_time → duration + 0 → curr_time
+        for (i, m) in markers.iter().enumerate() {
+            if m.time > prev_time || m.time <= curr_time {
+                result.push(i);
+            }
+        }
+    }
+
+    result
 }
 
 pub fn sample_clip(clip: &AnimationClip, time: f32, nodes: &mut [SceneNode]) {

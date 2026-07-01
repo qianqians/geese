@@ -17,6 +17,7 @@ gltf = {version = "1.4.1", features = ["extras", "names"]}
 ui = { path = "../ui", version = "0.1.0" }
 render = { path = "../render", version = "0.1.0" }
 scene = { path = "../scene", version = "0.1.0", features = ["physics"] }
+avatar = { path = "../avatar", version = "0.1.0" }
 asset = { path = "../asset", version = "0.1.0" }
 camera = { path = "../camera", version = "0.1.0" }
 math = { path = "../math", version = "0.1.0" }

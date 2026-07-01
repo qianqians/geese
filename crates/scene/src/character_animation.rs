@@ -317,6 +317,7 @@ mod tests {
             name: Some(name.to_string()),
             duration,
             channels: vec![],
+            markers: vec![],
         }
     }
 

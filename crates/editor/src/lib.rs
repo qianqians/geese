@@ -5,6 +5,7 @@
 //! 与 [`launcher`] crate 配合使用：
 //! 启动 Launcher → 选择模板 → 生成工程 → 打开 Editor。
 
+pub mod animation_panel;
 pub mod asset_browser;
 pub mod bundle_panel;
 pub mod commands;

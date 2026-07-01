@@ -15,6 +15,7 @@ from .player import *
 from .subentity import *
 from .receiver import *
 from .scene_object_receiver import create_scene_object, scene_object_manager
+from .animation_events import animation_event_handler
 
 def __handle_poll_coroutine_thread__(_app:app):
     _app.poll_coroutine_thread()
@@ -58,6 +59,7 @@ class app(object):
         self.__loop__ = asyncio.new_event_loop()
         
         self.client_event_handle = None
+        self.animation_events = animation_event_handler()
     
     def build(self, handle:client_event_handle):
         self.ctx = context()
@@ -155,6 +157,13 @@ class app(object):
         while self.__is_run__:
             start = time.time()
             self.poll_conn_msg()
+            # 处理动画标记事件（从 Rust 侧 drain）
+            try:
+                events = self.__pump__.drain_marker_events()
+                if events:
+                    self.animation_events.fire_all(events)
+            except AttributeError:
+                pass  # drain_marker_events 可能尚未在 pyclient 中实现
             tick = time.time() - start
             if tick < 0.033:
                 time.sleep(0.033 - tick)

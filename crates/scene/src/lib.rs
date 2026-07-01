@@ -23,6 +23,7 @@ pub use avatar::{
 };
 pub use octree::Octree;
 pub use scene::Scene;
+pub use scene::MarkerEvent;
 pub use scene_object::SceneObject;
 pub use scene_object::DirtyFlags;
 #[cfg(feature = "physics")]
@@ -444,6 +445,7 @@ fn load_animations(
                 name: animation.name().map(str::to_string),
                 duration,
                 channels,
+                markers: vec![],
             }
         })
         .collect()
