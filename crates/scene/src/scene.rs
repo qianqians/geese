@@ -12,8 +12,11 @@ use avatar::{
     quat_dot, quat_exp, quat_log, sample_clip, sample_indices, sample_quat, sample_vec3,
 };
 use avatar::AnimationStateMachine;
+use crate::character_animation::CharacterAnimationGraph;
+use crate::character_physics::CharacterPhysics;
 use crate::{Octree, SceneObject};
 use crate::scene_object::DirtyFlags;
+use physics::scene::PhysicsScene;
 
 pub struct Scene {
     pub nodes: Vec<SceneNode>,
@@ -32,6 +35,12 @@ pub struct Scene {
     /// 本帧内 remove_object 操作收集的 entity_id，由 drain_deleted_ids 消费。
     deleted_ids: Vec<String>,
     max_depth: usize,
+    /// 物理角色映射列表（Phase 1 桥接）
+    pub character_physics: Vec<CharacterPhysics>,
+    /// 物理开关；关闭时跳过物理步进和动画混合
+    pub physics_enabled: bool,
+    /// 角色动画蓝图列表（Phase 4 动画混合）
+    pub character_anim_graphs: Vec<CharacterAnimationGraph>,
 }
 
 impl Scene {
@@ -66,6 +75,9 @@ impl Scene {
             max_objects,
             max_depth,
             deleted_ids: Vec::new(),
+            character_physics: Vec::new(),
+            physics_enabled: true,
+            character_anim_graphs: Vec::new(),
         };
         scene.update_world_transforms();
         scene.rebuild_octree();
@@ -248,6 +260,135 @@ impl Scene {
         for root in roots {
             self.update_node_world(root, cgmath::Matrix4::from_scale(1.0));
         }
+    }
+
+    /// 从物理场景读取刚体变换，更新关联节点的 `local_transform`，
+    /// 然后执行 `update_world_transforms()` 传播到渲染对象。
+    ///
+    /// 仅在 `physics_enabled` 为 true 时生效。
+    pub fn update_physics(&mut self, physics_scene: &PhysicsScene) {
+        if !self.physics_enabled {
+            return;
+        }
+        for cp in &self.character_physics {
+            cp.update_physics_transforms(physics_scene, &mut self.nodes);
+        }
+        self.update_world_transforms();
+    }
+
+    /// 角色动画更新：读取物理速度，驱动动画状态机并采样。
+    ///
+    /// 遍历所有 `character_anim_graphs`，对每个角色从物理场景
+    /// 读取当前线速度，计算水平速度大小和着地状态，
+    /// 更新动画状态机后采样动画剪辑到节点。
+    pub fn update_character_animation(
+        &mut self,
+        _physics_scene: &PhysicsScene,
+        velocities: &[f32],
+        grounded_flags: &[bool],
+        dt: f32,
+    ) {
+        if !self.physics_enabled {
+            return;
+        }
+        let count = self.character_anim_graphs.len().min(velocities.len()).min(grounded_flags.len());
+        for i in 0..count {
+            let graph = &mut self.character_anim_graphs[i];
+            let active = graph.update(velocities[i], grounded_flags[i], dt, &self.animations);
+            // 将活跃动画采样到节点
+            self.apply_active_animations(&active);
+        }
+    }
+
+    /// 将活跃动画列表采样到场景节点。
+    fn apply_active_animations(&mut self, active: &[avatar::ActiveAnimation]) {
+        use cgmath::Vector3;
+
+        if active.is_empty() {
+            return;
+        }
+        if active.len() == 1 && (active[0].weight - 1.0).abs() < f32::EPSILON {
+            if let Some(clip) = self.animations.get(active[0].clip) {
+                sample_clip(clip, active[0].time, &mut self.nodes);
+            }
+        } else {
+            for node in self.nodes.iter_mut() {
+                node.local_transform = node.base_transform;
+            }
+
+            let mut trans_acc = vec![Vector3::new(0.0, 0.0, 0.0); self.nodes.len()];
+            let mut rot_acc = vec![Vector3::new(0.0, 0.0, 0.0); self.nodes.len()];
+            let mut scale_acc = vec![Vector3::new(0.0, 0.0, 0.0); self.nodes.len()];
+            let mut has_trans = vec![false; self.nodes.len()];
+            let mut has_rot = vec![false; self.nodes.len()];
+            let mut has_scale = vec![false; self.nodes.len()];
+
+            for anim in active {
+                let Some(clip) = self.animations.get(anim.clip) else {
+                    continue;
+                };
+                for channel in &clip.channels {
+                    if channel.inputs.is_empty() || channel.target_node >= self.nodes.len() {
+                        continue;
+                    }
+                    let (left, right, factor, interval) =
+                        sample_indices(&channel.inputs, anim.time, channel.interpolation);
+                    let base = self.nodes[channel.target_node].base_transform;
+
+                    match (&channel.property, &channel.outputs) {
+                        (
+                            AnimatedProperty::Translation,
+                            AnimationOutputs::Translations(values),
+                        ) => {
+                            let v = sample_vec3(
+                                values, left, right, factor, interval, channel.interpolation,
+                            );
+                            trans_acc[channel.target_node] += (v - base.translation) * anim.weight;
+                            has_trans[channel.target_node] = true;
+                        }
+                        (AnimatedProperty::Rotation, AnimationOutputs::Rotations(values)) => {
+                            let q = sample_quat(
+                                values, left, right, factor, interval, channel.interpolation,
+                            );
+                            let q = if quat_dot(q, base.rotation) < 0.0 {
+                                -q
+                            } else {
+                                q
+                            };
+                            let relative = quat_log(q * base.rotation.conjugate());
+                            rot_acc[channel.target_node] += relative * anim.weight;
+                            has_rot[channel.target_node] = true;
+                        }
+                        (AnimatedProperty::Scale, AnimationOutputs::Scales(values)) => {
+                            let v = sample_vec3(
+                                values, left, right, factor, interval, channel.interpolation,
+                            );
+                            scale_acc[channel.target_node] += (v - base.scale) * anim.weight;
+                            has_scale[channel.target_node] = true;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            for i in 0..self.nodes.len() {
+                if has_trans[i] {
+                    self.nodes[i].local_transform.translation =
+                        self.nodes[i].base_transform.translation + trans_acc[i];
+                }
+                if has_rot[i] {
+                    self.nodes[i].local_transform.rotation =
+                        (quat_exp(rot_acc[i]) * self.nodes[i].base_transform.rotation)
+                            .normalize();
+                }
+                if has_scale[i] {
+                    self.nodes[i].local_transform.scale =
+                        self.nodes[i].base_transform.scale + scale_acc[i];
+                }
+            }
+        }
+
+        self.update_world_transforms();
     }
 
     /// 重建静态部分八叉树。仅当外部直接修改了静态对象的 aabb 时才需要调用;

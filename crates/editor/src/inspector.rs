@@ -17,6 +17,13 @@ pub struct InspectorPanel {
     scale: [f32; 3],
     /// 上次选中的实体 ID，用于检测选中变化
     last_selected: Option<String>,
+    /// 角色控制器参数（模拟）
+    cc_move_speed: f32,
+    cc_jump_impulse: f32,
+    cc_air_control: f32,
+    cc_half_height: f32,
+    cc_radius: f32,
+    cc_enabled: bool,
 }
 
 impl InspectorPanel {
@@ -26,6 +33,12 @@ impl InspectorPanel {
             rotation: [0.0, 0.0, 0.0],
             scale: [1.0, 1.0, 1.0],
             last_selected: None,
+            cc_move_speed: 5.0,
+            cc_jump_impulse: 8.0,
+            cc_air_control: 0.3,
+            cc_half_height: 1.0,
+            cc_radius: 0.5,
+            cc_enabled: false,
         }
     }
 
@@ -197,6 +210,28 @@ impl EditorPanel for InspectorPanel {
                         // 显示已有组件列表
                         ui.label("• Transform");
                         ui.label("• Mesh Renderer");
+                    });
+
+                ui.add_space(4.0);
+
+                // 角色控制器组件
+                egui::CollapsingHeader::new("▼ Character Controller")
+                    .default_open(false)
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            let label = if self.cc_enabled { "Remove Controller" } else { "Add Controller" };
+                            if ui.button(label).clicked() {
+                                self.cc_enabled = !self.cc_enabled;
+                            }
+                        });
+                        if self.cc_enabled {
+                            ui.add_space(4.0);
+                            ui.add(egui::Slider::new(&mut self.cc_move_speed, 1.0..=20.0).text("Move Speed"));
+                            ui.add(egui::Slider::new(&mut self.cc_jump_impulse, 1.0..=30.0).text("Jump Impulse"));
+                            ui.add(egui::Slider::new(&mut self.cc_air_control, 0.0..=1.0).text("Air Control"));
+                            ui.add(egui::Slider::new(&mut self.cc_half_height, 0.1..=3.0).text("Half Height"));
+                            ui.add(egui::Slider::new(&mut self.cc_radius, 0.1..=1.0).text("Radius"));
+                        }
                     });
             }
             None => {

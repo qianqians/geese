@@ -11,7 +11,7 @@ use crate::editor_mode::EditorMode;
 use crate::gizmo::{GizmoInteraction, draw_gizmo};
 use crate::panel_layer::PanelLayer;
 use crate::panels::{DropTargetHint, EditorAction, EditorPanel, EditorState, PendingTransform};
-use cgmath::{InnerSpace, Matrix4, Point3, SquareMatrix, Vector3, Vector4, perspective, Rad};
+use cgmath::{InnerSpace, Matrix4, Point3, Quaternion, SquareMatrix, Vector3, Vector4, perspective, Rad};
 use math::AABB;
 use render::LineVertex;
 
@@ -621,7 +621,7 @@ impl ViewportPanel {
         draw_grid_impl(ui, rect, &self.camera, self.grid_size, self.grid_subdivisions);
     }
 
-    /// 绘制物理碰撞体调试线框。
+    /// 绘制物理碰撞体调试线框（含旋转）。
     fn draw_physics_debug(&self, ui: &mut egui::Ui, rect: egui::Rect, state: &EditorState) {
         if state.physics_debug_bodies.is_empty() {
             return;
@@ -654,11 +654,30 @@ impl ViewportPanel {
             let pos = &body.position;
             let pos_3 = Point3::new(pos.x as f32, pos.y as f32, pos.z as f32);
 
+            // 构建旋转四元数
+            let rot = &body.rotation;
+            let quat = Quaternion::new(rot.w as f32, rot.x as f32, rot.y as f32, rot.z as f32);
+
             for &(a, b) in &edges {
                 let ca = corners[a];
                 let cb = corners[b];
-                let pa = Point3::new(pos_3.x + ca.0, pos_3.y + ca.1, pos_3.z + ca.2);
-                let pb = Point3::new(pos_3.x + cb.0, pos_3.y + cb.1, pos_3.z + cb.2);
+
+                // 应用旋转
+                let ca_v = Vector3::new(ca.0, ca.1, ca.2);
+                let cb_v = Vector3::new(cb.0, cb.1, cb.2);
+                let rotated_a = quat * ca_v;
+                let rotated_b = quat * cb_v;
+
+                let pa = Point3::new(
+                    pos_3.x + rotated_a.x,
+                    pos_3.y + rotated_a.y,
+                    pos_3.z + rotated_a.z,
+                );
+                let pb = Point3::new(
+                    pos_3.x + rotated_b.x,
+                    pos_3.y + rotated_b.y,
+                    pos_3.z + rotated_b.z,
+                );
 
                 if let (Some(sp_a), Some(sp_b)) = (
                     self.world_to_screen(pa, rect),

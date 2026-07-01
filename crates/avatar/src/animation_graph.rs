@@ -80,6 +80,7 @@ pub enum TransitionCondition {
     Trigger(String),
     FloatGreater(String, f32),
     FloatLess(String, f32),
+    FloatInRange(String, f32, f32),
     Bool(String, bool),
 }
 
@@ -313,6 +314,9 @@ impl AnimationStateMachine {
             TransitionCondition::FloatLess(name, value) => params
                 .get(name)
                 .is_some_and(|p| matches!(p, Parameter::Float(v) if *v < *value)),
+            TransitionCondition::FloatInRange(name, min, max) => params
+                .get(name)
+                .is_some_and(|p| matches!(p, Parameter::Float(v) if *v >= *min && *v <= *max)),
             TransitionCondition::Bool(name, expected) => params
                 .get(name)
                 .is_some_and(|p| matches!(p, Parameter::Bool(v) if *v == *expected)),
