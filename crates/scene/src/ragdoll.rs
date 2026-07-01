@@ -18,8 +18,8 @@ use avatar::{SceneNode, Skin};
 /// Ragdoll 构建配置。
 #[derive(Debug, Clone)]
 pub struct RagdollConfig {
-    /// 默认骨骼质量
-    pub bone_mass: f32,
+    /// 默认骨骼密度 (kg/m³)
+    pub bone_density: f32,
     /// 默认胶囊体半径
     pub bone_radius: f32,
     /// 线性阻尼
@@ -31,7 +31,7 @@ pub struct RagdollConfig {
 impl Default for RagdollConfig {
     fn default() -> Self {
         Self {
-            bone_mass: 1.0,
+            bone_density: 1.0,
             bone_radius: 0.08,
             linear_damping: 0.5,
             angular_damping: 0.8,
@@ -82,15 +82,21 @@ impl RagdollInstance {
                 physics_scene.set_translation(body_handle, pos, true);
                 physics_scene.set_rotation(body_handle, rot, true);
             }
-            // 注意：rapier 0.32 的 PhysicsScene 没有 set_body_kind 暴露;
-            // 这里通过重新设置速度和唤醒来实现类似效果。
-            // 实际生产环境需要在 physics crate 添加 set_body_kind 方法。
+            // 切换刚体类型为 Dynamic，使其受物理模拟驱动
+            physics_scene.set_body_kind(body_handle, BodyKind::Dynamic, true);
         }
     }
 
-    /// 停用 ragdoll：将刚体设为 Kinematic，停止物理驱动。
-    pub fn deactivate(&mut self) {
+    /// 停用 ragdoll：将刚体设为 KinematicPosition，停止物理驱动。
+    pub fn deactivate(&mut self, physics_scene: &mut PhysicsScene) {
+        if !self.active {
+            return;
+        }
         self.active = false;
+        // 切换所有刚体为 KinematicPosition，停止物理驱动
+        for &body_handle in self.body_handles.values() {
+            physics_scene.set_body_kind(body_handle, BodyKind::KinematicPosition, true);
+        }
         // 刚体保持最后位置，调用方应在停用后回写骨骼变换
     }
 
@@ -150,7 +156,7 @@ impl RagdollBuilder {
             let desc = BodyDesc {
                 kind: BodyKind::Dynamic,
                 position: Iso3::from_parts(pos.into(), Quat::IDENTITY),
-                density: self.config.bone_mass,
+                density: self.config.bone_density,
                 can_sleep: false,
                 ..Default::default()
             };
@@ -173,7 +179,7 @@ impl RagdollBuilder {
             for &child_node in &node.children {
                 if let Some(&child_body) = body_handles.get(&child_node) {
                     // 确定关节类型
-                    let desc = self.infer_joint_type(nodes, node_idx, child_node);
+                    let desc = self.infer_joint_type(nodes, &body_handles, node_idx, child_node);
 
                     match physics_scene.add_joint(body_handle, child_body, desc, true) {
                         Ok(joint_handle) => {
@@ -198,6 +204,7 @@ impl RagdollBuilder {
     fn infer_joint_type(
         &self,
         nodes: &[SceneNode],
+        body_handles: &HashMap<usize, BodyHandle>,
         _parent_node: usize,
         child_node: usize,
     ) -> JointDesc {
@@ -211,7 +218,7 @@ impl RagdollBuilder {
             }
             JointTypeStrategy::Heuristic => {
                 // 简单启发式：检查子节点是否还有含骨骼后代的子节点
-                let is_leaf = self.is_bone_leaf(nodes, child_node);
+                let is_leaf = self.is_bone_leaf(nodes, body_handles, child_node);
 
                 if is_leaf {
                     // 叶节点（如手、脚、头）使用固定关节
@@ -228,14 +235,20 @@ impl RagdollBuilder {
         }
     }
 
-    /// 检查节点是否是骨骼树的叶子节点。
-    fn is_bone_leaf(&self, nodes: &[SceneNode], node_idx: usize) -> bool {
+    /// 检查节点是否是骨骼树的叶子节点（所有子节点都不在 body_handles 中）。
+    fn is_bone_leaf(
+        &self,
+        nodes: &[SceneNode],
+        body_handles: &HashMap<usize, BodyHandle>,
+        node_idx: usize,
+    ) -> bool {
         let Some(node) = nodes.get(node_idx) else {
             return true;
         };
         // 叶子：没有子节点，或者所有子节点都不在 body_handles 中
-        // 这里简化处理：只看是否有子节点
-        node.children.is_empty()
+        node.children
+            .iter()
+            .all(|&child| !body_handles.contains_key(&child))
     }
 }
 
@@ -294,7 +307,7 @@ mod tests {
     #[test]
     fn test_ragdoll_config_default() {
         let config = RagdollConfig::default();
-        assert_eq!(config.bone_mass, 1.0);
+        assert_eq!(config.bone_density, 1.0);
         assert_eq!(config.bone_radius, 0.08);
     }
 

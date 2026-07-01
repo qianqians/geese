@@ -362,6 +362,25 @@ impl PhysicsScene {
         false
     }
 
+    /// 切换刚体类型（Dynamic / KinematicPosition / Fixed 等）。
+    ///
+    /// 用于 Ragdoll 模式切换：activate 时设为 Dynamic，deactivate 时设为 KinematicPosition。
+    pub fn set_body_kind(&mut self, handle: BodyHandle, kind: BodyKind, wake_up: bool) -> bool {
+        let rp_type = match kind {
+            BodyKind::Dynamic => rp::RigidBodyType::Dynamic,
+            BodyKind::Fixed => rp::RigidBodyType::Fixed,
+            BodyKind::KinematicPosition => rp::RigidBodyType::KinematicPositionBased,
+            BodyKind::KinematicVelocity => rp::RigidBodyType::KinematicVelocityBased,
+        };
+        if let Some(h) = self.check_body(handle)
+            && let Some(rb) = self.bodies.get_mut(h)
+        {
+            rb.set_body_type(rp_type, wake_up);
+            return true;
+        }
+        false
+    }
+
     pub fn apply_impulse(&mut self, handle: BodyHandle, impulse: Vec3, wake_up: bool) -> bool {
         if let Some(h) = self.check_body(handle)
             && let Some(rb) = self.bodies.get_mut(h)
@@ -400,6 +419,46 @@ impl PhysicsScene {
             &self.bodies,
             &self.colliders,
             QueryFilter::default(),
+        );
+        query_pipeline
+            .cast_ray_and_get_normal(&ray, max_toi, solid)
+            .map(|(collider_h, intersection)| {
+                let body_h = self
+                    .colliders
+                    .get(collider_h)
+                    .and_then(|c| c.parent())
+                    .unwrap_or_else(RpRigidBodyHandle::invalid);
+                let point = ray.origin + ray.dir * intersection.time_of_impact;
+                RayHit {
+                    body: BodyHandle::new(self.id, body_h),
+                    collider: ColliderHandle::new(self.id, collider_h),
+                    toi: intersection.time_of_impact,
+                    normal: vec3_to_tuple(intersection.normal),
+                    point: (point.x, point.y, point.z),
+                }
+            })
+    }
+
+    /// 射线检测，排除指定刚体（用于角色控制器地面检测时排除自身）。
+    pub fn cast_ray_excluding(
+        &self,
+        origin: Vec3,
+        dir: Vec3,
+        max_toi: f32,
+        solid: bool,
+        exclude_body: BodyHandle,
+    ) -> Option<RayHit> {
+        let ray = rp::Ray::new(origin, dir);
+        let filter = if let Some(h) = self.check_body(exclude_body) {
+            QueryFilter::default().exclude_rigid_body(h)
+        } else {
+            QueryFilter::default()
+        };
+        let query_pipeline = self.broad_phase.as_query_pipeline(
+            self.narrow_phase.query_dispatcher(),
+            &self.bodies,
+            &self.colliders,
+            filter,
         );
         query_pipeline
             .cast_ray_and_get_normal(&ray, max_toi, solid)

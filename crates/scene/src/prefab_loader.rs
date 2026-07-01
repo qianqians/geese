@@ -7,7 +7,7 @@
 //! - 实例化结果合并到目标 `Scene`
 
 use asset::database::AssetDatabase;
-use cgmath::{Euler, Matrix4, Point3, Rad, SquareMatrix, Vector3};
+use cgmath::{Euler, InnerSpace, Matrix3, Matrix4, Point3, Quaternion, Rad, SquareMatrix, Vector3};
 use cgmath::Matrix;
 use math::AABB;
 use uuid::Uuid;
@@ -52,7 +52,22 @@ pub fn instantiate_prefab(
         return Ok(vec![]);
     }
 
-    let _node_offset_before = scene.nodes.len();
+    // 循环依赖检测：检查此 Prefab 的依赖链是否存在环路
+    let prefab_metas = database.all_metas();
+    let cycles = asset::dependency_scanner::check_prefab_cycle(&prefab_metas);
+    if !cycles.is_empty() {
+        let cycle_desc: Vec<String> = cycles.iter()
+            .map(|c| c.join(" → "))
+            .collect();
+        return Err(format!(
+            "[prefab] cycle dependency detected, refusing to instantiate '{}': {}",
+            manifest.name,
+            cycle_desc.join("; ")
+        ).into());
+    }
+
+    // 记录实例化前的对象数量，用于准确标记 prefab_source
+    let object_offset_before = scene.objects.len();
 
     let mut created_root_ids: Vec<String> = Vec::new();
 
@@ -79,6 +94,11 @@ pub fn instantiate_prefab(
         if let Some(first_id) = ids.first() {
             created_root_ids.push(first_id.clone());
         }
+    }
+
+    // 标记所有新创建的对象来源于此 Prefab
+    for obj in &mut scene.objects[object_offset_before..] {
+        obj.prefab_source = Some(manifest.name.clone());
     }
 
     // 对所有节点更新世界变换（包含新创建的节点）+ 重建 octree
@@ -256,19 +276,15 @@ fn instantiate_gltf_model(
     scene.animations.append(&mut temp_scene.animations);
     scene.skins.append(&mut temp_scene.skins);
 
-    // 重建 static/dynamic 索引（新对象默认为 static，无动画对象）
-    let new_object_count = scene.objects.len() - object_offset;
-    for i in 0..new_object_count {
-        let obj_idx = object_offset + i;
-        if !scene.static_indices().contains(&obj_idx) && !scene.dynamic_indices().contains(&obj_idx) {
-            // 判断是否动态（有 skin 或属于动画节点）
-            let obj = &scene.objects[obj_idx];
-            let is_dynamic = obj.mesh.skin.is_some();
-            if is_dynamic {
-                scene.dynamic_indices_mut().push(obj_idx);
-            } else {
-                scene.static_indices_mut().push(obj_idx);
-            }
+    // 重建 static/dynamic 索引——新对象刚追加，不可能在旧索引中，直接分类
+    for obj_idx in object_offset..scene.objects.len() {
+        let obj = &scene.objects[obj_idx];
+        // 动态判定：有 skin 或被动画 channel 直接驱动的节点
+        let is_dynamic = obj.mesh.skin.is_some();
+        if is_dynamic {
+            scene.dynamic_indices_mut().push(obj_idx);
+        } else {
+            scene.static_indices_mut().push(obj_idx);
         }
     }
 
@@ -406,6 +422,8 @@ fn instantiate_nested_prefab(
         transform.clone()
     };
 
+    // 记录实例化前的对象数量
+    let obj_offset = scene.objects.len();
     let ids = instantiate_prefab(
         scene,
         &nested_manifest,
@@ -415,7 +433,7 @@ fn instantiate_nested_prefab(
     )?;
 
     // 标记所有新创建的对象来源于此嵌套 Prefab
-    for obj in scene.objects.iter_mut().rev().take(ids.len()) {
+    for obj in &mut scene.objects[obj_offset..] {
         obj.prefab_source = Some(prefab_uuid.to_string());
     }
 
@@ -423,25 +441,45 @@ fn instantiate_nested_prefab(
 }
 
 /// 合并两个 TransformDef（world × local）。
+///
+/// 使用矩阵乘法正确组合变换：
+/// `combined = Matrix4::from(world) * Matrix4::from(local)`
+/// 然后从结果矩阵分解出 translation / rotation / scale。
 fn combine_transforms(world: &TransformDef, local: &TransformDef) -> TransformDef {
-    // 简单实现：直接相加（对于 Prefab 实例化，通常 world 是根变换，local 是节点自身变换）
-    // 更准确的实现需要矩阵乘法，但当前场景 loader 也使用此简化方式
+    let wm = loader::build_transform_matrix(world);
+    let lm = loader::build_transform_matrix(local);
+    let combined = wm * lm;
+
+    // 提取平移（矩阵第四列的 xyz）
+    let translation = [combined.w.x, combined.w.y, combined.w.z];
+
+    // 提取缩放（各列 xyz 分量的长度）
+    let sx = Vector3::new(combined.x.x, combined.x.y, combined.x.z).magnitude();
+    let sy = Vector3::new(combined.y.x, combined.y.y, combined.y.z).magnitude();
+    let sz = Vector3::new(combined.z.x, combined.z.y, combined.z.z).magnitude();
+    let scale = [sx, sy, sz];
+
+    // 提取旋转（归一化列向量→旋转矩阵→四元数→欧拉角）
+    // cgmath Matrix3::new 接受列优先参数：(c0r0, c0r1, c0r2, c1r0, c1r1, c1r2, c2r0, c2r1, c2r2)
+    let sx_s = if sx.abs() < 1e-8 { 1e-8 } else { sx };
+    let sy_s = if sy.abs() < 1e-8 { 1e-8 } else { sy };
+    let sz_s = if sz.abs() < 1e-8 { 1e-8 } else { sz };
+    let rot_mat = Matrix3::new(
+        combined.x.x / sx_s, combined.x.y / sx_s, combined.x.z / sx_s, // column 0 (x column / sx)
+        combined.y.x / sy_s, combined.y.y / sy_s, combined.y.z / sy_s, // column 1 (y column / sy)
+        combined.z.x / sz_s, combined.z.y / sz_s, combined.z.z / sz_s, // column 2 (z column / sz)
+    );
+    let quat: Quaternion<f32> = rot_mat.into();
+    let euler: Euler<Rad<f32>> = quat.into();
+
     TransformDef {
-        translation: [
-            world.translation[0] + local.translation[0],
-            world.translation[1] + local.translation[1],
-            world.translation[2] + local.translation[2],
-        ],
+        translation,
         rotation: [
-            world.rotation[0] + local.rotation[0],
-            world.rotation[1] + local.rotation[1],
-            world.rotation[2] + local.rotation[2],
+            euler.x.0.to_degrees(),
+            euler.y.0.to_degrees(),
+            euler.z.0.to_degrees(),
         ],
-        scale: [
-            world.scale[0] * local.scale[0],
-            world.scale[1] * local.scale[1],
-            world.scale[2] * local.scale[2],
-        ],
+        scale,
     }
 }
 
@@ -450,21 +488,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn combine_transforms_adds_translation() {
-        let world = TransformDef {
-            translation: [10.0, 0.0, 5.0],
-            rotation: [0.0, 45.0, 0.0],
-            scale: [1.0, 1.0, 1.0],
-        };
-        let local = TransformDef {
-            translation: [1.0, 2.0, 3.0],
-            rotation: [0.0, 90.0, 0.0],
-            scale: [2.0, 1.0, 1.0],
-        };
+    fn combine_transforms_uses_matrix_multiplication() {
+        // 无旋转时，平移直接相加
+        let world = TransformDef { translation: [10.0, 0.0, 5.0], rotation: [0.0, 0.0, 0.0], scale: [1.0, 1.0, 1.0] };
+        let local = TransformDef { translation: [1.0, 2.0, 3.0], rotation: [0.0, 0.0, 0.0], scale: [1.0, 1.0, 1.0] };
         let combined = combine_transforms(&world, &local);
-        assert_eq!(combined.translation, [11.0, 2.0, 8.0]);
-        assert_eq!(combined.rotation, [0.0, 135.0, 0.0]);
-        assert_eq!(combined.scale, [2.0, 1.0, 1.0]);
+        assert!((combined.translation[0] - 11.0).abs() < 0.01);
+        assert!((combined.translation[1] - 2.0).abs() < 0.01);
+        assert!((combined.translation[2] - 8.0).abs() < 0.01);
+
+        // 有旋转时，local 平移被 world 旋转后再加到 world 平移上
+        // world = 90° Y 旋转 + 平移 (10, 0, 0)
+        // local = 平移 (1, 0, 0)
+        // 90° Y 旋转 (1,0,0) → (0, 0, -1)
+        // combined translation = (10+0, 0+0, 0+(-1)) = (10, 0, -1)
+        let world = TransformDef { translation: [10.0, 0.0, 0.0], rotation: [0.0, 90.0, 0.0], scale: [1.0, 1.0, 1.0] };
+        let local = TransformDef { translation: [1.0, 0.0, 0.0], rotation: [0.0, 0.0, 0.0], scale: [1.0, 1.0, 1.0] };
+        let combined = combine_transforms(&world, &local);
+        assert!((combined.translation[0] - 10.0).abs() < 0.01, "x: {}", combined.translation[0]);
+        assert!((combined.translation[2] - (-1.0)).abs() < 0.01, "z: {}", combined.translation[2]);
+
+        // 同轴旋转叠加（使用 < 90° 避免欧拉角 asin 歧义）
+        let world = TransformDef { translation: [0.0; 3], rotation: [0.0, 20.0, 0.0], scale: [1.0; 3] };
+        let local = TransformDef { translation: [0.0; 3], rotation: [0.0, 30.0, 0.0], scale: [1.0; 3] };
+        let combined = combine_transforms(&world, &local);
+        assert!((combined.rotation[1] - 50.0).abs() < 0.5, "yaw: {}", combined.rotation[1]);
+
+        // 缩放叠加
+        let world = TransformDef { translation: [0.0; 3], rotation: [0.0; 3], scale: [2.0, 3.0, 4.0] };
+        let local = TransformDef { translation: [0.0; 3], rotation: [0.0; 3], scale: [1.0, 2.0, 0.5] };
+        let combined = combine_transforms(&world, &local);
+        assert!((combined.scale[0] - 2.0).abs() < 0.01);
+        assert!((combined.scale[1] - 6.0).abs() < 0.01);
+        assert!((combined.scale[2] - 2.0).abs() < 0.01);
     }
 
     #[test]

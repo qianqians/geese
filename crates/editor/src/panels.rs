@@ -27,6 +27,16 @@ pub enum EditorAction {
         /// 目标父节点 ID（Hierarchy 拖放时指定，None 为根节点）
         parent_node_id: Option<String>,
     },
+    /// 添加/移除角色控制器
+    ToggleCharacterController {
+        node_id: String,
+        enabled: bool,
+        move_speed: f32,
+        jump_impulse: f32,
+        air_control: f32,
+        half_height: f32,
+        radius: f32,
+    },
 }
 
 // ---------------------------------------------------------------------------

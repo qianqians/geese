@@ -192,11 +192,7 @@ mod tests {
     fn test_character_physics_new() {
         let cp = CharacterPhysics::new(
             HashMap::new(),
-            BodyHandle::new(physics::handles::SceneId::from(
-                slotmap::KeyData::from_ffi(0),
-            ), rapier3d::prelude::RigidBodyHandle::from_raw_parts(
-                rapier3d::data::arena::Index::from_raw_parts(0, 0), 0,
-            )),
+            BodyHandle::default(),
             CharacterControllerType::Capsule,
             0,
         );

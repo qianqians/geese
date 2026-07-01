@@ -15,5 +15,9 @@ camera = { path = "../camera", version = "0.1.0" }
 asset = { path = "../asset", version = "0.1.0" }
 render = { path = "../render", version = "0.1.0" }
 avatar = { path = "../avatar", version = "0.1.0" }
-physics = { path = "../physics", version = "0.1.0" }
+physics = { path = "../physics", version = "0.1.0", optional = true }
 bitflags = "2"
+
+[features]
+default = ["physics"]
+physics = ["dep:physics"]

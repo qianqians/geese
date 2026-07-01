@@ -39,6 +39,49 @@ pub fn load(
 }
 
 // ---------------------------------------------------------------------------
+// GLTF 缓存集成
+// ---------------------------------------------------------------------------
+
+/// 解析后的 GLTF 数据包（Document + buffers + images）。
+/// \n/// 实现 `Send + Sync` 以便存入 [`AssetCache`]。
+/// 通过 `Handle<GltfData>` 共享，避免重复解析同一文件。
+#[derive(Debug)]
+pub struct GltfData {
+    pub document: gltf::Document,
+    pub buffers: Vec<gltf::buffer::Data>,
+    pub images: Vec<gltf::image::Data>,
+}
+
+/// GLTF 数据加载器，实现 [`AssetLoader`] trait。
+/// \n/// 用法：
+/// ```ignore
+/// let mut cache = AssetCache::new();
+/// let loader = GltfDataLoader;
+/// let handle = cache.get_or_load("assets/models/hero.glb", &loader)?;
+/// // handle.document, handle.buffers, handle.images 可直接访问
+/// ```
+pub struct GltfDataLoader;
+
+impl AssetLoader<GltfData> for GltfDataLoader {
+    fn load(&self, path: &str) -> Result<GltfData, LoadError> {
+        let (document, buffers, images) = gltf::import(path)
+            .map_err(|e| LoadError::Decode(format!("GLTF parse error: {e}")))?;
+        Ok(GltfData { document, buffers, images })
+    }
+}
+
+/// 通过 [`AssetCache`] 缓存加载 GLTF 数据。
+/// \n/// 重复加载同一路径时直接返回缓存的 `Handle<GltfData>`，
+/// 避免重复解析文件。
+pub fn load_cached(
+    cache: &mut AssetCache,
+    path: &str,
+) -> Result<Handle<GltfData>, LoadError> {
+    let loader = GltfDataLoader;
+    cache.get_or_load::<GltfData, GltfDataLoader>(path, &loader)
+}
+
+// ---------------------------------------------------------------------------
 // Handle
 // ---------------------------------------------------------------------------
 

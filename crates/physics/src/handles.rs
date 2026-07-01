@@ -9,7 +9,7 @@ new_key_type! {
 }
 
 /// 刚体句柄：包含所属场景与 rapier 内部句柄，用于跨 API 引用。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct BodyHandle {
     pub scene: SceneId,
     pub(crate) inner: rp::RigidBodyHandle,

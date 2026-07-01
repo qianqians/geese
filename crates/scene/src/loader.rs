@@ -27,6 +27,9 @@ use avatar::{SceneNode, Transform};
 ///
 /// `scene_path` 是 `.scene.json` 文件的完整路径。
 /// GLTF 模型路径相对于 `scene_path` 的父目录解析。
+///
+/// **注意**：此函数不传 `AssetDatabase`，因此场景中的 `prefab_instances`
+/// 会被静默跳过。如需实例化 Prefab，请使用 `load_scene_from_manifest` 并传入 database。
 pub fn load_scene_from_file(scene_path: &str, max_objects: usize, max_depth: usize) -> Result<Scene, Box<dyn std::error::Error>> {
     let path = Path::new(scene_path);
     let base_dir = path.parent()
@@ -213,7 +216,9 @@ pub fn load_scene_from_manifest(
         );
     }
 
-    // 5. 重建索引（static/dynamic 分类）和八叉树
+    // 5. 更新世界变换（程序化对象和 Prefab 实例的 AABB 需要从局部变换到世界空间）
+    //    然后重建索引（static/dynamic 分类）和八叉树
+    scene.update_world_transforms();
     scene.rebuild_object_indices();
     scene.rebuild_octree();
 
