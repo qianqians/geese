@@ -3,7 +3,7 @@
 //! 显示和编辑选中实体的属性：Transform（Position/Rotation/Scale）、
 //! Mesh 信息（顶点数、三角形数、材质）、组件列表。
 
-use crate::panels::{EditorPanel, EditorState, PendingTransform};
+use crate::panels::{EditorAction, EditorPanel, EditorState, PendingTransform};
 
 // ---------------------------------------------------------------------------
 // InspectorPanel
@@ -114,6 +114,19 @@ impl EditorPanel for InspectorPanel {
                 });
 
                 ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(4.0);
+
+                // ── Prefab 操作按钮 ──
+                ui.horizontal(|ui| {
+                    if ui.button("📦 Save as Prefab").clicked() {
+                        state.pending_actions.push(EditorAction::SaveAsPrefab {
+                            node_id: entity_id.clone(),
+                        });
+                    }
+                });
+
+                ui.add_space(4.0);
                 ui.separator();
                 ui.add_space(4.0);
 

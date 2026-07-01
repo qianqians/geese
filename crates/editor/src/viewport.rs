@@ -10,7 +10,7 @@
 use crate::editor_mode::EditorMode;
 use crate::gizmo::{GizmoInteraction, draw_gizmo};
 use crate::panel_layer::PanelLayer;
-use crate::panels::{EditorPanel, EditorState, PendingTransform};
+use crate::panels::{DropTargetHint, EditorAction, EditorPanel, EditorState, PendingTransform};
 use cgmath::{InnerSpace, Matrix4, Point3, SquareMatrix, Vector3, Vector4, perspective, Rad};
 use math::AABB;
 use render::LineVertex;
@@ -537,6 +537,85 @@ impl ViewportPanel {
         }
     }
 
+    /// 处理从 AssetBrowser 拖放资产到视口。
+    fn handle_drag_drop(&mut self, ui: &egui::Ui, response: &egui::Response, state: &mut EditorState) {
+        let drag_active = state.dragged_asset_uuid.is_some()
+            && state.drag_source.as_deref() == Some("AssetBrowser");
+
+        if !drag_active {
+            return;
+        }
+
+        let hovered = response.hovered();
+        let rect = response.rect;
+
+        // 计算世界坐标 drop 位置
+        if hovered {
+            if let Some(mouse_pos) = ui.input(|input| input.pointer.hover_pos()) {
+                let local_x = mouse_pos.x - rect.left();
+                let local_y = mouse_pos.y - rect.top();
+                let (ray_origin, ray_dir) = self.camera.screen_to_world_ray(
+                    local_x, local_y, rect.width(), rect.height(),
+                );
+
+                // 射线与 Y=0 地平面求交
+                let drop_pos = if ray_dir.y.abs() > 0.0001 {
+                    let t = -ray_origin.y / ray_dir.y;
+                    if t > 0.0 {
+                        Point3::new(
+                            ray_origin.x + ray_dir.x * t,
+                            0.0,
+                            ray_origin.z + ray_dir.z * t,
+                        )
+                    } else {
+                        // 射线远离地平面，使用相机焦点投影
+                        Point3::new(
+                            self.camera.focal_point.x,
+                            0.0,
+                            self.camera.focal_point.z,
+                        )
+                    }
+                } else {
+                    Point3::new(
+                        self.camera.focal_point.x,
+                        0.0,
+                        self.camera.focal_point.z,
+                    )
+                };
+
+                state.drop_target_hint = Some(DropTargetHint::Viewport {
+                    world_pos: [drop_pos.x, drop_pos.y, drop_pos.z],
+                });
+            }
+        } else {
+            state.drop_target_hint = None;
+        }
+
+        // 检测鼠标释放 → 实例化资产
+        let released = ui.input(|input| {
+            input.pointer.button_released(egui::PointerButton::Primary)
+        });
+
+        if released && hovered {
+            // 从 DropTargetHint 获取最终位置
+            if let Some(DropTargetHint::Viewport { world_pos }) = state.drop_target_hint.clone() {
+                let prefab_uuid = state.dragged_asset_uuid.clone().unwrap_or_default();
+                state.pending_actions.push(EditorAction::InstantiatePrefab {
+                    prefab_uuid,
+                    position: world_pos,
+                    parent_node_id: None,
+                });
+
+                // 清除拖拽状态
+                state.dragged_asset_uuid = None;
+                state.dragged_asset_type = None;
+                state.dragged_asset_name = None;
+                state.drag_source = None;
+                state.drop_target_hint = None;
+            }
+        }
+    }
+
     /// 绘制编辑器网格。
     fn draw_grid(&self, ui: &mut egui::Ui, rect: egui::Rect) {
         draw_grid_impl(ui, rect, &self.camera, self.grid_size, self.grid_subdivisions);
@@ -614,6 +693,85 @@ impl ViewportPanel {
         Some(egui::Pos2::new(screen_x, screen_y))
     }
 
+    /// 绘制拖放预览（在 Y=0 平面上显示蓝色圆环 + 资产名称）。
+    fn draw_drag_preview(&self, ui: &mut egui::Ui, rect: egui::Rect, state: &EditorState) {
+        if let Some(DropTargetHint::Viewport { world_pos }) = &state.drop_target_hint {
+            let center = Point3::new(world_pos[0], world_pos[1], world_pos[2]);
+            let screen_center = match self.world_to_screen(center, rect) {
+                Some(p) => p,
+                None => return,
+            };
+
+            let painter = ui.painter();
+            let ring_color = egui::Color32::from_rgba_premultiplied(60, 140, 255, 200);
+            let ring_radius = 40.0; // screen-space radius
+
+            // 绘制地面位置圆环（屏幕空间近似）
+            let segments = 32;
+            let mut prev_point = None;
+            for i in 0..=segments {
+                let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
+                let dx = angle.cos() * ring_radius;
+                let dy = angle.sin() * ring_radius;
+                let current = egui::Pos2::new(screen_center.x + dx, screen_center.y + dy);
+                if let Some(prev) = prev_point {
+                    painter.line_segment([prev, current], (2.0, ring_color));
+                }
+                prev_point = Some(current);
+            }
+
+            // 绘制向上的虚线
+            let up_point_3d = Point3::new(center.x, center.y + 2.0, center.z);
+            if let Some(screen_up) = self.world_to_screen(up_point_3d, rect) {
+                let dash_color = egui::Color32::from_rgba_premultiplied(60, 140, 255, 160);
+                let dash_length = 6.0;
+                let gap_length = 4.0;
+                let total = screen_center.distance(screen_up);
+                if total > 0.0 {
+                    let dir = (screen_up - screen_center) / total;
+                    let mut t = 0.0;
+                    while t < total {
+                        let start = screen_center + dir * t;
+                        let end = screen_center + dir * (t + dash_length).min(total);
+                        painter.line_segment([start, end], (1.5, dash_color));
+                        t += dash_length + gap_length;
+                    }
+                }
+            }
+
+            // 绘制中心十字
+            let cross_size = 8.0;
+            let cross_color = egui::Color32::from_rgb(100, 180, 255);
+            painter.line_segment(
+                [
+                    egui::Pos2::new(screen_center.x - cross_size, screen_center.y),
+                    egui::Pos2::new(screen_center.x + cross_size, screen_center.y),
+                ],
+                (2.0, cross_color),
+            );
+            painter.line_segment(
+                [
+                    egui::Pos2::new(screen_center.x, screen_center.y - cross_size),
+                    egui::Pos2::new(screen_center.x, screen_center.y + cross_size),
+                ],
+                (2.0, cross_color),
+            );
+
+            // 资产名称标签
+            let name = state
+                .dragged_asset_name
+                .as_deref()
+                .unwrap_or("Asset");
+            let label_pos = egui::Pos2::new(screen_center.x, screen_center.y - ring_radius - 16.0);
+            painter.text(
+                label_pos,
+                egui::Align2::CENTER_BOTTOM,
+                name,
+                egui::FontId::proportional(12.0),
+                egui::Color32::from_rgba_premultiplied(200, 220, 255, 240),
+            );
+        }
+    }
     /// 绘制 Gizmo 模式标签。
     fn draw_gizmo_overlay(&self, ui: &mut egui::Ui) {
         let mode_text = match self.gizmo_mode {
@@ -672,6 +830,7 @@ impl EditorPanel for ViewportPanel {
 
         self.handle_input(ui, &rect_response, state);
         self.handle_gizmo_input(ui, &rect_response, state);
+        self.handle_drag_drop(ui, &rect_response, state);
 
         // 绘制背景
         let bg_color = egui::Color32::from_gray(25);
@@ -713,6 +872,9 @@ impl EditorPanel for ViewportPanel {
                 draw_gizmo(ui.painter(), screen_pos, &self.camera, &self.gizmo_interaction);
             }
         }
+
+        // 绘制拖放预览（资产拖拽时的地面指示器）
+        self.draw_drag_preview(ui, rect, state);
 
         // 顶部叠加信息
         let mut top_left = rect.left_top();
