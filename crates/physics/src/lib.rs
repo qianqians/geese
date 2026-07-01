@@ -4,12 +4,14 @@
 //! 元组形式（pyo3 feature 下）。
 
 pub mod handles;
+pub mod joints;
 pub mod math;
 pub mod scene;
 pub mod shapes;
 pub mod world;
 
 pub use handles::{BodyHandle, ColliderHandle, SceneId};
+pub use joints::{FixedJointDesc, JointDesc, JointHandle, RevoluteJointDesc, SphericalJointDesc};
 pub use math::{Iso3, Quat, Vec3};
 pub use scene::{CollisionEvent, ContactForceEvent, PhysicsScene, RayHit};
 pub use shapes::ShapeDesc;

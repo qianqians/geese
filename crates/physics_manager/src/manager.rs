@@ -7,7 +7,8 @@ use std::thread;
 use std::time::Duration;
 
 use physics::{PhysicsWorld, SceneId};
-use physics::math::Vec3;
+use physics::handles::BodyHandle;
+use physics::math::{Vec3, Quat};
 use physics::world::{BodyDesc, BodyKind};
 use physics::shapes::ShapeDesc;
 use physics_client::{BodySnapshot, PhysicsClient};
@@ -264,6 +265,30 @@ impl PhysicsManager {
             }
         }
         snapshots
+    }
+
+    /// 按句柄列表读取刚体的世界变换 (translation, rotation)。
+    ///
+    /// 本地模式直接从 PhysicsWorld 读取；远程模式当前回退到本地。
+    pub fn get_body_transforms(&self, handles: &[BodyHandle]) -> Vec<(Vec3, Quat)> {
+        let mut transforms = Vec::with_capacity(handles.len());
+        if let Some(scene) = self.world.scene(self.scene_id) {
+            for &handle in handles {
+                if let Some(iso) = scene.body_isometry(handle) {
+                    transforms.push((iso.translation, iso.rotation));
+                }
+            }
+        }
+        transforms
+    }
+
+    /// 返回本地物理场景中的刚体数量，用于调试。
+    pub fn body_count(&self) -> usize {
+        if let Some(scene) = self.world.scene(self.scene_id) {
+            scene.body_handles().count()
+        } else {
+            0
+        }
     }
 
     /// Get snapshots from remote physics.

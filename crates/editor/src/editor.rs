@@ -71,6 +71,8 @@ pub struct Editor {
     /// 等待中的远程物理步进结果（避免 block_on 阻塞 UI）
     pending_physics:
         Option<tokio::sync::oneshot::Receiver<Result<Vec<BodySnapshot>, String>>>,
+    /// 物理模拟开关（编辑器全局控制）
+    physics_enabled: bool,
 }
 
 impl Editor {
@@ -122,6 +124,7 @@ impl Editor {
             last_transform_entity: None,
             last_transform_old: None,
             pending_physics: None,
+            physics_enabled: true,
         }
     }
 
@@ -137,7 +140,7 @@ impl Editor {
 
         // 物理步进
         // 本地物理步进
-        if self.physics.source().runs_local() && self.state.mode.is_editing() {
+        if self.physics_enabled && self.physics.source().runs_local() && self.state.mode.is_editing() {
             self.physics.step(dt);
             if self.physics_debug.enabled {
                 let bodies = self.physics.get_local_body_snapshots();
@@ -421,6 +424,12 @@ impl Editor {
                 ui.selectable_value(&mut self.viewport.gizmo_mode, crate::viewport::GizmoMode::Scale, "R");
 
                 ui.separator();
+
+                // Physics Enable/Disable
+                let phy_label = if self.physics_enabled { "Physics ON" } else { "Physics OFF" };
+                if ui.add_sized([72.0, 22.0], egui::Button::new(phy_label)).clicked() {
+                    self.physics_enabled = !self.physics_enabled;
+                }
 
                 // Physics Debug
                 let dbg_label = if self.physics_debug.enabled { "Debug ON" } else { "Debug OFF" };

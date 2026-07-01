@@ -8,6 +8,7 @@ use rapier3d::prelude as rp;
 use rapier3d::prelude::{ColliderHandle as RpColliderHandle, RigidBodyHandle as RpRigidBodyHandle};
 
 use crate::handles::{BodyHandle, ColliderHandle, SceneId};
+use crate::joints::{JointDesc, JointHandle};
 use crate::math::{Iso3, Quat, Vec3, vec3_to_tuple};
 use crate::shapes::ShapeDesc;
 use crate::world::{BodyDesc, BodyKind};
@@ -235,6 +236,72 @@ impl PhysicsScene {
                 true,
             )
             .is_some()
+    }
+
+    // -------------------------------------------------------------------
+    // Joint API
+    // -------------------------------------------------------------------
+
+    /// 在两个刚体间创建 impulse joint。
+    ///
+    /// 返回关节句柄；移除时使用 [`remove_joint`](Self::remove_joint)。
+    pub fn add_joint(
+        &mut self,
+        body1: BodyHandle,
+        body2: BodyHandle,
+        desc: JointDesc,
+        wake_up: bool,
+    ) -> Result<JointHandle, String> {
+        let Some(h1) = self.check_body(body1) else {
+            return Err("body1 not in this scene".into());
+        };
+        let Some(h2) = self.check_body(body2) else {
+            return Err("body2 not in this scene".into());
+        };
+
+        let inner = match desc {
+            JointDesc::Spherical(d) => {
+                let a1 = Vec3::new(d.local_anchor1.0, d.local_anchor1.1, d.local_anchor1.2);
+                let a2 = Vec3::new(d.local_anchor2.0, d.local_anchor2.1, d.local_anchor2.2);
+                let joint = rp::SphericalJointBuilder::new()
+                    .local_anchor1(a1)
+                    .local_anchor2(a2);
+                self.impulse_joints
+                    .insert(h1, h2, joint, wake_up)
+            }
+            JointDesc::Revolute(d) => {
+                let axis = Vec3::new(d.axis.0, d.axis.1, d.axis.2);
+                let a1 = Vec3::new(d.local_anchor1.0, d.local_anchor1.1, d.local_anchor1.2);
+                let a2 = Vec3::new(d.local_anchor2.0, d.local_anchor2.1, d.local_anchor2.2);
+                let mut joint = rp::RevoluteJointBuilder::new(axis)
+                    .local_anchor1(a1)
+                    .local_anchor2(a2);
+                if let Some((min, max)) = d.angle_limit {
+                    joint = joint.limits([min, max]);
+                }
+                self.impulse_joints
+                    .insert(h1, h2, joint, wake_up)
+            }
+            JointDesc::Fixed(d) => {
+                let a1 = Vec3::new(d.local_anchor1.0, d.local_anchor1.1, d.local_anchor1.2);
+                let a2 = Vec3::new(d.local_anchor2.0, d.local_anchor2.1, d.local_anchor2.2);
+                let joint = rp::FixedJointBuilder::new()
+                    .local_anchor1(a1)
+                    .local_anchor2(a2);
+                self.impulse_joints
+                    .insert(h1, h2, joint, wake_up)
+            }
+        };
+
+        Ok(JointHandle::new(self.id, inner))
+    }
+
+    /// 移除 impulse joint。
+    pub fn remove_joint(&mut self, handle: JointHandle, wake_up: bool) -> bool {
+        if handle.scene != self.id {
+            return false;
+        }
+        self.impulse_joints.remove(handle.inner, wake_up).is_some()
     }
 
     pub fn body_isometry(&self, handle: BodyHandle) -> Option<Iso3> {
