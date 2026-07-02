@@ -1,8 +1,8 @@
-use std::sync::Arc;
+﻿use std::sync::Arc;
 
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
-use tracing::{trace, error};
+use tracing::{trace, warn, error};
 
 use proto::common::RegServer;
 
@@ -35,8 +35,16 @@ impl HubCallbackMsgHandle {
     pub fn do_reg_hub(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: RegServer) {
         trace!("do_rge_hub begin!");
 
+        let name = match ev.name {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'name' in RegServer, skipping");
+                return;
+            }
+        };
+
         let argvs = (
-            ev.name.unwrap(),
+            name,
         );
 
         if let Err(e) = py_handle.call_method1(py, "on_rge_hub", argvs) {
@@ -47,9 +55,17 @@ impl HubCallbackMsgHandle {
     pub fn do_query_service_entity(&mut self, py: Python<'_>, py_handle: Py<PyAny>, hub_name: String, ev: QueryServiceEntity) {
         trace!("do_query_service_entity begin!");
 
+        let service_name = match ev.service_name {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'service_name' in QueryServiceEntity, skipping");
+                return;
+            }
+        };
+
         let argvs = (
             hub_name, 
-            ev.service_name.unwrap(),
+            service_name,
         );
 
         if let Err(e) = py_handle.call_method1(py, "on_query_service_entity", argvs) {
@@ -60,13 +76,37 @@ impl HubCallbackMsgHandle {
     pub fn do_create_service_entity(&mut self, py: Python<'_>, py_handle: Py<PyAny>, hub_name: String, ev: CreateServiceEntity) {
         trace!("do_create_service_entity begin!");
 
+        let is_migrate = ev.is_migrate.unwrap_or_default();
+        let service_name = match ev.service_name {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'service_name' in CreateServiceEntity, skipping");
+                return;
+            }
+        };
+        let entity_id = match ev.entity_id {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'entity_id' in CreateServiceEntity, skipping");
+                return;
+            }
+        };
+        let entity_type = match ev.entity_type {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'entity_type' in CreateServiceEntity, skipping");
+                return;
+            }
+        };
+        let argvs = ev.argvs.unwrap_or_default();
+
         let argvs = (
             hub_name, 
-            ev.is_migrate.unwrap(),
-            ev.service_name.unwrap(), 
-            ev.entity_id.unwrap(), 
-            ev.entity_type.unwrap(), 
-            PyBytes::new(py, &ev.argvs.unwrap())
+            is_migrate,
+            service_name, 
+            entity_id, 
+            entity_type, 
+            PyBytes::new(py, &argvs)
         );
 
         if let Err(e) = py_handle.call_method1(py, "on_create_service_entity", argvs) {
@@ -77,12 +117,35 @@ impl HubCallbackMsgHandle {
     pub fn do_forward_client_request_service(&mut self, py: Python<'_>, py_handle: Py<PyAny>, hub_name: String, ev: HubForwardClientRequestService) {
         trace!("do_forward_client_request_service begin!");
 
+        let service_name = match ev.service_name {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'service_name' in HubForwardClientRequestService, skipping");
+                return;
+            }
+        };
+        let gate_name = match ev.gate_name {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'gate_name' in HubForwardClientRequestService, skipping");
+                return;
+            }
+        };
+        let conn_id = match ev.conn_id {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'conn_id' in HubForwardClientRequestService, skipping");
+                return;
+            }
+        };
+        let argvs = ev.argvs.unwrap_or_default();
+
         let argvs = (
             hub_name,
-            ev.service_name.unwrap(), 
-            ev.gate_name.unwrap(), 
-            ev.conn_id.unwrap(),
-            ev.argvs.unwrap()
+            service_name, 
+            gate_name, 
+            conn_id,
+            argvs
         );
 
         if let Err(e) = py_handle.call_method1(py, "on_forward_client_request_service", argvs) {
@@ -93,14 +156,37 @@ impl HubCallbackMsgHandle {
     pub fn do_forward_client_request_service_ext(&mut self, py: Python<'_>, py_handle: Py<PyAny>, hub_name: String, ev: HubForwardClientRequestServiceExt) {
         trace!("do_forward_client_request_service begin!");
 
+        let service_name = match ev.service_name {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'service_name' in HubForwardClientRequestServiceExt, skipping");
+                return;
+            }
+        };
+
         let mut request_infos: Vec<(String, String, Vec<u8>)> = Vec::new();
-        for info in ev.request_infos.unwrap() {
-            request_infos.push((info.gate_name.unwrap(), info.conn_id.unwrap(), info.argvs.unwrap()));
+        for info in ev.request_infos.unwrap_or_default() {
+            let gate_name = match info.gate_name {
+                Some(v) => v,
+                None => {
+                    warn!("Missing required field 'gate_name' in ForwardClientRequestInfo, skipping entry");
+                    continue;
+                }
+            };
+            let conn_id = match info.conn_id {
+                Some(v) => v,
+                None => {
+                    warn!("Missing required field 'conn_id' in ForwardClientRequestInfo, skipping entry");
+                    continue;
+                }
+            };
+            let argvs = info.argvs.unwrap_or_default();
+            request_infos.push((gate_name, conn_id, argvs));
         }
 
         let argvs = (
             hub_name,
-            ev.service_name.unwrap(), 
+            service_name, 
             request_infos
         );
 
@@ -112,13 +198,36 @@ impl HubCallbackMsgHandle {
     pub fn do_call_hub_rpc(&mut self, py: Python<'_>, py_handle: Py<PyAny>, hub_name: String, ev: HubCallHubRpc) {
         trace!("do_call_hub_rpc begin!");
 
-        let msg = ev.message.unwrap();
+        let entity_id = match ev.entity_id {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'entity_id' in HubCallHubRpc, skipping");
+                return;
+            }
+        };
+        let msg_cb_id = ev.msg_cb_id.unwrap_or_default();
+        let msg = match ev.message {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'message' in HubCallHubRpc, skipping");
+                return;
+            }
+        };
+        let method = match msg.method {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'method' in Msg, skipping");
+                return;
+            }
+        };
+        let msg_argvs = msg.argvs.unwrap_or_default();
+
         let argvs = (
             hub_name,
-            ev.entity_id.unwrap(), 
-            ev.msg_cb_id.unwrap(), 
-            msg.method.unwrap(),
-            PyBytes::new(py, &msg.argvs.unwrap())
+            entity_id, 
+            msg_cb_id, 
+            method,
+            PyBytes::new(py, &msg_argvs)
         );
 
         if let Err(e) = py_handle.call_method1(py, "on_call_hub_rpc", argvs) {
@@ -129,12 +238,28 @@ impl HubCallbackMsgHandle {
     pub fn do_call_hub_rsp(&mut self, py: Python<'_>, py_handle: Py<PyAny>, hub_name: String, ev: HubCallHubRsp) {
         trace!("do_call_hub_rsp begin!");
 
-        let msg = ev.rsp.unwrap();
+        let msg = match ev.rsp {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'rsp' in HubCallHubRsp, skipping");
+                return;
+            }
+        };
+        let entity_id = match msg.entity_id {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'entity_id' in RpcRsp, skipping");
+                return;
+            }
+        };
+        let msg_cb_id = msg.msg_cb_id.unwrap_or_default();
+        let msg_argvs = msg.argvs.unwrap_or_default();
+
         let argvs = (
             hub_name,
-            msg.entity_id.unwrap(), 
-            msg.msg_cb_id.unwrap(), 
-            PyBytes::new(py, &msg.argvs.unwrap())
+            entity_id, 
+            msg_cb_id, 
+            PyBytes::new(py, &msg_argvs)
         );
 
         if let Err(e) = py_handle.call_method1(py, "on_call_hub_rsp", argvs) {
@@ -145,12 +270,28 @@ impl HubCallbackMsgHandle {
     pub fn do_call_hub_err(&mut self, py: Python<'_>, py_handle: Py<PyAny>, hub_name: String, ev: HubCallHubErr) {
         trace!("do_call_hub_err begin!");
 
-        let msg = ev.err.unwrap();
+        let msg = match ev.err {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'err' in HubCallHubErr, skipping");
+                return;
+            }
+        };
+        let entity_id = match msg.entity_id {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'entity_id' in RpcErr, skipping");
+                return;
+            }
+        };
+        let msg_cb_id = msg.msg_cb_id.unwrap_or_default();
+        let msg_argvs = msg.argvs.unwrap_or_default();
+
         let argvs = (
             hub_name,
-            msg.entity_id.unwrap(), 
-            msg.msg_cb_id.unwrap(), 
-            PyBytes::new(py, &msg.argvs.unwrap())
+            entity_id, 
+            msg_cb_id, 
+            PyBytes::new(py, &msg_argvs)
         );
 
         if let Err(e) = py_handle.call_method1(py, "on_call_hub_err", argvs) {
@@ -161,12 +302,34 @@ impl HubCallbackMsgHandle {
     pub fn do_call_hub_ntf(&mut self, py: Python<'_>, py_handle: Py<PyAny>, hub_name: String, ev: HubCallHubNtf) {
         trace!("do_call_hub_ntf begin!");
 
-        let msg = ev.message.unwrap();
+        let entity_id = match ev.entity_id {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'entity_id' in HubCallHubNtf, skipping");
+                return;
+            }
+        };
+        let msg = match ev.message {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'message' in HubCallHubNtf, skipping");
+                return;
+            }
+        };
+        let method = match msg.method {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'method' in Msg, skipping");
+                return;
+            }
+        };
+        let msg_argvs = msg.argvs.unwrap_or_default();
+
         let argvs = (
             hub_name,
-            ev.entity_id.unwrap(), 
-            msg.method.unwrap(), 
-            PyBytes::new(py, &msg.argvs.unwrap())
+            entity_id, 
+            method, 
+            PyBytes::new(py, &msg_argvs)
         );
 
         if let Err(e) = py_handle.call_method1(py, "on_call_hub_ntf", argvs) {
@@ -177,9 +340,17 @@ impl HubCallbackMsgHandle {
     pub fn do_wait_migrate_entity(&mut self, py: Python<'_>, py_handle: Py<PyAny>, hub_name: String, ev: HubCallHubWaitMigrateEntity) {
         trace!("do_wait_migrate_entity begin!");
 
+        let entity_id = match ev.entity_id {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'entity_id' in HubCallHubWaitMigrateEntity, skipping");
+                return;
+            }
+        };
+
         let argvs = (
             hub_name,
-            ev.entity_id.unwrap()
+            entity_id
         );
 
         if let Err(e) = py_handle.call_method1(py, "on_wait_migrate_entity", argvs) {
@@ -190,15 +361,47 @@ impl HubCallbackMsgHandle {
     pub fn do_migrate_entity(&mut self, py: Python<'_>, py_handle: Py<PyAny>, hub_name: String, ev: HubCallHubMigrateEntity) {
         trace!("do_migrate_entity begin!");
 
+        let entity_type = match ev.entity_type {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'entity_type' in HubCallHubMigrateEntity, skipping");
+                return;
+            }
+        };
+        let entity_id = match ev.entity_id {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'entity_id' in HubCallHubMigrateEntity, skipping");
+                return;
+            }
+        };
+        let main_gate_name = match ev.main_gate_name {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'main_gate_name' in HubCallHubMigrateEntity, skipping");
+                return;
+            }
+        };
+        let main_conn_id = match ev.main_conn_id {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'main_conn_id' in HubCallHubMigrateEntity, skipping");
+                return;
+            }
+        };
+        let gates = ev.gates.unwrap_or_default();
+        let hubs = ev.hubs.unwrap_or_default();
+        let argvs = ev.argvs.unwrap_or_default();
+
         let argvs = (
             hub_name,
-            ev.entity_type.unwrap(),
-            ev.entity_id.unwrap(),
-            ev.main_gate_name.unwrap(),
-            ev.main_conn_id.unwrap(),
-            ev.gates.unwrap(),
-            ev.hubs.unwrap(),
-            PyBytes::new(py, &ev.argvs.unwrap())
+            entity_type,
+            entity_id,
+            main_gate_name,
+            main_conn_id,
+            gates,
+            hubs,
+            PyBytes::new(py, &argvs)
         );
 
         if let Err(e) = py_handle.call_method1(py, "on_migrate_entity", argvs) {
@@ -209,10 +412,25 @@ impl HubCallbackMsgHandle {
     pub fn do_create_migrate_entity(&mut self, py: Python<'_>, py_handle: Py<PyAny>, hub_name: String, ev: HubCallHubCreateMigrateEntity) {
         trace!("do_create_migrate_entity begin!");
 
+        let ev_hub_name = match ev.hub_name {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'hub_name' in HubCallHubCreateMigrateEntity, skipping");
+                return;
+            }
+        };
+        let entity_id = match ev.entity_id {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'entity_id' in HubCallHubCreateMigrateEntity, skipping");
+                return;
+            }
+        };
+
         let argvs = (
             hub_name,
-            ev.hub_name.unwrap(),
-            ev.entity_id.unwrap()
+            ev_hub_name,
+            entity_id
         );
 
         if let Err(e) = py_handle.call_method1(py, "on_create_migrate_entity", argvs) {
@@ -223,10 +441,25 @@ impl HubCallbackMsgHandle {
     pub fn do_migrate_entity_complete(&mut self, py: Python<'_>, py_handle: Py<PyAny>, hub_name: String, ev: HubCallHubMigrateEntityComplete) {
         trace!("do_migrate_entity_complete begin!");
 
+        let ev_hub_name = match ev.hub_name {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'hub_name' in HubCallHubMigrateEntityComplete, skipping");
+                return;
+            }
+        };
+        let entity_id = match ev.entity_id {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'entity_id' in HubCallHubMigrateEntityComplete, skipping");
+                return;
+            }
+        };
+
         let argvs = (
             hub_name,
-            ev.hub_name.unwrap(),
-            ev.entity_id.unwrap()
+            ev_hub_name,
+            entity_id
         );
 
         if let Err(e) = py_handle.call_method1(py, "on_migrate_entity_complete", argvs) {

@@ -19,8 +19,8 @@ pub struct PlayMode {
     pub is_playing: bool,
     /// 播放前的编辑状态快照
     snapshot: Option<PlayModeSnapshot>,
-    /// 播放开始时间（秒）
-    pub play_start_time: Option<f64>,
+    /// 播放开始时间（单调时钟）
+    pub play_start_time: Option<std::time::Instant>,
     /// 播放耗时（秒）
     pub elapsed: f64,
 }
@@ -81,7 +81,7 @@ impl PlayMode {
         });
 
         self.is_playing = true;
-        self.play_start_time = Some(web_time_now());
+        self.play_start_time = Some(std::time::Instant::now());
         self.elapsed = 0.0;
     }
 
@@ -112,7 +112,7 @@ impl PlayMode {
     /// 更新播放模式时间。
     pub fn update(&mut self) {
         if let Some(start) = self.play_start_time {
-            self.elapsed = web_time_now() - start;
+            self.elapsed = start.elapsed().as_secs_f64();
         }
     }
 
@@ -129,23 +129,5 @@ impl PlayMode {
 impl Default for PlayMode {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// 获取当前时间（秒），跨平台兼容。
-fn web_time_now() -> f64 {
-    #[cfg(target_arch = "wasm32")]
-    {
-        web_sys::window()
-            .and_then(|w| w.performance())
-            .map(|p| p.now() / 1000.0)
-            .unwrap_or(0.0)
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs_f64())
-            .unwrap_or(0.0)
     }
 }

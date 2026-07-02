@@ -23,6 +23,12 @@ use crate::scene_object::DirtyFlags;
 use crate::import_scene;
 use avatar::{SceneNode, Transform};
 
+/// Prefab 嵌套递归深度默认上限。
+///
+/// 当 `Prefab` A 引用 `Prefab` B 时，实例化过程会递归展开，
+/// 此常量限制最大递归层数，防止无限嵌套导致栈溢出。
+pub const DEFAULT_MAX_PREFAB_DEPTH: u32 = 8;
+
 /// 从 `.scene.json` 文件路径加载场景。
 ///
 /// `scene_path` 是 `.scene.json` 文件的完整路径。
@@ -152,11 +158,11 @@ pub fn load_scene_from_manifest(
                     &prefab_manifest,
                     &prefab_def.transform,
                     db,
-                    8, // max depth for nested prefabs
+                    DEFAULT_MAX_PREFAB_DEPTH,
                 )?;
             }
         } else {
-            eprintln!(
+            log::warn!(
                 "[loader] {} prefab instance(s) in manifest but no AssetDatabase provided; skipping",
                 manifest.prefab_instances.len()
             );

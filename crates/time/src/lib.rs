@@ -17,7 +17,7 @@ impl OffsetTime {
         utc.timestamp_millis()
     }
 
-    pub fn set_time_offset(&mut self, offset: i64) {
+    pub fn set_time_offset(&self, offset: i64) {
         self.off_set.store(offset, Ordering::SeqCst)
     }
 

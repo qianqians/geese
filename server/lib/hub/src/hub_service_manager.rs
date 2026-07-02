@@ -29,6 +29,68 @@ use crate::gate_proxy_manager::GateProxy;
 use crate::gate_msg_handle::GateCallbackMsgHandle;
 use crate::conn_manager::ConnManager;
 
+async fn get_hub_name_async(conn_proxy: &Arc<Mutex<ConnProxy>>) -> String {
+    let mut _conn_proxy = conn_proxy.as_ref().lock().await;
+    if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
+        let _proxy_tmp = _hub_proxy.as_ref().lock().await;
+        _proxy_tmp.hub_name.clone().unwrap_or_default()
+    } else {
+        String::new()
+    }
+}
+
+async fn get_gate_name_async(conn_proxy: &Arc<Mutex<ConnProxy>>) -> String {
+    let mut _conn_proxy = conn_proxy.as_ref().lock().await;
+    if let Some(_gate_proxy) = _conn_proxy.gateproxy.clone() {
+        let _proxy_tmp = _gate_proxy.as_ref().lock().await;
+        _proxy_tmp.gate_name.clone().unwrap_or_default()
+    } else {
+        String::new()
+    }
+}
+
+fn handle_hub_event<F>(
+    ev_data: &ConnEvent,
+    rt: &tokio::runtime::Handle,
+    err_msg: &str,
+    py: Python<'_>,
+    py_handle: Py<PyAny>,
+    hub_msg_handle: &Arc<StdMutex<HubCallbackMsgHandle>>,
+    f: F,
+) where
+    F: FnOnce(&mut HubCallbackMsgHandle, Python<'_>, Py<PyAny>, String),
+{
+    match ev_data.connproxy.upgrade() {
+        Some(conn_proxy) => {
+            let hub_name = rt.block_on(get_hub_name_async(&conn_proxy));
+            let mut handle = hub_msg_handle.as_ref().lock().unwrap();
+            f(&mut handle, py, py_handle, hub_name);
+        }
+        None => error!("{}", err_msg),
+    }
+}
+
+fn handle_gate_event<F>(
+    ev_data: &ConnEvent,
+    rt: &tokio::runtime::Handle,
+    err_msg: &str,
+    py: Python<'_>,
+    py_handle: Py<PyAny>,
+    gate_msg_handle: &Arc<StdMutex<GateCallbackMsgHandle>>,
+    f: F,
+) where
+    F: FnOnce(&mut GateCallbackMsgHandle, Python<'_>, Py<PyAny>, String),
+{
+    match ev_data.connproxy.upgrade() {
+        Some(conn_proxy) => {
+            let gate_name = rt.block_on(get_gate_name_async(&conn_proxy));
+            let mut handle = gate_msg_handle.as_ref().lock().unwrap();
+            f(&mut handle, py, py_handle, gate_name);
+        }
+        None => error!("{}", err_msg),
+    }
+}
+
 pub struct ConnProxy {
     pub wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>,
     pub hubproxy: Option<Arc<Mutex<HubProxy>>>,
@@ -66,7 +128,8 @@ pub struct ConnCallbackMsgHandle {
     gate_msg_handle: Arc<StdMutex<GateCallbackMsgHandle>>,
     conn_mgr: Arc<Mutex<ConnManager>>,
     close: Arc<Mutex<CloseHandle>>,
-    queue: Queue<Box<ConnEvent>>
+    queue: Queue<Box<ConnEvent>>,
+    rt_handle: Option<tokio::runtime::Handle>,
 }
 
 fn deserialize(data: Vec<u8>) -> Result<HubService, Box<dyn std::error::Error>> {
@@ -93,12 +156,17 @@ impl ConnCallbackMsgHandle {
             redis_service: None,
             conn_mgr: _conn_mgr,
             close: _close,
-            queue: Queue::new()
+            queue: Queue::new(),
+            rt_handle: None,
         }))
     }
 
+    pub fn set_rt_handle(&mut self, handle: tokio::runtime::Handle) {
+        self.rt_handle = Some(handle);
+    }
+
     fn enque_event(&mut self, ev: ConnEvent) {
-        self.queue.enque(Box::new(ev))
+        let _ = self.queue.enque(Box::new(ev));
     }
 
     pub async fn on_event(_proxy: Arc<Mutex<ConnProxy>>, data: Vec<u8>) {
@@ -124,6 +192,7 @@ impl ConnCallbackMsgHandle {
     pub fn poll(_handle: Arc<StdMutex<ConnCallbackMsgHandle>>, py: Python<'_>, py_handle: Py<PyAny>) -> bool {
         let mut _self = _handle.as_ref().lock().unwrap();
         let _handle_clone = _handle.clone();
+        let rt = _self.rt_handle.as_ref().expect("rt_handle not set").clone();
         let opt_ev_data = _self.queue.deque();
         let ev_data = match opt_ev_data {
             None => return false,
@@ -136,7 +205,6 @@ impl ConnCallbackMsgHandle {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let mut _hub_msg_handle_c = _self.hub_msg_handle.clone();
                     let ev_tmp = ev.clone();
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
                     rt.block_on(async move {
                         {
                             let mut _conn_proxy = conn_proxy.as_ref().lock().await;
@@ -180,71 +248,25 @@ impl ConnCallbackMsgHandle {
                 }
             },
             HubService::RegServerCallback(ev) => {
-                let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
                 rt.block_on(async move {
                     let mut _conn_mgr = _self.conn_mgr.as_ref().lock().await;
                     let lock_key = create_lock_key(_self.hub_name.clone(), ev.name.clone().unwrap());
                     let value = _conn_mgr.remove_lock(lock_key.clone());
                     let _redis_service = _self.redis_service.clone().unwrap();
                     let mut _service = _redis_service.as_ref().lock().await;
-                    let _ = _service.release_lock(lock_key, value);
+                    let _ = _service.release_lock(lock_key, value, None).await;
                 });
             },
-            HubService::QueryEntity(ev) => {
-                if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-                    let hub_name = rt.block_on(async move {
-                        {
-                            let mut _conn_proxy = conn_proxy.as_ref().lock().await;
-                            
-                            if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
-                                let _proxy_tmp = _hub_proxy.as_ref().lock().await;
-                                return _proxy_tmp.hub_name.clone().unwrap();
-                            }
-                            else {
-                                error!("HubService::QueryEntity! wrong msg handle!");
-                            }
-                        }
-                        return "".to_string();
-                    });
-
-                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().unwrap();
-                    _hub_msg_handle.do_query_service_entity(py, py_handle, hub_name, ev)
-                }
-                else {
-                    error!("hub query entity conn_proxy is destory!");
-                }
+            HubService::QueryEntity(ref ev) => {
+                handle_hub_event(&ev_data, &rt, "hub query entity conn_proxy is destory!", py, py_handle, &_self.hub_msg_handle, |h, py, pyh, name| h.do_query_service_entity(py, pyh, name, ev.clone()));
             },
-            HubService::CreateServiceEntity(ev) => {
-                if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-                    let hub_name = rt.block_on(async move {
-                        {
-                            let mut _conn_proxy = conn_proxy.as_ref().lock().await;
-
-                            if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
-                                let _proxy_tmp = _hub_proxy.as_ref().lock().await;
-                                return _proxy_tmp.hub_name.clone().unwrap();
-                            }
-                            else {
-                                error!("HubService::CreateServiceEntity! wrong msg handle!");
-                            }
-                        }
-                        return "".to_string();
-                    });
-
-                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().unwrap();
-                    _hub_msg_handle.do_create_service_entity(py, py_handle, hub_name, ev)
-                }
-                else {
-                    error!("hub create service entity conn_proxy is destory!");
-                }
+            HubService::CreateServiceEntity(ref ev) => {
+                handle_hub_event(&ev_data, &rt, "hub create service entity conn_proxy is destory!", py, py_handle, &_self.hub_msg_handle, |h, py, pyh, name| h.do_create_service_entity(py, pyh, name, ev.clone()));
             },
             HubService::HubForwardClientRequestService(ev) => {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let mut _hub_msg_handle_c = _self.hub_msg_handle.clone();
                     let ev_tmp = ev.clone();
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
                     let hub_name = rt.block_on(async move {
                         let mut hub_name: String = "".to_string();
                         {
@@ -264,7 +286,7 @@ impl ConnCallbackMsgHandle {
 
                                 let _close = _self.close.clone();
 
-                                let value = _service.acquire_lock(_lock_key.clone(), 3).await;
+                                let value = _service.acquire_lock(_lock_key.clone(), 3, None).await.unwrap_or_default();
                                 if _conn_mgr.get_gate_proxy(&_gate_name).is_none() {
                                     _conn_mgr.add_lock(_lock_key, value);
 
@@ -289,7 +311,7 @@ impl ConnCallbackMsgHandle {
                                     }
                                 }
                                 else {
-                                    let _ = _service.release_lock(_lock_key, value).await;
+                                    let _ = _service.release_lock(_lock_key, value, None).await;
                                 }
                             }
                             else {
@@ -310,7 +332,6 @@ impl ConnCallbackMsgHandle {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let mut _hub_msg_handle_c = _self.hub_msg_handle.clone();
                     let ev_tmp = ev.clone();
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
                     let hub_name = rt.block_on(async move {
                         let mut hub_name: String = "".to_string();
                         {
@@ -331,7 +352,7 @@ impl ConnCallbackMsgHandle {
 
                                     let _close = _self.close.clone();
 
-                                    let value = _service.acquire_lock(_lock_key.clone(), 3).await;
+                                    let value = _service.acquire_lock(_lock_key.clone(), 3, None).await.unwrap_or_default();
                                     if _conn_mgr.get_gate_proxy(&_gate_name).is_none() {
                                         _conn_mgr.add_lock(_lock_key, value);
 
@@ -356,7 +377,7 @@ impl ConnCallbackMsgHandle {
                                         }
                                     }
                                     else {
-                                        let _ = _service.release_lock(_lock_key, value).await;
+                                        let _ = _service.release_lock(_lock_key, value, None).await;
                                     }
                                 }
                             }
@@ -374,208 +395,29 @@ impl ConnCallbackMsgHandle {
                     error!("hub forward client request service conn_proxy is destory!");
                 }
             },
-            HubService::HubCallRpc(ev) => {
-                if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-                    let hub_name = rt.block_on(async move {
-                        let mut hub_name: String = "".to_string();
-                        {
-                            let mut _conn_proxy = conn_proxy.as_ref().lock().await;
-
-                            if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
-                                let _proxy_tmp = _hub_proxy.as_ref().lock().await;
-                                hub_name = _proxy_tmp.hub_name.clone().unwrap();
-                            }
-                            else {
-                                error!("HubService::HubCallHubRpc! wrong msg handle!");
-                            }
-                        }
-                        return hub_name;
-                    });
-
-                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().unwrap();
-                    _hub_msg_handle.do_call_hub_rpc(py, py_handle, hub_name, ev)
-                }
-                else {
-                    error!("hub call rpc conn_proxy is destory!");
-                }
+            HubService::HubCallRpc(ref ev) => {
+                handle_hub_event(&ev_data, &rt, "hub call rpc conn_proxy is destory!", py, py_handle, &_self.hub_msg_handle, |h, py, pyh, name| h.do_call_hub_rpc(py, pyh, name, ev.clone()));
             },
-            HubService::HubCallRsp(ev) => {
-                if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-                    let hub_name = rt.block_on(async move {
-                        let mut hub_name: String = "".to_string();
-                        {
-                            let mut _conn_proxy = conn_proxy.as_ref().lock().await;
-
-                            if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
-                                let _proxy_tmp = _hub_proxy.as_ref().lock().await;
-                                hub_name = _proxy_tmp.hub_name.clone().unwrap();
-                            }
-                            else {
-                                error!("HubService::HubCallRsp! wrong msg handle!");
-                            }
-                        }
-                        return hub_name;
-                    });
-
-                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().unwrap();
-                    _hub_msg_handle.do_call_hub_rsp(py, py_handle, hub_name, ev)
-                }
-                else {
-                    error!("hub call rsp conn_proxy is destory!");
-                }
+            HubService::HubCallRsp(ref ev) => {
+                handle_hub_event(&ev_data, &rt, "hub call rsp conn_proxy is destory!", py, py_handle, &_self.hub_msg_handle, |h, py, pyh, name| h.do_call_hub_rsp(py, pyh, name, ev.clone()));
             },
-            HubService::HubCallErr(ev) => {
-                if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-                    let hub_name = rt.block_on(async move {
-                        let mut hub_name: String = "".to_string();
-                        {
-                            let mut _conn_proxy = conn_proxy.as_ref().lock().await;
-                            
-                            if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
-                                let _proxy_tmp = _hub_proxy.as_ref().lock().await;
-                                hub_name = _proxy_tmp.hub_name.clone().unwrap();
-                            }
-                            else {
-                                error!("HubService::HubCallErr! wrong msg handle!");
-                            }
-                        }
-                        return hub_name;
-                    });
-                    
-                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().unwrap();
-                    _hub_msg_handle.do_call_hub_err(py, py_handle, hub_name, ev)
-                }
-                else {
-                    error!("hub call err conn_proxy is destory!");
-                }
-            } 
-            HubService::HubCallNtf(ev) => {
-                if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-                    let hub_name = rt.block_on(async move {
-                        let mut hub_name: String = "".to_string();
-                        {
-                            let mut _conn_proxy = conn_proxy.as_ref().lock().await;
-
-                            if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
-                                let _proxy_tmp = _hub_proxy.as_ref().lock().await;
-                                hub_name = _proxy_tmp.hub_name.clone().unwrap();
-                            }
-                            else {
-                                error!("HubService::HubCallNtf! wrong msg handle!");
-                            }
-                        }
-                        return hub_name;
-                    });
-                    
-                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().unwrap();
-                    _hub_msg_handle.do_call_hub_ntf(py, py_handle, hub_name, ev)
-                }
-                else {
-                    error!("hub call ntf conn_proxy is destory!");
-                }
+            HubService::HubCallErr(ref ev) => {
+                handle_hub_event(&ev_data, &rt, "hub call err conn_proxy is destory!", py, py_handle, &_self.hub_msg_handle, |h, py, pyh, name| h.do_call_hub_err(py, pyh, name, ev.clone()));
             },
-            HubService::WaitMigrateEntity(ev) => {
-                if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-                    let hub_name = rt.block_on(async move {
-                        let mut hub_name: String = "".to_string();
-                        {
-                            let mut _conn_proxy = conn_proxy.as_ref().lock().await;
-
-                            if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
-                                let _proxy_tmp = _hub_proxy.as_ref().lock().await;
-                                hub_name = _proxy_tmp.hub_name.clone().unwrap();
-                            }
-                            else {
-                                error!("HubService::WaitMigrateEntity! wrong msg handle!");
-                            }
-                        }
-                        return hub_name;
-                    });
-                    
-                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().unwrap();
-                    _hub_msg_handle.do_wait_migrate_entity(py, py_handle, hub_name, ev)
-                }
-                else {
-                    error!("wait migrate entity conn_proxy is destory!");
-                }
+            HubService::HubCallNtf(ref ev) => {
+                handle_hub_event(&ev_data, &rt, "hub call ntf conn_proxy is destory!", py, py_handle, &_self.hub_msg_handle, |h, py, pyh, name| h.do_call_hub_ntf(py, pyh, name, ev.clone()));
             },
-            HubService::MigrateEntity(ev) => {
-                if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-                    let hub_name = rt.block_on(async move {
-                        let mut hub_name: String = "".to_string();
-                        {
-                            let mut _conn_proxy = conn_proxy.as_ref().lock().await;
-
-                            if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
-                                let _proxy_tmp = _hub_proxy.as_ref().lock().await;
-                                hub_name = _proxy_tmp.hub_name.clone().unwrap();
-                            }
-                            else {
-                                error!("HubService::WaitMigrateEntity! wrong msg handle!");
-                            }
-                        }
-                        return hub_name;
-                    });
-                    
-                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().unwrap();
-                    _hub_msg_handle.do_migrate_entity(py, py_handle, hub_name, ev)
-                }
-                else {
-                    error!("migrate entity conn_proxy is destory!");
-                }
+            HubService::WaitMigrateEntity(ref ev) => {
+                handle_hub_event(&ev_data, &rt, "wait migrate entity conn_proxy is destory!", py, py_handle, &_self.hub_msg_handle, |h, py, pyh, name| h.do_wait_migrate_entity(py, pyh, name, ev.clone()));
             },
-            HubService::CreateMigrateEntity(ev) => {
-                if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
-                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().unwrap();
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-                    rt.block_on(async move {
-                        let mut _conn_proxy = conn_proxy.as_ref().lock().await;
-
-                        if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
-                            let _proxy_tmp = _hub_proxy.as_ref().lock().await;
-                            let hub_name = _proxy_tmp.hub_name.clone().unwrap();
-                            _hub_msg_handle.do_create_migrate_entity(py, py_handle, hub_name, ev)
-                        }
-                        else {
-                            error!("HubService::WaitMigrateEntity! wrong msg handle!");
-                        }
-                    });
-                }
-                else {
-                    error!("migrate entity complete conn_proxy is destory!");
-                }
+            HubService::MigrateEntity(ref ev) => {
+                handle_hub_event(&ev_data, &rt, "migrate entity conn_proxy is destory!", py, py_handle, &_self.hub_msg_handle, |h, py, pyh, name| h.do_migrate_entity(py, pyh, name, ev.clone()));
             },
-            HubService::MigrateEntityComplete(ev) => {
-                if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-                    let hub_name = rt.block_on(async move {
-                        let mut hub_name: String = "".to_string();
-                        {
-                            let mut _conn_proxy = conn_proxy.as_ref().lock().await;
-
-                            if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
-                                let _proxy_tmp = _hub_proxy.as_ref().lock().await;
-                                hub_name = _proxy_tmp.hub_name.clone().unwrap();
-                            }
-                            else {
-                                error!("HubService::WaitMigrateEntity! wrong msg handle!");
-                            }
-                        }
-                        return hub_name;
-                    });
-                    
-                    let mut _hub_msg_handle = _self.hub_msg_handle.as_ref().lock().unwrap();
-                    _hub_msg_handle.do_migrate_entity_complete(py, py_handle, hub_name, ev)
-                }
-                else {
-                    error!("migrate entity complete conn_proxy is destory!");
-                }
+            HubService::CreateMigrateEntity(ref ev) => {
+                handle_hub_event(&ev_data, &rt, "migrate entity complete conn_proxy is destory!", py, py_handle, &_self.hub_msg_handle, |h, py, pyh, name| h.do_create_migrate_entity(py, pyh, name, ev.clone()));
+            },
+            HubService::MigrateEntityComplete(ref ev) => {
+                handle_hub_event(&ev_data, &rt, "migrate entity complete conn_proxy is destory!", py, py_handle, &_self.hub_msg_handle, |h, py, pyh, name| h.do_migrate_entity_complete(py, pyh, name, ev.clone()));
             },
 
             // gate msg handle
@@ -583,7 +425,6 @@ impl ConnCallbackMsgHandle {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let _gate_msg_handle_c = _self.gate_msg_handle.clone();
                     let ev_tmp = ev.clone();
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
                     rt.block_on(async move {
                         {
                             let mut _conn_proxy = conn_proxy.as_ref().lock().await;
@@ -618,7 +459,6 @@ impl ConnCallbackMsgHandle {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let _gate_msg_handle_c = _self.gate_msg_handle.clone();
                     let _ev_tmp = ev.clone();
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
                     rt.block_on(async move {
                         {
                             let mut _conn_proxy = conn_proxy.as_ref().lock().await;
@@ -663,7 +503,6 @@ impl ConnCallbackMsgHandle {
                 _gate_msg_handle.do_transfer_entity_control(py, py_handle, ev);
 
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
                     _ = rt.block_on(async move {
                         let mut _conn_proxy = conn_proxy.as_ref().lock().await;
 
@@ -680,61 +519,16 @@ impl ConnCallbackMsgHandle {
                     error!("gate client Transfer Entity Control conn_proxy is destory!");
                 }
             }
-            HubService::KickOffClient(ev) => {
-                if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-                    let gate_name = rt.block_on(async move {
-                        let mut gate_name: String = "".to_string();
-                        {
-                            let mut _conn_proxy = conn_proxy.as_ref().lock().await;
-
-                            if let Some(_gate_proxy) = _conn_proxy.gateproxy.clone() {
-                                let _proxy_tmp = _gate_proxy.as_ref().lock().await;
-                                gate_name = _proxy_tmp.gate_name.clone().unwrap();
-                            }
-                            else {
-                                error!("HubService::KickOffClient! wrong msg handle!");
-                            }
-                        }
-                        return gate_name;
-                    });
-                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
-                    _gate_msg_handle.do_client_kick_off(py, py_handle, gate_name, ev);
-                }
-                else {
-                    error!("gate client kick off conn_proxy is destory!");
-                }
+            HubService::KickOffClient(ref ev) => {
+                handle_gate_event(&ev_data, &rt, "gate client kick off conn_proxy is destory!", py, py_handle, &_self.gate_msg_handle, |h, py, pyh, name| h.do_client_kick_off(py, pyh, name, ev.clone()));
             },
-            HubService::ClientDisconnnect(ev) => {
-                if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-                    let gate_name = rt.block_on(async move {
-                        let mut gate_name: String = "".to_string();
-                        {
-                            let mut _conn_proxy = conn_proxy.as_ref().lock().await;
-
-                            if let Some(_gate_proxy) = _conn_proxy.gateproxy.clone() {
-                                let _proxy_tmp = _gate_proxy.as_ref().lock().await;
-                                gate_name = _proxy_tmp.gate_name.clone().unwrap();
-                            }
-                            else {
-                                error!("HubService::ClientDisconnnect! wrong msg handle!");
-                            }
-                        }
-                        return gate_name;
-                    });
-                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
-                    _gate_msg_handle.do_client_disconnnect(py, py_handle, gate_name, ev);
-                }
-                else {
-                    error!("gate client disconnect conn_proxy is destory!");
-                }
+            HubService::ClientDisconnnect(ref ev) => {
+                handle_gate_event(&ev_data, &rt, "gate client disconnect conn_proxy is destory!", py, py_handle, &_self.gate_msg_handle, |h, py, pyh, name| h.do_client_disconnnect(py, pyh, name, ev.clone()));
             },
             HubService::ClientRequestService(ev) => {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let _gate_msg_handle_c = _self.gate_msg_handle.clone();
                     let _ev_tmp = ev.clone();
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
                     let gate_name = rt.block_on(async move {
                         let gate_name: String;
                         {
@@ -774,105 +568,17 @@ impl ConnCallbackMsgHandle {
                     error!("gate client request service conn_proxy is destory!");
                 }
             }
-            HubService::ClientCallRpc(ev) => {
-                if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-                    let gate_name = rt.block_on(async move {
-                        let mut gate_name: String = "".to_string();
-                        {
-                            let mut _conn_proxy = conn_proxy.as_ref().lock().await;
-
-                            if let Some(_gate_proxy) = _conn_proxy.gateproxy.clone() {
-                                let _proxy_tmp = _gate_proxy.as_ref().lock().await;
-                                gate_name = _proxy_tmp.gate_name.clone().unwrap();
-                            }
-                            else {
-                                error!("HubService::ClientCallRpc! wrong msg handle!")
-                            }
-                        }
-                        return gate_name;
-                    });
-                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
-                    _gate_msg_handle.do_client_call_rpc(py, py_handle, gate_name, ev)
-                }
-                else {
-                    error!("gate client call rpc conn_proxy is destory!");
-                }
+            HubService::ClientCallRpc(ref ev) => {
+                handle_gate_event(&ev_data, &rt, "gate client call rpc conn_proxy is destory!", py, py_handle, &_self.gate_msg_handle, |h, py, pyh, name| h.do_client_call_rpc(py, pyh, name, ev.clone()));
             },
-            HubService::ClientCallRsp(ev) => {
-                if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-                    let gate_name = rt.block_on(async move {
-                        let mut gate_name: String = "".to_string();
-                        {
-                            let mut _conn_proxy = conn_proxy.as_ref().lock().await;
-
-                            if let Some(_gate_proxy) = _conn_proxy.gateproxy.clone() {
-                                let _proxy_tmp = _gate_proxy.as_ref().lock().await;
-                                gate_name = _proxy_tmp.gate_name.clone().unwrap();
-                            }
-                            else {
-                                error!("HubService::ClientCallRsp! wrong msg handle!")
-                            }
-                        }
-                        return gate_name;
-                    });
-                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
-                    _gate_msg_handle.do_client_call_rsp(py, py_handle, gate_name, ev)
-                }
-                else {
-                    error!("gate client call rsp conn_proxy is destory!");
-                }
+            HubService::ClientCallRsp(ref ev) => {
+                handle_gate_event(&ev_data, &rt, "gate client call rsp conn_proxy is destory!", py, py_handle, &_self.gate_msg_handle, |h, py, pyh, name| h.do_client_call_rsp(py, pyh, name, ev.clone()));
             },
-            HubService::ClientCallErr(ev) => {
-                if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-                    let gate_name = rt.block_on(async move {
-                        let mut gate_name: String = "".to_string();
-                        {
-                            let mut _conn_proxy = conn_proxy.as_ref().lock().await;
-
-                            if let Some(_gate_proxy) = _conn_proxy.gateproxy.clone() {
-                                let _proxy_tmp = _gate_proxy.as_ref().lock().await;
-                                gate_name = _proxy_tmp.gate_name.clone().unwrap();
-                            }
-                            else {
-                                error!("HubService::ClientCallErr! wrong msg handle!")
-                            }
-                        }
-                        return gate_name;
-                    });
-                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
-                    _gate_msg_handle.do_client_call_err(py, py_handle, gate_name, ev)
-                }
-                else {
-                    error!("gate client call err conn_proxy is destory!");
-                }
+            HubService::ClientCallErr(ref ev) => {
+                handle_gate_event(&ev_data, &rt, "gate client call err conn_proxy is destory!", py, py_handle, &_self.gate_msg_handle, |h, py, pyh, name| h.do_client_call_err(py, pyh, name, ev.clone()));
             },
-            HubService::ClientCallNtf(ev) => {
-                if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
-                    let rt: tokio::runtime::Runtime = tokio::runtime::Runtime::new().unwrap();
-                    let gate_name = rt.block_on(async move {
-                        let mut gate_name: String = "".to_string();
-                        {
-                            let mut _conn_proxy = conn_proxy.as_ref().lock().await;
-
-                            if let Some(_gate_proxy) = _conn_proxy.gateproxy.clone() {
-                                let _proxy_tmp = _gate_proxy.as_ref().lock().await;
-                                gate_name = _proxy_tmp.gate_name.clone().unwrap();
-                            }
-                            else {
-                                error!("HubService::ClientCallNtf! wrong msg handle!")
-                            }
-                        }
-                        return gate_name;
-                    });
-                    let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
-                    _gate_msg_handle.do_client_call_ntf(py, py_handle, gate_name, ev)
-                }
-                else {
-                    error!("gate client call ntf conn_proxy is destory!");
-                }
+            HubService::ClientCallNtf(ref ev) => {
+                handle_gate_event(&ev_data, &rt, "gate client call ntf conn_proxy is destory!", py, py_handle, &_self.gate_msg_handle, |h, py, pyh, name| h.do_client_call_ntf(py, pyh, name, ev.clone()));
             },
         };
         

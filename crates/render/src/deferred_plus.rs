@@ -2,7 +2,7 @@ use wgpu::util::DeviceExt;
 
 use crate::cluster::{ClusterUniform, TOTAL_CLUSTERS};
 use crate::common::{
-    CameraUniform, DefaultTextures, GpuVertex, WgpuRenderQueue,
+    CameraUniform, DefaultTextures, GpuResourceCache, GpuVertex, WgpuRenderQueue,
 };
 use crate::forward_plus::{
     build_command, material_layout_entries, storage_read_entry, storage_rw_entry, uniform_entry,
@@ -74,6 +74,7 @@ pub struct DeferredPlusPipeline {
 
     default_textures: DefaultTextures,
     prepared: WgpuRenderQueue,
+    cache: GpuResourceCache,
 }
 
 struct GBufferTexture {
@@ -406,6 +407,7 @@ impl DeferredPlusPipeline {
             gbuffer_sampler,
             default_textures,
             prepared: WgpuRenderQueue::default(),
+            cache: GpuResourceCache::new(),
         }
     }
 
@@ -519,6 +521,7 @@ impl ScenePipeline for DeferredPlusPipeline {
                     &self.material_bind_group_layout,
                     &self.object_bind_group_layout,
                     &self.default_textures,
+                    &mut self.cache,
                 )
             })
             .collect();
@@ -593,10 +596,14 @@ impl ScenePipeline for DeferredPlusPipeline {
             pass.set_pipeline(&self.geometry_pipeline);
             pass.set_bind_group(0, &self.geometry_frame_bind_group, &[]);
             for command in &self.prepared.commands {
+                let mesh = match self.cache.mesh_buffers.get(&command.mesh_key) {
+                    Some(m) => m,
+                    None => continue,
+                };
                 pass.set_bind_group(1, &command.material_bind_group, &[]);
                 pass.set_bind_group(2, &command.object_bind_group, &[]);
-                pass.set_vertex_buffer(0, command.vertex_buffer.slice(..));
-                pass.set_index_buffer(command.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..command.index_count, 0, 0..1);
             }
         }

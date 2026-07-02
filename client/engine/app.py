@@ -2,6 +2,7 @@
 from __future__ import annotations
 import time
 from threading import Timer
+import threading
 import _thread
 
 from collections.abc import Callable
@@ -79,8 +80,10 @@ class app(object):
         return self
     
     def heartbeats(self):
-        tick = Timer(3, self.heartbeats)
-        tick.start()
+        if not self.__is_run__:
+            return
+        self.__heartbeat_timer__ = Timer(3, self.heartbeats)
+        self.__heartbeat_timer__.start()
         return self.ctx.heartbeats()
     
     def on_kick_off(self, prompt_info:str):
@@ -90,8 +93,8 @@ class app(object):
         self.client_event_handle.on_transfer_complete()
 
     def on_call_global(self, method:str, hub_name:str, argvs:bytes):
-        _call_handle = self.__hub_global_callback__[method]
-        if _call_handle != None:
+        _call_handle = self.__hub_global_callback__.get(method)
+        if _call_handle is not None:
             _call_handle(hub_name, argvs)
         else:
             print("unhandle global method:{}".format(method))
@@ -123,7 +126,10 @@ class app(object):
         return self
         
     def create_entity(self, entity_type:str, entity_id:str, argvs: dict):
-        _creator = self.__entity_create_method__[entity_type]
+        _creator = self.__entity_create_method__.get(entity_type)
+        if _creator is None:
+            print(f"Warning: No creator registered for entity type '{entity_type}'")
+            return
         _ = _creator(entity_id, argvs)
         
     def update_entity(self, entity_type:str, entity_id:str, argvs: dict):
@@ -143,6 +149,8 @@ class app(object):
         
     def close(self):
         self.__is_run__ = False
+        if hasattr(self, '__heartbeat_timer__') and self.__heartbeat_timer__:
+            self.__heartbeat_timer__.cancel()
             
     def poll_coroutine_thread(self):
         asyncio.set_event_loop(self.__loop__)
@@ -150,8 +158,12 @@ class app(object):
 
     def poll_conn_msg(self):
         while True:
-            if not self.__pump__.poll_conn_msg(self.__conn_handle__):
-                break
+            try:
+                if not self.__pump__.poll_conn_msg(self.__conn_handle__):
+                    break
+            except Exception as e:
+                print(f"Poll error: {e}")
+                time.sleep(1)
     
     def poll(self):
         while self.__is_run__:

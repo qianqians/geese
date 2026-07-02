@@ -30,7 +30,7 @@ impl NetReader for TcpReader {
         let mut _p = self;
         let f_clone = f.clone();
         tokio::spawn(async move {
-            let mut buf = vec![0; 1024];
+            let mut buf = vec![0; 65536];
             let mut net_pack = NetPack::new();
 
             loop {

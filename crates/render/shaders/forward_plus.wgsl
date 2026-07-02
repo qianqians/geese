@@ -2,7 +2,7 @@
 // 与 [pbr_common.wgsl](file:///Users/qianqians/Documents/geese/crates/render/shaders/pbr_common.wgsl)
 // 一起经 Rust 端字符串拼接后编译。
 
-const MAX_JOINTS: u32 = 128u;
+const MAX_JOINTS: u32 = 32u;
 
 struct Object {
     model: mat4x4<f32>,

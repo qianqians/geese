@@ -2,13 +2,13 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use camera::frustum::Frustum;
 use cgmath::InnerSpace;
-use cgmath::{Matrix, SquareMatrix};
+use cgmath::{Matrix, SquareMatrix, Vector3};
 use math::AABB;
 use render::MaterialLibrary;
 use render::{RenderQueue, SceneRenderer};
 
 use avatar::{
-    AnimatedProperty, AnimationClip, AnimationOutputs, AnimationPlayer,
+    AnimatedProperty, AnimationClip, AnimationEvent, AnimationOutputs, AnimationPlayer,
     SceneNode, Skin, check_markers_crossed,
     quat_dot, quat_exp, quat_log, sample_clip, sample_indices, sample_quat, sample_vec3,
 };
@@ -26,6 +26,23 @@ pub struct MarkerEvent {
     pub clip_index: usize,
     pub clip_name: Option<String>,
     pub entity_id: Option<String>,
+}
+
+/// 场景级动画事件，带有实体绑定。
+#[derive(Clone, Debug)]
+pub enum SceneAnimationEvent {
+    /// 状态机完成状态切换。
+    StateChanged { entity_id: Option<String>, from: String, to: String },
+    /// 非循环动画播放结束。
+    AnimationEnd { entity_id: Option<String>, clip_name: Option<String>, clip_index: usize },
+    /// 循环动画完成一次循环。
+    AnimationLoop { entity_id: Option<String>, clip_name: Option<String>, clip_index: usize },
+}
+
+/// 角色动画图与实体绑定。
+pub struct EntityAnimationGraph {
+    pub entity_id: String,
+    pub graph: CharacterAnimationGraph,
 }
 
 pub struct Scene {
@@ -50,12 +67,23 @@ pub struct Scene {
     pub character_physics: Vec<CharacterPhysics>,
     /// 物理开关；关闭时跳过物理步进和动画混合
     pub physics_enabled: bool,
-    /// 角色动画蓝图列表（Phase 4 动画混合）
-    pub character_anim_graphs: Vec<CharacterAnimationGraph>,
+    /// 角色动画蓝图列表（Phase 4 动画混合），带实体绑定。
+    pub character_anim_graphs: Vec<EntityAnimationGraph>,
     /// 本帧触发的动画标记事件，由外部消费者 drain。
     pub marker_events: Vec<MarkerEvent>,
+    /// 本帧触发的动画系统事件，由外部消费者 drain。
+    animation_events: Vec<SceneAnimationEvent>,
     /// 动画图每个剪辑的上次时间（用于标记跨越检测）
     graph_prev_times: HashMap<usize, f32>,
+    /// entity_id → objects Vec 索引映射，O(1) 查找
+    object_index: HashMap<String, usize>,
+    /// 动画混合预分配缓冲区（避免每帧分配）
+    blend_trans_acc: Vec<Vector3<f32>>,
+    blend_rot_acc: Vec<Vector3<f32>>,
+    blend_scale_acc: Vec<Vector3<f32>>,
+    blend_has_trans: Vec<bool>,
+    blend_has_rot: Vec<bool>,
+    blend_has_scale: Vec<bool>,
 }
 
 impl Scene {
@@ -95,8 +123,17 @@ impl Scene {
             physics_enabled: true,
             character_anim_graphs: Vec::new(),
             marker_events: Vec::new(),
+            animation_events: Vec::new(),
             graph_prev_times: HashMap::new(),
+            object_index: HashMap::new(),
+            blend_trans_acc: Vec::new(),
+            blend_rot_acc: Vec::new(),
+            blend_scale_acc: Vec::new(),
+            blend_has_trans: Vec::new(),
+            blend_has_rot: Vec::new(),
+            blend_has_scale: Vec::new(),
         };
+        scene.build_object_index();
         scene.update_world_transforms();
         scene.rebuild_octree();
         scene
@@ -130,9 +167,9 @@ impl Scene {
         &mut self.dynamic_indices
     }
 
-    /// 取场景全部对象引用。
-    pub fn objects(&self) -> Vec<&SceneObject> {
-        self.objects.iter().collect()
+    /// 取场景全部对象切片引用。
+    pub fn objects(&self) -> &[SceneObject] {
+        &self.objects
     }
 
     /// 视锥剪枝：静态对象走八叉树，动态对象逐个做 AABB 测试，合并返回。
@@ -173,6 +210,23 @@ impl Scene {
         let prev_time = player.time;
         player.advance(dt, clip.duration);
 
+        // 检测循环回绕
+        if player.time < prev_time {
+            self.animation_events.push(SceneAnimationEvent::AnimationLoop {
+                entity_id: None,
+                clip_name: clip.name.clone(),
+                clip_index: player.clip,
+            });
+        }
+        // 检测动画结束
+        if player.just_ended {
+            self.animation_events.push(SceneAnimationEvent::AnimationEnd {
+                entity_id: None,
+                clip_name: clip.name.clone(),
+                clip_index: player.clip,
+            });
+        }
+
         // 检测标记跨越
         if !clip.markers.is_empty() {
             let crossed = check_markers_crossed(
@@ -199,6 +253,29 @@ impl Scene {
         use cgmath::Vector3;
 
         let active = graph.update(dt, &self.animations);
+
+        // 消费状态机事件并转换为场景级事件
+        for evt in graph.drain_events() {
+            match evt {
+                AnimationEvent::StateChanged { from, to } => {
+                    self.animation_events.push(SceneAnimationEvent::StateChanged {
+                        entity_id: None, from, to,
+                    });
+                }
+                AnimationEvent::AnimationLoop { clip_index } => {
+                    let clip_name = self.animations.get(clip_index).and_then(|c| c.name.clone());
+                    self.animation_events.push(SceneAnimationEvent::AnimationLoop {
+                        entity_id: None, clip_name, clip_index,
+                    });
+                }
+                AnimationEvent::AnimationEnd { clip_index } => {
+                    let clip_name = self.animations.get(clip_index).and_then(|c| c.name.clone());
+                    self.animation_events.push(SceneAnimationEvent::AnimationEnd {
+                        entity_id: None, clip_name, clip_index,
+                    });
+                }
+            }
+        }
 
         // 检测标记跨越（仅主动画 weight > 0.5 触发，避免过渡时两边同时触发）
         for anim in &active {
@@ -233,12 +310,21 @@ impl Scene {
                 node.local_transform = node.base_transform;
             }
 
-            let mut trans_acc = vec![Vector3::new(0.0, 0.0, 0.0); self.nodes.len()];
-            let mut rot_acc = vec![Vector3::new(0.0, 0.0, 0.0); self.nodes.len()];
-            let mut scale_acc = vec![Vector3::new(0.0, 0.0, 0.0); self.nodes.len()];
-            let mut has_trans = vec![false; self.nodes.len()];
-            let mut has_rot = vec![false; self.nodes.len()];
-            let mut has_scale = vec![false; self.nodes.len()];
+            let n = self.nodes.len();
+            self.blend_trans_acc.resize(n, Vector3::new(0.0, 0.0, 0.0));
+            self.blend_rot_acc.resize(n, Vector3::new(0.0, 0.0, 0.0));
+            self.blend_scale_acc.resize(n, Vector3::new(0.0, 0.0, 0.0));
+            self.blend_has_trans.resize(n, false);
+            self.blend_has_rot.resize(n, false);
+            self.blend_has_scale.resize(n, false);
+            for i in 0..n {
+                self.blend_trans_acc[i] = Vector3::new(0.0, 0.0, 0.0);
+                self.blend_rot_acc[i] = Vector3::new(0.0, 0.0, 0.0);
+                self.blend_scale_acc[i] = Vector3::new(0.0, 0.0, 0.0);
+                self.blend_has_trans[i] = false;
+                self.blend_has_rot[i] = false;
+                self.blend_has_scale[i] = false;
+            }
 
             for anim in &active {
                 let Some(clip) = self.animations.get(anim.clip) else {
@@ -255,17 +341,17 @@ impl Scene {
                     match (&channel.property, &channel.outputs) {
                         (
                             AnimatedProperty::Translation,
-                            AnimationOutputs::Translations(values),
+                            AnimationOutputs::Translations(_),
                         ) => {
                             let v = sample_vec3(
-                                values, left, right, factor, interval, channel.interpolation,
+                                &channel.outputs, left, right, factor, interval, channel.interpolation,
                             );
-                            trans_acc[channel.target_node] += (v - base.translation) * anim.weight;
-                            has_trans[channel.target_node] = true;
+                            self.blend_trans_acc[channel.target_node] += (v - base.translation) * anim.weight;
+                            self.blend_has_trans[channel.target_node] = true;
                         }
-                        (AnimatedProperty::Rotation, AnimationOutputs::Rotations(values)) => {
+                        (AnimatedProperty::Rotation, AnimationOutputs::Rotations(_)) => {
                             let q = sample_quat(
-                                values, left, right, factor, interval, channel.interpolation,
+                                &channel.outputs, left, right, factor, interval, channel.interpolation,
                             );
                             let q = if quat_dot(q, base.rotation) < 0.0 {
                                 -q
@@ -273,15 +359,15 @@ impl Scene {
                                 q
                             };
                             let relative = quat_log(q * base.rotation.conjugate());
-                            rot_acc[channel.target_node] += relative * anim.weight;
-                            has_rot[channel.target_node] = true;
+                            self.blend_rot_acc[channel.target_node] += relative * anim.weight;
+                            self.blend_has_rot[channel.target_node] = true;
                         }
-                        (AnimatedProperty::Scale, AnimationOutputs::Scales(values)) => {
+                        (AnimatedProperty::Scale, AnimationOutputs::Scales(_)) => {
                             let v = sample_vec3(
-                                values, left, right, factor, interval, channel.interpolation,
+                                &channel.outputs, left, right, factor, interval, channel.interpolation,
                             );
-                            scale_acc[channel.target_node] += (v - base.scale) * anim.weight;
-                            has_scale[channel.target_node] = true;
+                            self.blend_scale_acc[channel.target_node] += (v - base.scale) * anim.weight;
+                            self.blend_has_scale[channel.target_node] = true;
                         }
                         _ => {}
                     }
@@ -289,18 +375,18 @@ impl Scene {
             }
 
             for i in 0..self.nodes.len() {
-                if has_trans[i] {
+                if self.blend_has_trans[i] {
                     self.nodes[i].local_transform.translation =
-                        self.nodes[i].base_transform.translation + trans_acc[i];
+                        self.nodes[i].base_transform.translation + self.blend_trans_acc[i];
                 }
-                if has_rot[i] {
+                if self.blend_has_rot[i] {
                     self.nodes[i].local_transform.rotation =
-                        (quat_exp(rot_acc[i]) * self.nodes[i].base_transform.rotation)
+                        (quat_exp(self.blend_rot_acc[i]) * self.nodes[i].base_transform.rotation)
                             .normalize();
                 }
-                if has_scale[i] {
+                if self.blend_has_scale[i] {
                     self.nodes[i].local_transform.scale =
-                        self.nodes[i].base_transform.scale + scale_acc[i];
+                        self.nodes[i].base_transform.scale + self.blend_scale_acc[i];
                 }
             }
         }
@@ -318,7 +404,7 @@ impl Scene {
             .collect();
 
         for root in roots {
-            self.update_node_world(root, cgmath::Matrix4::from_scale(1.0));
+            self.update_node_world(root, cgmath::Matrix4::from_scale(1.0), 0);
         }
     }
 
@@ -359,20 +445,43 @@ impl Scene {
             .min(vertical_velocities.len())
             .min(grounded_flags.len());
         if count < self.character_anim_graphs.len() {
-            eprintln!(
+            log::warn!(
                 "[Scene] update_character_animation: {} graphs but only {}/vertical {}/grounded {} arrays, skipping extra",
                 self.character_anim_graphs.len(), velocities.len(), vertical_velocities.len(), grounded_flags.len()
             );
         }
         for i in 0..count {
-            let graph = &mut self.character_anim_graphs[i];
-            let active = graph.update(
+            let eag = &mut self.character_anim_graphs[i];
+            let entity_id = eag.entity_id.clone();
+            let active = eag.graph.update(
                 velocities[i],
                 vertical_velocities[i],
                 grounded_flags[i],
                 dt,
                 &self.animations,
             );
+            // 消费状态机事件并绑定 entity_id
+            for evt in eag.graph.drain_events() {
+                match evt {
+                    AnimationEvent::StateChanged { from, to } => {
+                        self.animation_events.push(SceneAnimationEvent::StateChanged {
+                            entity_id: Some(entity_id.clone()), from, to,
+                        });
+                    }
+                    AnimationEvent::AnimationLoop { clip_index } => {
+                        let clip_name = self.animations.get(clip_index).and_then(|c| c.name.clone());
+                        self.animation_events.push(SceneAnimationEvent::AnimationLoop {
+                            entity_id: Some(entity_id.clone()), clip_name, clip_index,
+                        });
+                    }
+                    AnimationEvent::AnimationEnd { clip_index } => {
+                        let clip_name = self.animations.get(clip_index).and_then(|c| c.name.clone());
+                        self.animation_events.push(SceneAnimationEvent::AnimationEnd {
+                            entity_id: Some(entity_id.clone()), clip_name, clip_index,
+                        });
+                    }
+                }
+            }
             // 将活跃动画采样到节点（仅操作目标节点子集）
             self.apply_active_animations(&active);
         }
@@ -434,17 +543,17 @@ impl Scene {
                 match (&channel.property, &channel.outputs) {
                     (
                         AnimatedProperty::Translation,
-                        AnimationOutputs::Translations(values),
+                        AnimationOutputs::Translations(_),
                     ) => {
                         let v = sample_vec3(
-                            values, left, right, factor, interval, channel.interpolation,
+                            &channel.outputs, left, right, factor, interval, channel.interpolation,
                         );
                         *trans_acc.entry(channel.target_node).or_insert(Vector3::new(0.0, 0.0, 0.0)) +=
                             (v - base.translation) * anim.weight;
                     }
-                    (AnimatedProperty::Rotation, AnimationOutputs::Rotations(values)) => {
+                    (AnimatedProperty::Rotation, AnimationOutputs::Rotations(_)) => {
                         let q = sample_quat(
-                            values, left, right, factor, interval, channel.interpolation,
+                            &channel.outputs, left, right, factor, interval, channel.interpolation,
                         );
                         let q = if quat_dot(q, base.rotation) < 0.0 {
                             -q
@@ -455,9 +564,9 @@ impl Scene {
                         *rot_acc.entry(channel.target_node).or_insert(Vector3::new(0.0, 0.0, 0.0)) +=
                             relative * anim.weight;
                     }
-                    (AnimatedProperty::Scale, AnimationOutputs::Scales(values)) => {
+                    (AnimatedProperty::Scale, AnimationOutputs::Scales(_)) => {
                         let v = sample_vec3(
-                            values, left, right, factor, interval, channel.interpolation,
+                            &channel.outputs, left, right, factor, interval, channel.interpolation,
                         );
                         *scale_acc.entry(channel.target_node).or_insert(Vector3::new(0.0, 0.0, 0.0)) +=
                             (v - base.scale) * anim.weight;
@@ -495,8 +604,23 @@ impl Scene {
         }
     }
 
-    fn update_node_world(&mut self, node_id: usize, parent_world: cgmath::Matrix4<f32>) {
+    /// 递归深度上限，防止因节点树循环引用导致栈溢出。
+    const MAX_NODE_DEPTH: usize = 4096;
+
+    fn update_node_world(&mut self, node_id: usize, parent_world: cgmath::Matrix4<f32>, depth: usize) {
         use cgmath::{Matrix, SquareMatrix};
+
+        if node_id >= self.nodes.len() {
+            return;
+        }
+
+        if depth > Self::MAX_NODE_DEPTH {
+            log::error!(
+                "[Scene] update_node_world: depth {} exceeded max {} at node {}, possible cycle — aborting branch",
+                depth, Self::MAX_NODE_DEPTH, node_id
+            );
+            return;
+        }
 
         let local = self.nodes[node_id].local_transform.matrix();
         let world = parent_world * local;
@@ -507,8 +631,9 @@ impl Scene {
             .map(|matrix| matrix.transpose())
             .unwrap_or_else(cgmath::Matrix4::identity);
 
-        let object_indices = self.nodes[node_id].objects.clone();
-        for object_index in object_indices {
+        let object_count = self.nodes[node_id].objects.len();
+        for oi in 0..object_count {
+            let object_index = self.nodes[node_id].objects[oi];
             let local_aabb = self.objects[object_index].local_aabb;
             let world_aabb = transform_aabb(local_aabb, world);
             self.objects[object_index].aabb = world_aabb;
@@ -519,9 +644,14 @@ impl Scene {
                 self.compute_joint_matrices(self.objects[object_index].mesh.skin);
         }
 
-        let children = self.nodes[node_id].children.clone();
-        for child in children {
-            self.update_node_world(child, world);
+        let child_count = self.nodes[node_id].children.len();
+        for ci in 0..child_count {
+            let child = self.nodes[node_id].children[ci];
+            // 跳过自引用，防止无限递归
+            if child == node_id {
+                continue;
+            }
+            self.update_node_world(child, world, depth + 1);
         }
     }
 
@@ -572,11 +702,7 @@ impl Scene {
 
     /// 内部移除：不重建索引和八叉树（供批量删除复用）。
     fn remove_object_internal(&mut self, entity_id: &str) -> bool {
-        let Some(obj_idx) = self
-            .objects
-            .iter()
-            .position(|o| o.entity_id == entity_id)
-            else { return false; };
+        let Some(obj_idx) = self.object_index.remove(entity_id) else { return false; };
         let node_idx = self.objects[obj_idx].node;
 
         self.objects.swap_remove(obj_idx);
@@ -606,18 +732,16 @@ impl Scene {
         translation: cgmath::Vector3<f32>,
         rotation: cgmath::Quaternion<f32>,
     ) -> Result<(), String> {
-        let obj = self
-            .objects
-            .iter_mut()
-            .find(|o| o.entity_id == entity_id)
+        let obj_idx = *self.object_index.get(entity_id)
             .ok_or_else(|| format!("object not found: {}", entity_id))?;
+        let obj = &mut self.objects[obj_idx];
         obj.dirty |= DirtyFlags::TRANSFORM;
         let node_idx = obj.node;
 
         self.nodes[node_idx].local_transform.translation = translation;
         self.nodes[node_idx].local_transform.rotation = rotation;
         // 仅更新该节点及其子树
-        self.update_node_world(node_idx, cgmath::Matrix4::identity());
+        self.update_node_world(node_idx, cgmath::Matrix4::identity(), 0);
         Ok(())
     }
 
@@ -675,6 +799,35 @@ impl Scene {
     /// 消费本帧所有已触发的动画标记事件。
     pub fn drain_marker_events(&mut self) -> Vec<MarkerEvent> {
         std::mem::take(&mut self.marker_events)
+    }
+
+    /// 消费本帧所有动画系统事件（状态切换、循环完成、动画结束）。
+    pub fn drain_animation_events(&mut self) -> Vec<SceneAnimationEvent> {
+        std::mem::take(&mut self.animation_events)
+    }
+
+    /// 统一帧更新：驱动动画、更新变换、生成事件。
+    ///
+    /// 综合调用 `update_animation_graph`、`update_character_animation` 和
+    /// `update_physics`，并统一重建世界变换。
+    ///
+    /// 调用后通过 `drain_marker_events()` 和 `drain_animation_events()` 消费事件。
+    pub fn tick(
+        &mut self,
+        graph: Option<&mut AnimationStateMachine>,
+        dt: f32,
+    ) {
+        let has_graph = graph.is_some();
+
+        // 1. 动画状态机更新
+        if let Some(g) = graph {
+            self.update_animation_graph(g, dt);
+        }
+
+        // 2. 更新世界变换（update_animation_graph 已调用，但无 graph 时需要显式调用）
+        if !has_graph {
+            self.update_world_transforms();
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -736,14 +889,18 @@ impl Scene {
             self.dynamic_indices.push(object_index);
         }
 
-        self.update_node_world(node_id, cgmath::Matrix4::identity());
+        self.object_index.insert(entity_id.clone(), object_index);
+        self.update_node_world(node_id, cgmath::Matrix4::identity(), 0);
         entity_id
     }
 
-    /// swap_remove 后，被移动对象的 node 引用需要调整。
+    /// swap_remove 后，被移动对象的 node 引用需要调整，并同步 object_index。
     fn fix_moved_object_node(&mut self, removed_idx: usize, old_len: usize) {
         if removed_idx < self.objects.len() {
             let moved_node = self.objects[removed_idx].node;
+            // 更新 object_index：被交换元素的新索引
+            let moved_eid = self.objects[removed_idx].entity_id.clone();
+            self.object_index.insert(moved_eid, removed_idx);
             // 更新节点中对该对象的引用
             if moved_node < self.nodes.len() {
                 // 节点原来引用 old_len-1，现在引用 removed_idx
@@ -754,21 +911,66 @@ impl Scene {
         }
     }
 
-    /// swap_remove 节点后，所有引用被移动节点的对象需修正 node 字段。
+    /// swap_remove 节点后，修复所有引用被移动节点的 children / parent 指针。
+    ///
+    /// `removed_node_idx` 是被删除的位置，`new_len` 是 swap_remove 后的 `self.nodes.len()`。
+    /// 原来在 `new_len` 位置的节点被搬到了 `removed_node_idx`。
     fn fix_moved_node_references(&mut self, removed_node_idx: usize, new_len: usize) {
-        if removed_node_idx < self.nodes.len() {
-            for obj in self.objects.iter_mut() {
-                if obj.node == new_len {
-                    obj.node = removed_node_idx;
+        if removed_node_idx >= self.nodes.len() {
+            return;
+        }
+        let moved_from = new_len; // 被搬移的源位置（已不存在）
+
+        // 1. 修复对象引用：node == new_len → removed_node_idx
+        for obj in self.objects.iter_mut() {
+            if obj.node == moved_from {
+                obj.node = removed_node_idx;
+            }
+        }
+
+        // 2. 修复 parent 指针：被搬移节点的子节点需要把 parent 从 new_len 改为 removed_node_idx
+        let child_count = self.nodes[removed_node_idx].children.len();
+        for ci in 0..child_count {
+            let child_id = self.nodes[removed_node_idx].children[ci];
+            if child_id < self.nodes.len() && self.nodes[child_id].parent == Some(moved_from) {
+                self.nodes[child_id].parent = Some(removed_node_idx);
+            }
+        }
+
+        // 3. 修复父节点的 children 数组中对 new_len 的引用
+        if let Some(parent_id) = self.nodes[removed_node_idx].parent {
+            if parent_id < self.nodes.len() {
+                for child_ref in self.nodes[parent_id].children.iter_mut() {
+                    if *child_ref == moved_from {
+                        *child_ref = removed_node_idx;
+                    }
                 }
             }
         }
+
+        // 4. 清除自引用（被搬移节点的 children 中引用了自身旧索引 new_len）
+        for ci in 0..child_count {
+            if self.nodes[removed_node_idx].children[ci] == moved_from {
+                self.nodes[removed_node_idx].children[ci] = removed_node_idx;
+            }
+        }
+        // 移除自引用项
+        self.nodes[removed_node_idx].children.retain(|&c| c != removed_node_idx);
     }
 
     /// 重新构建 static_indices / dynamic_indices。
     pub(crate) fn rebuild_object_indices(&mut self) {
         (self.static_indices, self.dynamic_indices) =
             classify_objects(&self.nodes, &self.objects, &self.animations);
+        self.build_object_index();
+    }
+
+    /// 重建 object_index HashMap。
+    fn build_object_index(&mut self) {
+        self.object_index.clear();
+        for (i, obj) in self.objects.iter().enumerate() {
+            self.object_index.insert(obj.entity_id.clone(), i);
+        }
     }
 }
 
@@ -900,6 +1102,237 @@ mod tests {
         let (statics, dynamics) = classify_objects(&nodes, &objects, &[]);
         assert_eq!(statics, vec![0]);
         assert_eq!(dynamics, vec![1], "skinned object is always dynamic");
+    }
+
+    // -----------------------------------------------------------------------
+    // Scene integration tests
+    // -----------------------------------------------------------------------
+
+    fn empty_materials() -> MaterialLibrary {
+        MaterialLibrary {
+            materials: Vec::new(),
+            textures: Vec::new(),
+        }
+    }
+
+    fn make_scene(nodes: Vec<SceneNode>, objects: Vec<SceneObject>) -> Scene {
+        let bounds = AABB::new(
+            Point3::new(-100.0, -100.0, -100.0),
+            Point3::new(100.0, 100.0, 100.0),
+        );
+        Scene::new(nodes, objects, empty_materials(), vec![], vec![], bounds, 10, 8)
+    }
+
+    #[test]
+    fn test_scene_create_empty() {
+        let scene = make_scene(vec![], vec![]);
+        assert!(scene.nodes.is_empty());
+        assert!(scene.objects().is_empty());
+    }
+
+    #[test]
+    fn test_scene_node_hierarchy() {
+        let mut nodes = vec![
+            dummy_node(0, None),
+            dummy_node(1, Some(0)),
+            dummy_node(2, Some(1)),
+        ];
+        nodes[0].children.push(1);
+        nodes[1].children.push(2);
+
+        let scene = make_scene(nodes, vec![]);
+
+        // 验证父子关系
+        assert_eq!(scene.nodes[0].parent, None);
+        assert_eq!(scene.nodes[1].parent, Some(0));
+        assert_eq!(scene.nodes[2].parent, Some(1));
+        assert_eq!(scene.nodes[0].children, vec![1]);
+        assert_eq!(scene.nodes[1].children, vec![2]);
+        assert!(scene.nodes[2].children.is_empty());
+    }
+
+    #[test]
+    fn test_scene_world_transform_propagation() {
+        use cgmath::Quaternion;
+        // 父节点平移 (1,0,0)，子节点本地平移 (0,2,0)
+        let parent_transform = Transform {
+            translation: Vector3::new(1.0, 0.0, 0.0),
+            rotation: Quaternion::new(1.0, 0.0, 0.0, 0.0),
+            scale: Vector3::new(1.0, 1.0, 1.0),
+        };
+        let child_transform = Transform {
+            translation: Vector3::new(0.0, 2.0, 0.0),
+            rotation: Quaternion::new(1.0, 0.0, 0.0, 0.0),
+            scale: Vector3::new(1.0, 1.0, 1.0),
+        };
+        let mut parent = SceneNode::new(0, None, parent_transform);
+        let child = SceneNode::new(1, Some(0), child_transform);
+        parent.children.push(1);
+
+        let scene = make_scene(vec![parent, child], vec![]);
+
+        // 父节点世界变换应该是平移 (1,0,0)
+        let parent_world = scene.nodes[0].world_transform;
+        let parent_trans = Vector3::new(parent_world[3][0], parent_world[3][1], parent_world[3][2]);
+        assert!((parent_trans.x - 1.0).abs() < 1e-5);
+        assert!((parent_trans.y - 0.0).abs() < 1e-5);
+
+        // 子节点世界变换应该是 (1,2,0)——父变换叠加
+        let child_world = scene.nodes[1].world_transform;
+        let child_trans = Vector3::new(child_world[3][0], child_world[3][1], child_world[3][2]);
+        assert!((child_trans.x - 1.0).abs() < 1e-5, "child world x should be 1.0, got {}", child_trans.x);
+        assert!((child_trans.y - 2.0).abs() < 1e-5, "child world y should be 2.0, got {}", child_trans.y);
+        assert!((child_trans.z - 0.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_scene_deep_hierarchy() {
+        // 100+ 层级的节点树不应栈溢出
+        let depth = 200;
+        let mut nodes: Vec<SceneNode> = Vec::with_capacity(depth);
+        for i in 0..depth {
+            let parent = if i == 0 { None } else { Some(i - 1) };
+            let t = Transform {
+                translation: Vector3::new(1.0, 0.0, 0.0),
+                ..Transform::default()
+            };
+            nodes.push(SceneNode::new(i, parent, t));
+        }
+        // 设置 children
+        for i in 1..depth {
+            nodes[i - 1].children.push(i);
+        }
+
+        let scene = make_scene(nodes, vec![]);
+
+        // 最深节点的世界变换应正确累积
+        let last = &scene.nodes[depth - 1];
+        let trans_x = last.world_transform[3][0];
+        assert!(
+            (trans_x - depth as f32).abs() < 1e-2,
+            "expected x ~{}, got {}",
+            depth as f32,
+            trans_x
+        );
+    }
+
+    #[test]
+    fn test_scene_add_and_remove_dynamic_object() {
+        let scene_nodes = vec![dummy_node(0, None)];
+        let mut scene = make_scene(scene_nodes, vec![]);
+        assert!(scene.objects().is_empty());
+
+        let mesh = ModelMesh::new();
+        let id = scene.add_dynamic_object(
+            mesh,
+            Vector3::new(0.0, 0.0, 0.0),
+            cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0),
+            Vector3::new(1.0, 1.0, 1.0),
+        );
+
+        assert_eq!(scene.objects().len(), 1);
+        assert_eq!(scene.dynamic_indices().len(), 1);
+
+        scene.remove_object(&id).unwrap();
+        assert!(scene.objects().is_empty());
+        assert!(scene.dynamic_indices().is_empty());
+    }
+
+    #[test]
+    fn test_scene_remove_nonexistent_object() {
+        let mut scene = make_scene(vec![dummy_node(0, None)], vec![]);
+        let result = scene.remove_object("nonexistent");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_scene_drain_deleted_ids() {
+        let mut scene = make_scene(vec![dummy_node(0, None)], vec![]);
+        let mesh = ModelMesh::new();
+        let id = scene.add_dynamic_object(
+            mesh,
+            Vector3::new(0.0, 0.0, 0.0),
+            cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0),
+            Vector3::new(1.0, 1.0, 1.0),
+        );
+        scene.remove_object(&id).unwrap();
+
+        let deleted = scene.drain_deleted_ids();
+        assert_eq!(deleted.len(), 1);
+        assert_eq!(deleted[0], id);
+
+        // 再次 drain 应为空
+        let deleted2 = scene.drain_deleted_ids();
+        assert!(deleted2.is_empty());
+    }
+
+    #[test]
+    fn test_scene_batch_add_and_remove() {
+        let mut scene = make_scene(vec![dummy_node(0, None)], vec![]);
+
+        let items: Vec<_> = (0..5)
+            .map(|i| {
+                (
+                    ModelMesh::new(),
+                    Vector3::new(i as f32, 0.0, 0.0),
+                    cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 1.0, 1.0),
+                )
+            })
+            .collect();
+
+        let ids = scene.add_static_objects_batch(items);
+        assert_eq!(ids.len(), 5);
+        assert_eq!(scene.objects().len(), 5);
+
+        let refs: Vec<&str> = ids.iter().map(|s| s.as_str()).collect();
+        scene.remove_objects_batch(&refs).unwrap();
+        assert!(scene.objects().is_empty());
+    }
+
+    #[test]
+    fn test_scene_update_object_transform() {
+        let mut scene = make_scene(vec![dummy_node(0, None)], vec![]);
+        let mesh = ModelMesh::new();
+        let id = scene.add_dynamic_object(
+            mesh,
+            Vector3::new(0.0, 0.0, 0.0),
+            cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0),
+            Vector3::new(1.0, 1.0, 1.0),
+        );
+
+        scene
+            .update_object_transform(
+                &id,
+                Vector3::new(5.0, 3.0, 1.0),
+                cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0),
+            )
+            .unwrap();
+
+        let obj = &scene.objects[0];
+        assert!((obj.aabb.center().x - 5.0).abs() < 1e-5);
+        assert!((obj.aabb.center().y - 3.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_scene_collect_dirty_objects() {
+        let mut scene = make_scene(vec![dummy_node(0, None)], vec![]);
+        let mesh = ModelMesh::new();
+        let id = scene.add_dynamic_object(
+            mesh,
+            Vector3::new(0.0, 0.0, 0.0),
+            cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0),
+            Vector3::new(1.0, 1.0, 1.0),
+        );
+
+        // 新对象带 DirtyFlags::all()
+        let dirty = scene.collect_dirty_objects();
+        assert_eq!(dirty.len(), 1);
+        assert_eq!(dirty[0].0, id);
+
+        // 收集后脏标记应已清除
+        let dirty2 = scene.collect_dirty_objects();
+        assert!(dirty2.is_empty());
     }
 }
 

@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::collections::BTreeMap;
 
 use tokio::sync::Mutex;
+use tracing::warn;
 
 use tcp::tcp_connect::TcpConnect;
 use close_handle::CloseHandle;
@@ -42,7 +43,13 @@ impl ConnManager {
     }
 
     pub fn remove_lock(&mut self, lock_key: String) -> String {
-        return self.locks.remove(&lock_key).clone().unwrap();
+        match self.locks.remove(&lock_key) {
+            Some(value) => value,
+            None => {
+                warn!("Lock key '{}' not found in ConnManager", lock_key);
+                String::new()
+            }
+        }
     }
 
     pub async fn direct_connect_server(&mut self, name: String, host: String, _handle: Arc<StdMutex<ConnCallbackMsgHandle>>, _close: Arc<Mutex<CloseHandle>>) 

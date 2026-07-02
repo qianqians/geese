@@ -186,7 +186,7 @@ impl RagdollBuilder {
                             joint_handles.push(joint_handle);
                         }
                         Err(e) => {
-                            eprintln!("[Ragdoll] failed to create joint: {e}");
+                            log::error!("[Ragdoll] failed to create joint: {e}");
                         }
                     }
                 }

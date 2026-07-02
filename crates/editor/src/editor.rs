@@ -1,6 +1,13 @@
 //! 编辑器主框架。
 //!
 //! [`Editor`] 是一体化编辑器的顶层入口，管理面板布局、菜单栏、工具栏和全局状态。
+//!
+//! ## Suggested module split (future refactoring):
+//! - `editor_state.rs` — EditorState and shared state definitions
+//! - `editor_layout.rs` — Panel layout and menu bar rendering
+//! - `editor_prefab.rs` — Prefab save/instantiate logic
+//! - `editor_animation.rs` — Animation preview and marker editing
+//! - `editor_play_mode.rs` — Play/Stop mode switching and physics integration
 
 use crate::animation_panel::AnimationPanel;
 use crate::asset_browser::AssetBrowser;
@@ -76,6 +83,8 @@ pub struct Editor {
         Option<tokio::sync::oneshot::Receiver<Result<Vec<BodySnapshot>, String>>>,
     /// 物理模拟开关（编辑器全局控制）
     physics_enabled: bool,
+    /// Play 模式初始化异步任务结果（避免 block_on 阻塞 UI）
+    pending_play_init: Option<tokio::sync::oneshot::Receiver<Result<(), String>>>,
     /// 动画面板
     animation_panel: AnimationPanel,
     /// 可选场景引用（供动画预览等使用）
@@ -132,6 +141,7 @@ impl Editor {
             last_transform_old: None,
             pending_physics: None,
             physics_enabled: true,
+            pending_play_init: None,
             animation_panel: AnimationPanel::new(),
             scene: None,
         }
@@ -155,6 +165,23 @@ impl Editor {
                 let bodies = self.physics.get_local_body_snapshots();
                 self.state.physics_debug_bodies = bodies.clone();
                 self.physics_debug.update(bodies);
+            }
+        }
+
+        // Play 模式初始化结果（非阻塞）
+        if let Some(rx) = &mut self.pending_play_init {
+            match rx.try_recv() {
+                Ok(result) => {
+                    self.pending_play_init = None;
+                    if let Err(e) = result {
+                        eprintln!("[Editor] Play mode physics init failed: {e}");
+                    }
+                }
+                Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                    self.pending_play_init = None;
+                    eprintln!("[Editor] Play mode init task closed");
+                }
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
             }
         }
 
@@ -289,6 +316,18 @@ impl Editor {
         self.process_apply_queue();
     }
 
+    /// 保存当前场景到磁盘。
+    pub fn save_scene(&mut self) -> Result<(), String> {
+        // TODO: Implement full scene serialization and save.
+        // Currently the scene hierarchy and transform cache are in-memory only.
+        // A complete implementation should:
+        //   1. Serialize the hierarchy tree + transform_cache to a scene manifest
+        //   2. Write the manifest to `{project_path}/.scene.json`
+        //   3. Update the asset database if needed
+        eprintln!("[Editor] Save scene: not yet implemented (stub)");
+        Ok(())
+    }
+
     // -------------------------------------------------------------------
     // 场景导入
     // -------------------------------------------------------------------
@@ -392,7 +431,7 @@ impl Editor {
                     ui.separator();
                     if ui.button("New Scene").clicked() { ui.close_menu(); }
                     if ui.button("Open Scene...").clicked() { ui.close_menu(); }
-                    if ui.button("Save Scene").clicked() { ui.close_menu(); }
+                    if ui.button("Save Scene").clicked() { let _ = self.save_scene(); ui.close_menu(); }
                     ui.separator();
                     if ui.button("Exit").clicked() { ui.close_menu(); }
                 });
@@ -553,7 +592,7 @@ impl Editor {
             self.process_apply_queue();
         }
         if save {
-            // TODO: 场景序列化保存
+            let _ = self.save_scene();
         }
     }
 
@@ -1021,13 +1060,28 @@ impl Editor {
     }
 
     /// 递归收集节点子树中所有节点 ID。
-    fn collect_subtree_nodes(&self, node_id: &str, out: &mut Vec<String>) {
+    /// `depth` 为当前递归深度，超过上限时终止以防栈溢出。
+    fn collect_subtree_nodes_inner(&self, node_id: &str, out: &mut Vec<String>, depth: usize) {
+        const MAX_DEPTH: usize = 2048;
+        if depth > MAX_DEPTH {
+            eprintln!("[Editor] collect_subtree_nodes: depth {} exceeded max {}, possible cycle at '{}'", depth, MAX_DEPTH, node_id);
+            return;
+        }
         if let Some(node) = self.hierarchy.tree().get(node_id) {
             for child_id in &node.children {
+                // 跳过自引用
+                if child_id == node_id {
+                    continue;
+                }
                 out.push(child_id.clone());
-                self.collect_subtree_nodes(child_id, out);
+                self.collect_subtree_nodes_inner(child_id, out, depth + 1);
             }
         }
+    }
+
+    /// 递归收集节点子树中所有节点 ID。
+    fn collect_subtree_nodes(&self, node_id: &str, out: &mut Vec<String>) {
+        self.collect_subtree_nodes_inner(node_id, out, 0);
     }
 
     /// 切换 Play/Stop 模式。
@@ -1050,6 +1104,7 @@ impl Editor {
                 self.physics.load_scene(&manifest_path);
             }
             self.physics_debug.enabled = false;
+            self.pending_play_init = None;
             self.state.mode = EditorMode::Edit;
             self.state.panel_layer.set_edit_alpha();
         } else {
@@ -1071,13 +1126,19 @@ impl Editor {
             if let Err(e) = self.physics.connect_remote(python_path, server_script, &self.rt) {
                 eprintln!("[Editor] Failed to start physics server: {e}");
             } else {
-                if let Err(e) = self.rt.block_on(self.physics.init_physics_remote([0.0, -9.81, 0.0])) {
-                    eprintln!("[Editor] Failed to init physics: {e}");
-                }
+                // 非阻塞初始化：spawn 异步任务，结果在 update() 中通过 try_recv 消费
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                let physics = self.physics.remote_client().unwrap().clone();
                 let manifest_path = format!("{}/.scene.json", self.state.project_path);
-                if let Err(e) = self.rt.block_on(self.physics.load_scene_remote(&manifest_path)) {
-                    eprintln!("[Editor] Failed to load scene physics: {e}");
-                }
+                let manifest_path_async = manifest_path.clone();
+                self.rt.spawn(async move {
+                    let result = async {
+                        physics.init_physics([0.0, -9.81, 0.0]).await?;
+                        physics.load_scene(&manifest_path_async).await.map(|_| ())
+                    }.await;
+                    let _ = tx.send(result);
+                });
+                self.pending_play_init = Some(rx);
                 self.physics.load_scene(&manifest_path);
             }
 

@@ -18,8 +18,8 @@ class receiver(ABC, base_entity):
         pass
 
     def handle_hub_notify(self, method:str, hub_name:str, argvs:bytes):
-        _call_handle = self.hub_notify_callback[method]
-        if _call_handle != None:
+        _call_handle = self.hub_notify_callback.get(method)
+        if _call_handle is not None:
             _call_handle(hub_name, argvs)
         else:
             self.error("unhandle notify method:{}".format(method))

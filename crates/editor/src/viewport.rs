@@ -6,6 +6,13 @@
 //! - 射线拾取（Ray Picking）：屏幕坐标 → 世界空间射线
 //! - 编辑器网格和世界坐标轴指示器
 //! - 物理碰撞体调试渲染（wireframe）
+//!
+//! ## Suggested module split (future refactoring):
+//! - `viewport_camera.rs` — Camera control and projection
+//! - `viewport_picking.rs` — Ray casting and object selection
+//! - `viewport_grid.rs` — Grid rendering (CPU and GPU)
+//! - `viewport_gizmo.rs` — Gizmo interaction and rendering
+//! - `viewport_drag_drop.rs` — Asset drag-and-drop handling
 
 use crate::editor_mode::EditorMode;
 use crate::gizmo::{GizmoInteraction, draw_gizmo};
@@ -14,6 +21,102 @@ use crate::panels::{DropTargetHint, EditorAction, EditorPanel, EditorState, Pend
 use cgmath::{InnerSpace, Matrix4, Point3, Quaternion, SquareMatrix, Vector3, Vector4, perspective, Rad};
 use math::AABB;
 use render::LineVertex;
+
+// ---------------------------------------------------------------------------
+// Named constants (avoid magic numbers)
+// ---------------------------------------------------------------------------
+
+/// Pitch angle limit epsilon to prevent gimbal lock at ±90°.
+const PITCH_LIMIT_EPSILON: f32 = 0.01;
+
+/// Keyboard move speed as a fraction of camera distance per frame.
+const KEYBOARD_MOVE_SPEED_FACTOR: f32 = 0.02;
+
+/// Minimum absolute ray Y direction to treat as non-parallel to the ground plane.
+const RAY_PLANE_PARALLEL_EPSILON: f32 = 0.0001;
+
+/// Screen-space radius for the drag-drop preview ring.
+const DRAG_PREVIEW_RING_RADIUS: f32 = 40.0;
+
+/// World-space height of the drag-drop indicator dashed line.
+const DRAG_PREVIEW_UP_HEIGHT: f32 = 2.0;
+
+/// Screen-space half-size of the drag-drop center crosshair.
+const DRAG_PREVIEW_CROSS_SIZE: f32 = 8.0;
+
+/// Minimum viewport height to avoid division by zero.
+const MIN_VIEWPORT_HEIGHT: f32 = 100.0;
+
+/// Minimum scale value to prevent degenerate transforms.
+const SCALE_MINIMUM: f32 = 0.01;
+
+// Grid LOD distance thresholds.
+const GRID_LOD_NEAR: f32 = 5.0;
+const GRID_LOD_MID: f32 = 15.0;
+const GRID_LOD_FAR: f32 = 50.0;
+const GRID_LOD_VERY_FAR: f32 = 150.0;
+
+// Grid cell sizes for each LOD level.
+const GRID_CELL_NEAR: f32 = 0.5;
+const GRID_CELL_MID: f32 = 1.0;
+const GRID_CELL_FAR: f32 = 5.0;
+const GRID_CELL_VERY_FAR: f32 = 10.0;
+const GRID_CELL_EXTREME: f32 = 50.0;
+
+// Grid extent and fade parameters (GPU grid).
+const GRID_EXTENT_MULTIPLIER: f32 = 50.0;
+const GRID_EXTENT_MIN: f32 = 100.0;
+const GRID_EXTENT_MAX: f32 = 5000.0;
+const GRID_CAMERA_FADE_MULTIPLIER: f32 = 80.0;
+
+// CPU grid extent and fade parameters (different from GPU grid).
+const CPU_GRID_EXTENT_MULTIPLIER: f32 = 8.0;
+const CPU_GRID_EXTENT_MIN: f32 = 50.0;
+const CPU_GRID_CAMERA_FADE_MULTIPLIER: f32 = 12.0;
+
+// Grid edge fade parameters (GPU grid).
+const GRID_EDGE_FADE_START: f32 = 0.97;
+const GRID_EDGE_FADE_END: f32 = 1.0;
+const GRID_ALPHA_THRESHOLD: f32 = 0.02;
+
+// CPU grid edge fade parameters (different from GPU grid).
+const CPU_GRID_EDGE_FADE_START: f32 = 0.90;
+const CPU_GRID_EDGE_FADE_END: f32 = 1.0;
+
+// ---------------------------------------------------------------------------
+// Core world→screen projection (shared by all variants)
+// ---------------------------------------------------------------------------
+
+/// Core projection: world → clip → NDC → screen.
+/// Returns `None` only when `clip.w ≈ 0` (point at camera plane).
+fn project_to_screen(world_pos: Point3<f32>, vp: &Matrix4<f32>, rect: &egui::Rect) -> Option<egui::Pos2> {
+    let clip = vp * Vector4::new(world_pos.x, world_pos.y, world_pos.z, 1.0);
+    if clip.w.abs() < f32::EPSILON {
+        return None;
+    }
+    let ndc_x = clip.x / clip.w;
+    let ndc_y = clip.y / clip.w;
+    Some(egui::Pos2::new(
+        rect.left() + (ndc_x * 0.5 + 0.5) * rect.width(),
+        rect.top() + (1.0 - (ndc_y * 0.5 + 0.5)) * rect.height(),
+    ))
+}
+
+/// Permissive projection for grid rendering: returns `None` only when the
+/// point is clearly behind the camera (`w < 0.001`). Allows NDC values far
+/// outside [-1, 1] so grid lines crossing the viewport remain visible.
+fn project_to_screen_unclamped(world_pos: Point3<f32>, vp: &Matrix4<f32>, rect: &egui::Rect) -> Option<egui::Pos2> {
+    let clip = vp * Vector4::new(world_pos.x, world_pos.y, world_pos.z, 1.0);
+    if clip.w < 0.001 {
+        return None;
+    }
+    let ndc_x = clip.x / clip.w;
+    let ndc_y = clip.y / clip.w;
+    Some(egui::Pos2::new(
+        rect.left() + (ndc_x * 0.5 + 0.5) * rect.width(),
+        rect.top() + (1.0 - (ndc_y * 0.5 + 0.5)) * rect.height(),
+    ))
+}
 
 // ---------------------------------------------------------------------------
 // OrbitCamera - 编辑器摄像机
@@ -137,7 +240,7 @@ impl OrbitCamera {
         self.pitch += delta_y * self.orbit_sensitivity;
 
         // 限制 pitch 防止翻转
-        let pitch_limit = std::f32::consts::FRAC_PI_2 - 0.01;
+        let pitch_limit = std::f32::consts::FRAC_PI_2 - PITCH_LIMIT_EPSILON;
         self.pitch = self.pitch.clamp(-pitch_limit, pitch_limit);
     }
 
@@ -182,10 +285,14 @@ impl OrbitCamera {
         screen_y: f32,
         viewport_width: f32,
         viewport_height: f32,
-    ) -> (Point3<f32>, Vector3<f32>) {
-        let vp_inv = self.view_projection_matrix()
-            .invert()
-            .unwrap_or_else(|| Matrix4::from_scale(1.0));
+    ) -> Option<(Point3<f32>, Vector3<f32>)> {
+        let vp_inv = match self.view_projection_matrix().invert() {
+            Some(inv) => inv,
+            None => {
+                eprintln!("[Viewport] Matrix inversion failed, skipping ray pick");
+                return None;
+            }
+        };
 
         // 将屏幕坐标映射到 NDC [-1, 1]
         let ndc_x = (screen_x / viewport_width) * 2.0 - 1.0;
@@ -206,7 +313,7 @@ impl OrbitCamera {
         );
 
         let direction = (far - near).normalize();
-        (near, direction)
+        Some((near, direction))
     }
 }
 
@@ -335,7 +442,7 @@ impl ViewportPanel {
 
         // 处理WASD/方向键移动相机
         if hovered {
-            let move_speed = self.camera.distance * 0.02;
+            let move_speed = self.camera.distance * KEYBOARD_MOVE_SPEED_FACTOR;
             ui.input(|input| {
                 let mut move_vec = Vector3::new(0.0, 0.0, 0.0);
                 
@@ -414,12 +521,15 @@ impl ViewportPanel {
                     let rect = response.rect;
                     let local_x = pos.0 - rect.left();
                     let local_y = pos.1 - rect.top();
-                    let (ray_origin, ray_dir) = self.camera.screen_to_world_ray(
+                    let (ray_origin, ray_dir) = match self.camera.screen_to_world_ray(
                         local_x,
                         local_y,
                         rect.width(),
                         rect.height(),
-                    );
+                    ) {
+                        Some(r) => r,
+                        None => return,
+                    };
                     // 射线检测拾取对象
                     let mut closest: Option<(String, f32)> = None;
                     for (eid, _, aabb) in &self.pickable_objects {
@@ -513,9 +623,9 @@ impl ViewportPanel {
                                         old_pos,
                                         old_rot,
                                         [
-                                            (old_scl[0] * (1.0 + delta.x)).max(0.01),
-                                            (old_scl[1] * (1.0 + delta.y)).max(0.01),
-                                            (old_scl[2] * (1.0 + delta.z)).max(0.01),
+                                            (old_scl[0] * (1.0 + delta.x)).max(SCALE_MINIMUM),
+                                            (old_scl[1] * (1.0 + delta.y)).max(SCALE_MINIMUM),
+                                            (old_scl[2] * (1.0 + delta.z)).max(SCALE_MINIMUM),
                                         ],
                                     ),
                                 };
@@ -554,12 +664,15 @@ impl ViewportPanel {
             if let Some(mouse_pos) = ui.input(|input| input.pointer.hover_pos()) {
                 let local_x = mouse_pos.x - rect.left();
                 let local_y = mouse_pos.y - rect.top();
-                let (ray_origin, ray_dir) = self.camera.screen_to_world_ray(
+                let (ray_origin, ray_dir) = match self.camera.screen_to_world_ray(
                     local_x, local_y, rect.width(), rect.height(),
-                );
+                ) {
+                    Some(r) => r,
+                    None => return,
+                };
 
                 // 射线与 Y=0 地平面求交
-                let drop_pos = if ray_dir.y.abs() > 0.0001 {
+                let drop_pos = if ray_dir.y.abs() > RAY_PLANE_PARALLEL_EPSILON {
                     let t = -ray_origin.y / ray_dir.y;
                     if t > 0.0 {
                         Point3::new(
@@ -689,27 +802,21 @@ impl ViewportPanel {
         }
     }
 
-    /// 将世界坐标投影到屏幕坐标。超出视口范围返回 None。
+    /// 将世界坐标投影到屏幕坐标。超出视口 NDC 范围返回 None。
     fn world_to_screen(&self, world_pos: Point3<f32>, rect: egui::Rect) -> Option<egui::Pos2> {
         let vp = self.camera.view_projection_matrix();
+        let screen = project_to_screen(world_pos, &vp, &rect)?;
+
+        // NDC bounds check: reject points outside the visible frustum
         let clip = vp * Vector4::new(world_pos.x, world_pos.y, world_pos.z, 1.0);
-
-        if clip.w.abs() < f32::EPSILON {
-            return None;
-        }
-
         let ndc_x = clip.x / clip.w;
         let ndc_y = clip.y / clip.w;
         let ndc_z = clip.z / clip.w;
-
         if ndc_x < -1.0 || ndc_x > 1.0 || ndc_y < -1.0 || ndc_y > 1.0 || ndc_z < -1.0 || ndc_z > 1.0 {
             return None;
         }
 
-        let screen_x = rect.left() + (ndc_x * 0.5 + 0.5) * rect.width();
-        let screen_y = rect.top() + (1.0 - (ndc_y * 0.5 + 0.5)) * rect.height();
-
-        Some(egui::Pos2::new(screen_x, screen_y))
+        Some(screen)
     }
 
     /// 绘制拖放预览（在 Y=0 平面上显示蓝色圆环 + 资产名称）。
@@ -723,7 +830,7 @@ impl ViewportPanel {
 
             let painter = ui.painter();
             let ring_color = egui::Color32::from_rgba_premultiplied(60, 140, 255, 200);
-            let ring_radius = 40.0; // screen-space radius
+            let ring_radius = DRAG_PREVIEW_RING_RADIUS; // screen-space radius
 
             // 绘制地面位置圆环（屏幕空间近似）
             let segments = 32;
@@ -740,7 +847,7 @@ impl ViewportPanel {
             }
 
             // 绘制向上的虚线
-            let up_point_3d = Point3::new(center.x, center.y + 2.0, center.z);
+            let up_point_3d = Point3::new(center.x, center.y + DRAG_PREVIEW_UP_HEIGHT, center.z);
             if let Some(screen_up) = self.world_to_screen(up_point_3d, rect) {
                 let dash_color = egui::Color32::from_rgba_premultiplied(60, 140, 255, 160);
                 let dash_length = 6.0;
@@ -759,7 +866,7 @@ impl ViewportPanel {
             }
 
             // 绘制中心十字
-            let cross_size = 8.0;
+            let cross_size = DRAG_PREVIEW_CROSS_SIZE;
             let cross_color = egui::Color32::from_rgb(100, 180, 255);
             painter.line_segment(
                 [
@@ -823,7 +930,7 @@ impl EditorPanel for ViewportPanel {
         let available = ui.available_size();
         let rect = egui::Rect::from_min_size(
             ui.next_widget_position(),
-            egui::Vec2::new(available.x, available.y.max(100.0)),
+            egui::Vec2::new(available.x, available.y.max(MIN_VIEWPORT_HEIGHT)),
         );
 
         let (rect_response, _painter) =
@@ -883,9 +990,18 @@ impl EditorPanel for ViewportPanel {
 
         // 绘制 Gizmo（当有选中实体时）
         if let Some(ref eid) = state.selected_entity {
-            let gizmo_world_pos = state.transform_cache.get(eid)
-                .map(|&(pos, _, _)| Point3::new(pos[0], pos[1], pos[2]))
-                .unwrap_or(Point3::new(0.0, 0.0, 0.0));
+            let (gizmo_world_pos, local_rot) = state.transform_cache.get(eid)
+                .map(|&(pos, rot, _)| {
+                    let p = Point3::new(pos[0], pos[1], pos[2]);
+                    let q = Quaternion::from(cgmath::Euler::new(
+                        cgmath::Rad::from(cgmath::Deg(rot[0])),
+                        cgmath::Rad::from(cgmath::Deg(rot[1])),
+                        cgmath::Rad::from(cgmath::Deg(rot[2])),
+                    ));
+                    (p, Matrix4::from(q))
+                })
+                .unwrap_or((Point3::new(0.0, 0.0, 0.0), Matrix4::from_scale(1.0)));
+            self.gizmo_interaction.local_rotation = local_rot;
             if let Some(gizmo_screen) = self.world_to_screen(gizmo_world_pos, rect) {
                 let screen_pos = (gizmo_screen.x, gizmo_screen.y);
                 draw_gizmo(ui.painter(), screen_pos, &self.camera, &self.gizmo_interaction);
@@ -1220,20 +1336,20 @@ impl GpuGridRenderer {
 /// Used by GpuGridRenderer for GPU-side grid rendering.
 fn build_camera_grid_vertices(eye: Point3<f32>, distance: f32) -> Vec<LineVertex> {
     // Adaptive LOD
-    let cell_size = if distance < 5.0 { 0.5 }
-        else if distance < 15.0 { 1.0 }
-        else if distance < 50.0 { 5.0 }
-        else if distance < 150.0 { 10.0 }
-        else { 50.0 };
+    let cell_size = if distance < GRID_LOD_NEAR { GRID_CELL_NEAR }
+        else if distance < GRID_LOD_MID { GRID_CELL_MID }
+        else if distance < GRID_LOD_FAR { GRID_CELL_FAR }
+        else if distance < GRID_LOD_VERY_FAR { GRID_CELL_VERY_FAR }
+        else { GRID_CELL_EXTREME };
 
     // Grid extent: large enough to always cover visible ground area
     // At shallow pitch angles, visible ground extends very far
-    let half_extent = (distance * 50.0).max(100.0).min(5000.0);
+    let half_extent = (distance * GRID_EXTENT_MULTIPLIER).max(GRID_EXTENT_MIN).min(GRID_EXTENT_MAX);
     let half_cells = (half_extent / cell_size).ceil() as i32;
     let extent = half_cells as f32 * cell_size;
     let major_step = 5;
     // Camera fade distance: very large to avoid premature fading
-    let camera_fade_dist = distance * 80.0;
+    let camera_fade_dist = distance * GRID_CAMERA_FADE_MULTIPLIER;
 
     // Center grid on camera XZ projection, aligned to cell_size
     let grid_offset_x = (eye.x / cell_size).round() * cell_size;
@@ -1259,8 +1375,8 @@ fn build_camera_grid_vertices(eye: Point3<f32>, distance: f32) -> Vec<LineVertex
         let cam_alpha = 1.0 - (cam_dist / camera_fade_dist).clamp(0.0, 1.0);
         let edge_t = edge.abs() / extent;
         // Edge fade: very gradual, only at extreme edges
-        let edge_alpha = if edge_t < 0.97 { 1.0 }
-            else { 1.0 - ((edge_t - 0.97) / 0.03).clamp(0.0, 1.0) };
+        let edge_alpha = if edge_t < GRID_EDGE_FADE_START { 1.0 }
+            else { 1.0 - ((edge_t - GRID_EDGE_FADE_START) / (GRID_EDGE_FADE_END - GRID_EDGE_FADE_START)).clamp(0.0, 1.0) };
         (cam_alpha * edge_alpha).max(0.0)
     };
 
@@ -1270,7 +1386,7 @@ fn build_camera_grid_vertices(eye: Point3<f32>, distance: f32) -> Vec<LineVertex
         let p1 = Point3::new(-extent + grid_offset_x, 0.0, z);
         let p2 = Point3::new(extent + grid_offset_x, 0.0, z);
         let alpha = fade_alpha(0.0, z, z - grid_offset_z, extent);
-        if alpha < 0.02 { continue; }
+        if alpha < GRID_ALPHA_THRESHOLD { continue; }
         let is_center = (z - grid_offset_z).abs() < cell_size * 0.5;
         let is_major = is_center || i % major_step == 0;
         let base = if is_center { axis_x_color }
@@ -1286,7 +1402,7 @@ fn build_camera_grid_vertices(eye: Point3<f32>, distance: f32) -> Vec<LineVertex
         let p1 = Point3::new(x, 0.0, -extent + grid_offset_z);
         let p2 = Point3::new(x, 0.0, extent + grid_offset_z);
         let alpha = fade_alpha(x, 0.0, x - grid_offset_x, extent);
-        if alpha < 0.02 { continue; }
+        if alpha < GRID_ALPHA_THRESHOLD { continue; }
         let is_center = (x - grid_offset_x).abs() < cell_size * 0.5;
         let is_major = is_center || i % major_step == 0;
         let base = if is_center { axis_z_color }
@@ -1300,32 +1416,21 @@ fn build_camera_grid_vertices(eye: Point3<f32>, distance: f32) -> Vec<LineVertex
 }
 
 #[allow(dead_code)]
-fn screen_from_clip(clip: Vector4<f32>, rect: &egui::Rect) -> egui::Pos2 {
-    egui::Pos2::new(
-        rect.left() + (clip.x / clip.w * 0.5 + 0.5) * rect.width(),
-        rect.top() + (1.0 - (clip.y / clip.w * 0.5 + 0.5)) * rect.height(),
-    )
-}
-
-/// 将世界坐标投影到屏幕坐标。如果点在相机后面，返回 None。
-fn world_to_screen_safe(world_pos: Point3<f32>, vp: &Matrix4<f32>, rect: &egui::Rect) -> Option<egui::Pos2> {
-    let clip = vp * Vector4::new(world_pos.x, world_pos.y, world_pos.z, 1.0);
-    
-    // 点在相机后面，跳过
-    if clip.w < 0.001 {
+fn screen_from_clip(clip: Vector4<f32>, rect: &egui::Rect) -> Option<egui::Pos2> {
+    if clip.w.abs() < f32::EPSILON {
         return None;
     }
-    
-    let ndc_x = clip.x / clip.w;
-    let ndc_y = clip.y / clip.w;
-    
-    // 完全不裁剪NDC范围，让egui自动处理屏幕外绘制
-    // 网格线端点可能在NDC空间超出视口几百倍，但只要线段穿过视口就应该显示
-    
-    let screen_x = rect.left() + (ndc_x * 0.5 + 0.5) * rect.width();
-    let screen_y = rect.top() + (1.0 - (ndc_y * 0.5 + 0.5)) * rect.height();
-    
-    Some(egui::Pos2::new(screen_x, screen_y))
+    Some(egui::Pos2::new(
+        rect.left() + (clip.x / clip.w * 0.5 + 0.5) * rect.width(),
+        rect.top() + (1.0 - (clip.y / clip.w * 0.5 + 0.5)) * rect.height(),
+    ))
+}
+
+/// Permissive world→screen projection for grid rendering.
+/// Allows screen coordinates far outside the viewport so grid lines crossing
+/// the visible area remain drawable.
+fn world_to_screen_safe(world_pos: Point3<f32>, vp: &Matrix4<f32>, rect: &egui::Rect) -> Option<egui::Pos2> {
+    project_to_screen_unclamped(world_pos, vp, rect)
 }
 
 fn draw_grid_impl(
@@ -1342,18 +1447,18 @@ fn draw_grid_impl(
 
     // --- 自适应网格 LOD ---
     // 相机越近网格越精细
-    let cell_size = if dist < 5.0 { 0.5 }
-        else if dist < 15.0 { 1.0 }
-        else if dist < 50.0 { 5.0 }
-        else if dist < 150.0 { 10.0 }
-        else { 50.0 };
+    let cell_size = if dist < GRID_LOD_NEAR { GRID_CELL_NEAR }
+        else if dist < GRID_LOD_MID { GRID_CELL_MID }
+        else if dist < GRID_LOD_FAR { GRID_CELL_FAR }
+        else if dist < GRID_LOD_VERY_FAR { GRID_CELL_VERY_FAR }
+        else { GRID_CELL_EXTREME };
 
     // 网格范围覆盖更远
-    let half_extent = (dist * 8.0).max(50.0).min(5000.0);  // 从4.0增加到8.0，最小值从20增加到50
+    let half_extent = (dist * CPU_GRID_EXTENT_MULTIPLIER).max(CPU_GRID_EXTENT_MIN).min(GRID_EXTENT_MAX);
     let half_cells = (half_extent / cell_size).ceil() as i32;
     let extent = half_cells as f32 * cell_size;
     let major_step = 5;
-    let camera_fade_dist = dist * 12.0;  // 从6.0增加到12.0，让相机距离淡出更平缓
+    let camera_fade_dist = dist * CPU_GRID_CAMERA_FADE_MULTIPLIER;
     
     // 以相机在XZ平面的投影位置为中心生成网格
     let cam_x = eye.x;
@@ -1428,8 +1533,8 @@ fn draw_grid_impl(
         // 边缘淡出：t ∈ [0, 0.90) → 1.0, [0.90, 1.0] → 渐变到 0
         // 从0.75改为0.90，让更多网格线完整显示
         let edge_t = z.abs() / extent;
-        let edge_alpha = if edge_t < 0.90 { 1.0 }
-            else { 1.0 - ((edge_t - 0.90) / 0.10).clamp(0.0, 1.0) };
+        let edge_alpha = if edge_t < CPU_GRID_EDGE_FADE_START { 1.0 }
+            else { 1.0 - ((edge_t - CPU_GRID_EDGE_FADE_START) / (CPU_GRID_EDGE_FADE_END - CPU_GRID_EDGE_FADE_START)).clamp(0.0, 1.0) };
 
         let alpha_f = cam_alpha * edge_alpha;
         let alpha = (alpha_f * 255.0) as u8;
@@ -1497,8 +1602,8 @@ fn draw_grid_impl(
 
         // 边缘淡出：t ∈ [0, 0.90) → 1.0, [0.90, 1.0] → 渐变到 0
         let edge_t = x.abs() / extent;
-        let edge_alpha = if edge_t < 0.90 { 1.0 }
-            else { 1.0 - ((edge_t - 0.90) / 0.10).clamp(0.0, 1.0) };
+        let edge_alpha = if edge_t < CPU_GRID_EDGE_FADE_START { 1.0 }
+            else { 1.0 - ((edge_t - CPU_GRID_EDGE_FADE_START) / (CPU_GRID_EDGE_FADE_END - CPU_GRID_EDGE_FADE_START)).clamp(0.0, 1.0) };
 
         let alpha_f = cam_alpha * edge_alpha;
         let alpha = (alpha_f * 255.0) as u8;
@@ -1522,8 +1627,7 @@ fn draw_grid_impl(
         }
     }
 }
-/// 网格专用世界→屏幕投影，允许点超出视口范围。
-/// 与 `world_to_screen` 的区别：不裁剪 NDC `w < 0` 以外的范围。
+/// Permissive world→screen projection for grid rendering (same as `world_to_screen_safe`).
 #[allow(dead_code)]
 fn camera_grid_project(
     camera: &OrbitCamera,
@@ -1531,19 +1635,7 @@ fn camera_grid_project(
     rect: egui::Rect,
 ) -> Option<egui::Pos2> {
     let vp = camera.view_projection_matrix();
-    let clip = vp * Vector4::new(world_pos.x, world_pos.y, world_pos.z, 1.0);
-
-    if clip.w < f32::EPSILON {
-        return None;
-    }
-
-    let ndc_x = clip.x / clip.w;
-    let ndc_y = clip.y / clip.w;
-
-    let screen_x = rect.left() + (ndc_x * 0.5 + 0.5) * rect.width();
-    let screen_y = rect.top() + (1.0 - (ndc_y * 0.5 + 0.5)) * rect.height();
-
-    Some(egui::Pos2::new(screen_x, screen_y))
+    project_to_screen_unclamped(world_pos, &vp, &rect)
 }
 
 // ---------------------------------------------------------------------------
@@ -1635,7 +1727,7 @@ mod tests {
     #[test]
     fn test_orbit_camera_screen_to_world_ray() {
         let cam = OrbitCamera::default();
-        let (_origin, dir) = cam.screen_to_world_ray(400.0, 300.0, 800.0, 600.0);
+        let (_origin, dir) = cam.screen_to_world_ray(400.0, 300.0, 800.0, 600.0).unwrap();
         assert!((dir.magnitude() - 1.0).abs() < 0.01);
     }
 }

@@ -68,7 +68,7 @@ impl GateClientMsgHandle {
     }
 
     fn enque_event(&mut self, ev: ClientEvent) {
-        self.queue.enque(Box::new(ev))
+        let _ = self.queue.enque(Box::new(ev));
     }
 
     pub async fn on_event(&mut self, _proxy: Arc<Mutex<ClientProxy>>, data: Vec<u8>) {

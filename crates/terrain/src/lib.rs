@@ -156,8 +156,10 @@ impl TerrainStreamer {
 
     /// 按相机位置（世界 XZ）更新激活 tile 集，调用 loader 加/卸。
     pub fn update<L: TileLoader>(&mut self, camera_xz: [f32; 2], loader: &mut L) {
-        let cx = (camera_xz[0] / self.tile_size).floor() as i32;
-        let cz = (camera_xz[1] / self.tile_size).floor() as i32;
+        let tile_x = (camera_xz[0] / self.tile_size).floor();
+        let tile_z = (camera_xz[1] / self.tile_size).floor();
+        let cx = tile_x.clamp(i32::MIN as f32, i32::MAX as f32) as i32;
+        let cz = tile_z.clamp(i32::MIN as f32, i32::MAX as f32) as i32;
         let r = self.view_radius_tiles;
 
         let mut desired: HashMap<TileCoord, u8> = HashMap::new();

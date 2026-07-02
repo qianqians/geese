@@ -171,6 +171,7 @@ impl PyScene {
             speed,
             looping,
             playing,
+            just_ended: false,
         };
         scene.update_animation(&mut player, dt);
         Ok((player.time, player.playing))

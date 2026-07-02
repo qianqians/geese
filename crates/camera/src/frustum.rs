@@ -33,7 +33,7 @@ pub struct Frustum {
 
 impl Frustum {
     pub fn from_view_projection_matrix(m: &Matrix4<f32>) -> Self {
-        let mut planes = [
+        let planes = [
             Plane::from_coefficients(
                 m[0][3] - m[0][0],
                 m[1][3] - m[1][0],
@@ -72,12 +72,7 @@ impl Frustum {
             ),
         ];
 
-        for plane in planes.iter_mut() {
-            let length = plane.normal.magnitude();
-            plane.normal = plane.normal / length;
-            plane.distance = plane.distance / length;
-        }
-
+        // Plane::from_coefficients 内部已做归一化，无需重复处理
         Frustum { planes }
     }
 

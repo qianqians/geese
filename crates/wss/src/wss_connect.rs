@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use url::Url;
 use futures_util::stream::StreamExt;
 use tungstenite::http::Request;
 use tokio_tungstenite::connect_async;
+use tokio::sync::Mutex;
 use base64::Engine;
 
 use crate::wss_socket::{WSSReader, WSSWriter};
@@ -31,8 +34,9 @@ impl WSSConnect {
         let (_client, _) = connect_async(request).await?;
 
         let (write, read) = _client.split();
+        let write = Arc::new(Mutex::new(write));
         Ok((
-            WSSReader::new(read), 
+            WSSReader::new(read, write.clone()), 
             WSSWriter::new(write)
         ))
     }

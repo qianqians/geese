@@ -17,7 +17,7 @@ use std::sync::Arc;
 use net::{NetReader, NetReaderCallback, NetWriter};
 use serde::{Deserialize, Serialize};
 use tcp::tcp_connect::TcpConnect;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, oneshot};
 
 // ---------------------------------------------------------------------------
 // 基础数据类型（与 physics_common.juggle struct 对齐）
@@ -104,33 +104,41 @@ fn get_field<'a>(arr: &'a [serde_json::Value], idx: usize, name: &str) -> Result
 
 // ---------------------------------------------------------------------------
 // 内部响应回调
+//
+// 死锁预防设计（编译期不变量）：
+// ─────────────────────────────
+// PhysicsReaderCallback **不持有任何共享数据缓冲区**（如 Arc<Mutex<Vec<u8>>>），
+// 仅持有一个 oneshot::Sender。响应通过 channel 传递，而非写入共享缓冲后轮询。
+//
+// 这保证了：
+//   1. cb() 只发送数据到 oneshot channel，不需要获取外部锁
+//   2. call() 在释放 response_tx 锁之后才 await oneshot::Receiver
+//   3. 不存在「持有锁 → 等待数据 → 数据写入需要同一把锁」的死锁路径
+//
+// ❌ 禁止添加 Arc<Mutex<Option<Vec<u8>>>> 类型的轮询缓冲字段！
+//    如果需要缓冲，请使用 tokio channel（mpsc/oneshot），不要用 Mutex + 轮询。
 // ---------------------------------------------------------------------------
 
 struct PhysicsReaderCallback {
-    rx: Arc<Mutex<Option<Vec<u8>>>>,
+    response_tx: Arc<Mutex<Option<oneshot::Sender<Vec<u8>>>>>,
 }
+
+// 编译期断言：确保 response_tx 不包含数据缓冲，防止回归到轮询模式。
+// 如果有人在 PhysicsReaderCallback 中添加了 Vec<u8> 或类似缓冲字段，
+// 请检查此断言并重新评估死锁风险。
+const _: () = {
+    assert!(
+        std::mem::size_of::<PhysicsReaderCallback>()
+            == std::mem::size_of::<Arc<Mutex<Option<oneshot::Sender<Vec<u8>>>>>>(),
+        "PhysicsReaderCallback must only contain the oneshot sender \
+         (no polling buffers). See deadlock-prevention comment above."
+    );
+};
 
 impl PhysicsReaderCallback {
     fn new() -> Self {
         Self {
-            rx: Arc::new(Mutex::new(None)),
-        }
-    }
-
-    async fn wait(&self) -> Result<Vec<u8>, String> {
-        let start = tokio::time::Instant::now();
-        let timeout = tokio::time::Duration::from_secs(30);
-        loop {
-            {
-                let mut guard = self.rx.lock().await;
-                if let Some(data) = guard.take() {
-                    return Ok(data);
-                }
-            }
-            if start.elapsed() > timeout {
-                return Err("timeout after 30s".to_string());
-            }
-            tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
+            response_tx: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -138,8 +146,10 @@ impl PhysicsReaderCallback {
 #[async_trait::async_trait]
 impl NetReaderCallback for PhysicsReaderCallback {
     async fn cb(&mut self, data: Vec<u8>) {
-        let mut guard = self.rx.lock().await;
-        *guard = Some(data);
+        let mut guard = self.response_tx.lock().await;
+        if let Some(tx) = guard.take() {
+            let _ = tx.send(data);
+        }
     }
 }
 
@@ -153,7 +163,7 @@ impl NetReaderCallback for PhysicsReaderCallback {
 /// `physics_editor_server.py` 通信（RPC 数组协议）。
 pub struct PhysicsClient {
     writer: Mutex<Box<dyn NetWriter + Send>>,
-    callback: Arc<Mutex<PhysicsReaderCallback>>,
+    response_tx: Arc<Mutex<Option<oneshot::Sender<Vec<u8>>>>>,
     reader_join: tokio::task::JoinHandle<()>,
 }
 
@@ -165,16 +175,15 @@ impl PhysicsClient {
             .map_err(|e| format!("TcpConnect failed: {e}"))?;
 
         let callback = PhysicsReaderCallback::new();
+        let response_tx = callback.response_tx.clone();
         let cb: Arc<Mutex<Box<dyn NetReaderCallback + Send + 'static>>> =
-            Arc::new(Mutex::new(Box::new(PhysicsReaderCallback {
-                rx: callback.rx.clone(),
-            })));
+            Arc::new(Mutex::new(Box::new(callback)));
 
         let reader_join = reader.start(cb);
 
         Ok(Self {
             writer: Mutex::new(Box::new(writer)),
-            callback: Arc::new(Mutex::new(callback)),
+            response_tx,
             reader_join,
         })
     }
@@ -189,13 +198,25 @@ impl PhysicsClient {
         let body =
             rmp_serde::to_vec(&request).map_err(|e| format!("encode request: {e}"))?;
 
-        {
-            let mut writer = self.writer.lock().await;
-            writer.send(&body).await;
-        }
+        // 持锁期间注册 oneshot channel 并发送请求，保证并发安全。
+        let rx = {
+            let mut tx_guard = self.response_tx.lock().await;
+            let (tx, rx) = oneshot::channel();
+            *tx_guard = Some(tx);
 
-        let resp = self.callback.lock().await.wait().await?;
-        Ok(resp)
+            {
+                let mut writer = self.writer.lock().await;
+                writer.send(&body).await;
+            }
+            rx
+        };
+        // 锁已释放，等待响应（不持有任何锁）。
+        let timeout = tokio::time::Duration::from_secs(30);
+        match tokio::time::timeout(timeout, rx).await {
+            Ok(Ok(data)) => Ok(data),
+            Ok(Err(_)) => Err("response channel closed".to_string()),
+            Err(_) => Err("timeout after 30s".to_string()),
+        }
     }
 
     // ---- 便捷方法 ----
@@ -294,5 +315,83 @@ impl PhysicsClient {
 impl Drop for PhysicsClient {
     fn drop(&mut self) {
         self.reader_join.abort();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 测试
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 编译期不变量：PhysicsReaderCallback 仅含 oneshot sender，无轮询缓冲。
+    /// 若有人误加了 Arc<Mutex<Vec<u8>>> 等字段，此测试将编译失败。
+    #[test]
+    fn callback_has_no_polling_buffer() {
+        assert_eq!(
+            std::mem::size_of::<PhysicsReaderCallback>(),
+            std::mem::size_of::<Arc<Mutex<Option<oneshot::Sender<Vec<u8>>>>>>(),
+            "PhysicsReaderCallback must not contain polling buffers"
+        );
+    }
+
+    /// 模拟完整的请求-响应流程：
+    /// 1. call() 注册 oneshot sender 并释放锁
+    /// 2. cb() 获取锁，通过 sender 发送数据
+    /// 3. call() 在锁外 await receiver，无死锁
+    #[tokio::test]
+    async fn oneshot_roundtrip_no_deadlock() {
+        let callback = PhysicsReaderCallback::new();
+        let response_tx = callback.response_tx.clone();
+
+        // 模拟 call() 中注册 sender 的逻辑
+        let rx = {
+            let mut tx_guard = response_tx.lock().await;
+            let (tx, rx) = oneshot::channel();
+            *tx_guard = Some(tx);
+            rx
+            // tx_guard 在此处 drop，锁已释放
+        };
+
+        // 模拟 cb() 回调（在另一个任务中，获取同一把锁）
+        let cb_task = {
+            let tx = callback.response_tx.clone();
+            tokio::spawn(async move {
+                // 模拟网络延迟
+                tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
+                let mut guard = tx.lock().await;
+                if let Some(sender) = guard.take() {
+                    let _ = sender.send(b"response_data".to_vec());
+                }
+            })
+        };
+
+        // 模拟 call() 中在锁外 await 响应的逻辑
+        let result = tokio::time::timeout(tokio::time::Duration::from_secs(5), rx).await;
+        assert!(result.is_ok(), "should not timeout");
+        let data = result.unwrap().unwrap();
+        assert_eq!(data, b"response_data");
+
+        cb_task.await.unwrap();
+    }
+
+    /// 验证 cb() 在 sender 已被消费后再次调用不会 panic（幂等性）。
+    #[tokio::test]
+    async fn cb_without_pending_request_is_noop() {
+        let mut callback = PhysicsReaderCallback::new();
+        // 没有注册 sender 时，cb 应该静默忽略
+        callback.cb(b"orphan_data".to_vec()).await;
+    }
+
+    /// 验证超时路径：sender 被 drop 时 receiver 收到 RecvError。
+    #[tokio::test]
+    async fn closed_channel_returns_error() {
+        let (_tx, rx) = oneshot::channel::<Vec<u8>>();
+        drop(_tx); // 模拟 sender 被 drop
+        let result = tokio::time::timeout(tokio::time::Duration::from_millis(100), rx).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_err(), "closed channel should return RecvError");
     }
 }

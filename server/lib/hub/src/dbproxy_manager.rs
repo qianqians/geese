@@ -22,6 +22,9 @@ use crate::hub_service_manager::StdMutex;
 use crate::dbproxy_msg_handle::DBCallbackMsgHandle;
 use crate::conn_manager::ConnManager;
 
+/// DBProxy Thrift 序列化缓冲区容量（16MB，数据库消息可能包含批量数据）
+const DB_THRIFT_BUFFER_CAPACITY: usize = 16_777_216;
+
 pub async fn entry_dbproxy_service(
     _dbproxy_msg_handle: Arc<StdMutex<DBCallbackMsgHandle>>, 
     _conn_mgr: Arc<Mutex<ConnManager>>,
@@ -104,7 +107,7 @@ impl DBProxyProxy {
 
     pub async fn send_db_msg(&mut self, msg: DbEvent) -> bool {
         trace!("DBProxyProxy send_db_msg begin!");
-        let t = TBufferChannel::with_capacity(0, 16777216);
+        let t = TBufferChannel::with_capacity(0, DB_THRIFT_BUFFER_CAPACITY);
         let (rd, wr) = match t.split() {
             Ok(_t) => (_t.0, _t.1),
             Err(_e) => {
@@ -113,7 +116,10 @@ impl DBProxyProxy {
             }
         };
         let mut o_prot = TCompactOutputProtocol::new(wr);
-        let _ = DbEvent::write_to_out_protocol(&msg, &mut o_prot);
+        if let Err(e) = DbEvent::write_to_out_protocol(&msg, &mut o_prot) {
+            error!("Failed to serialize Thrift message in send_db_msg: {}", e);
+            return false;
+        }
         let mut p_send = self.wr.as_ref().lock().await;
         trace!("DBProxyProxy send_db_msg p_send lock!");
         p_send.send(&rd.write_bytes()).await

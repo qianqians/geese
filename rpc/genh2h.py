@@ -40,11 +40,14 @@ def gen(lang, inputdir, commondir, outputdir):
             code += gen.genmodule(pretreatment)
             code += "\n"
 
-            file = open(outputdir + '//' + pretreatment.name + "_svr.py", 'w')
+            file = open(os.path.join(outputdir, pretreatment.name + "_svr.py"), 'w')
             file.write(code)
             file.close()
 
 if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        print(f"Usage: {sys.argv[0]} <lang> <inputdir> [commondir] <outputdir>")
+        sys.exit(1)
     if len(sys.argv) == 5:
         gen(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4])
     else:

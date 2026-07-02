@@ -111,9 +111,9 @@ pub async fn entry_hub_service(_conn_mgr: Arc<Mutex<ConnManager>>, _service_name
             let _redis_service = _conn_mgr_handle.get_redis_service();
             let mut _service = _redis_service.as_ref().lock().await;
             let lock_key = create_lock_key(_conn_mgr_handle.get_gate_name(), service.id.clone());
-            let value = _service.acquire_lock(lock_key.clone(), 3).await;
+            let value = _service.acquire_lock(lock_key.clone(), 3, None).await.unwrap_or_default();
             if let Some(_hubproxy) = _conn_mgr_handle.get_hub_proxy(&service.id) {
-                let _ = _service.release_lock(lock_key.clone(), value.clone()).await;
+                let _ = _service.release_lock(lock_key.clone(), value.clone(), None).await;
                 return Some(_hubproxy.clone())
             }
 

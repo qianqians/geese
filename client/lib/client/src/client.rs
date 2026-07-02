@@ -94,7 +94,7 @@ impl GateMsgHandle {
     }
 
     fn enque_event(&mut self, ev: ConnEvent) {
-        self.queue.enque(Box::new(ev))
+        let _ = self.queue.enque(Box::new(ev));
     }
 
     pub fn on_event(_proxy: Arc<StdMutex<GateProxy>>, data: Vec<u8>) {

@@ -9,19 +9,23 @@ use futures_util::stream::{SplitSink, SplitStream};
 use tokio_tungstenite::{WebSocketStream, MaybeTlsStream};
 use tokio_tungstenite::tungstenite::Message;
 use async_trait::async_trait;
-use tracing::{trace, info, error};
+use tracing::{trace, info, error, warn};
 
 use net::{NetReaderCallback, NetWriter, NetReader, NetPack};
 
+pub type WssSink = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
+
 pub struct WSSReader {
-    s: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>
+    s: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
+    writer: Arc<Mutex<WssSink>>,
 }
 
 
 impl WSSReader {
-    pub fn new(_s: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>) -> WSSReader {
+    pub fn new(_s: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>, writer: Arc<Mutex<WssSink>>) -> WSSReader {
         WSSReader { 
-            s: _s
+            s: _s,
+            writer,
         }
     }
 }
@@ -58,8 +62,13 @@ impl NetReader for WSSReader {
                             error!("network Close!");
                             return;
                         },
-                        Message::Ping(_) => {
+                        Message::Ping(data) => {
                             info!("ping");
+                            let writer = _p.writer.clone();
+                            let mut w = writer.lock().await;
+                            if let Err(e) = w.send(Message::Pong(data)).await {
+                                warn!("Failed to send Pong: {}", e);
+                            }
                         },
                         Message::Binary(buf) => {
                             net_pack.input(&buf[..]);
@@ -77,13 +86,13 @@ impl NetReader for WSSReader {
 }
 
 pub struct WSSWriter {
-    s: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>
+    s: Arc<Mutex<WssSink>>,
 }
 
 impl WSSWriter {
-    pub fn new(_s: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>) -> WSSWriter {
+    pub fn new(_s: Arc<Mutex<WssSink>>) -> WSSWriter {
         WSSWriter{
-            s: _s
+            s: _s,
         }
     }
 }
@@ -105,7 +114,8 @@ impl NetWriter for WSSWriter {
         tmp_buf.extend_from_slice(buf);
 
         let msg = Message::Binary(tmp_buf);
-        match self.s.send(msg).await {
+        let mut sink = self.s.lock().await;
+        match sink.send(msg).await {
             Ok(_) => {
                 return true;
             },
@@ -117,6 +127,7 @@ impl NetWriter for WSSWriter {
     }
 
     async fn close(&mut self) {
-        let _ = self.s.close().await;
+        let mut sink = self.s.lock().await;
+        let _ = sink.close().await;
     }
 }

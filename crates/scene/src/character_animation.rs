@@ -4,7 +4,7 @@
 //! 根据角色移动速度和着地状态在 Idle/Walk/Run/Jump/Fall 之间切换。
 
 use avatar::{
-    ActiveAnimation, AnimationClip, AnimationState, AnimationStateMachine,
+    ActiveAnimation, AnimationClip, AnimationEvent, AnimationState, AnimationStateMachine,
     BlendTree, Transition, TransitionCondition,
 };
 
@@ -293,6 +293,11 @@ impl CharacterAnimationGraph {
         self.machine.update(dt, clips)
     }
 
+    /// 消费并返回内部状态机本帧积累的动画事件。
+    pub fn drain_events(&mut self) -> Vec<AnimationEvent> {
+        self.machine.drain_events()
+    }
+
     /// 获取内部状态机引用。
     pub fn machine(&self) -> &AnimationStateMachine {
         &self.machine
@@ -307,10 +312,6 @@ impl CharacterAnimationGraph {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use avatar::AnimatedProperty;
-    use avatar::AnimationChannel;
-    use avatar::AnimationOutputs;
-    use avatar::Interpolation;
 
     fn make_dummy_clip(name: &str, duration: f32) -> AnimationClip {
         AnimationClip {
@@ -334,11 +335,11 @@ mod tests {
         ];
 
         // 初始速度 0 → Idle
-        let active = graph.update(0.0, 0.0, true, 0.1, &clips);
+        let _active = graph.update(0.0, 0.0, true, 0.1, &clips);
         assert_eq!(graph.machine.current_state(), state_names::IDLE);
 
         // 速度进入 Walk 区间
-        let active = graph.update(1.0, 0.0, true, 0.3, &clips);
+        let _active = graph.update(1.0, 0.0, true, 0.3, &clips);
         // 应该正在切换或已切换到 Walk
         let state = graph.machine.current_state();
         assert!(

@@ -51,7 +51,7 @@ fn scan_gltf_dependencies(
     let content = match std::fs::read_to_string(asset_path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("[dep_scan] Cannot read GLTF {}: {e}", asset_path.display());
+            log::warn!("[dep_scan] Cannot read GLTF {}: {e}", asset_path.display());
             return Vec::new();
         }
     };
@@ -59,7 +59,7 @@ fn scan_gltf_dependencies(
     let json: serde_json::Value = match serde_json::from_str(&content) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("[dep_scan] Cannot parse GLTF {}: {e}", asset_path.display());
+            log::warn!("[dep_scan] Cannot parse GLTF {}: {e}", asset_path.display());
             return Vec::new();
         }
     };
@@ -107,7 +107,7 @@ fn scan_scene_json_dependencies(
     let content = match std::fs::read_to_string(asset_path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("[dep_scan] Cannot read scene json {}: {e}", asset_path.display());
+            log::warn!("[dep_scan] Cannot read scene json {}: {e}", asset_path.display());
             return Vec::new();
         }
     };
@@ -115,7 +115,7 @@ fn scan_scene_json_dependencies(
     let json: serde_json::Value = match serde_json::from_str(&content) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("[dep_scan] Cannot parse scene json {}: {e}", asset_path.display());
+            log::warn!("[dep_scan] Cannot parse scene json {}: {e}", asset_path.display());
             return Vec::new();
         }
     };
@@ -145,7 +145,7 @@ fn scan_prefab_json_dependencies(
     let content = match std::fs::read_to_string(asset_path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("[dep_scan] Cannot read prefab json {}: {e}", asset_path.display());
+            log::warn!("[dep_scan] Cannot read prefab json {}: {e}", asset_path.display());
             return Vec::new();
         }
     };
@@ -153,7 +153,7 @@ fn scan_prefab_json_dependencies(
     let json: serde_json::Value = match serde_json::from_str(&content) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("[dep_scan] Cannot parse prefab json {}: {e}", asset_path.display());
+            log::warn!("[dep_scan] Cannot parse prefab json {}: {e}", asset_path.display());
             return Vec::new();
         }
     };
@@ -191,7 +191,7 @@ fn scan_avatar_json_dependencies(
     let content = match std::fs::read_to_string(asset_path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("[dep_scan] Cannot read avatar json {}: {e}", asset_path.display());
+            log::warn!("[dep_scan] Cannot read avatar json {}: {e}", asset_path.display());
             return Vec::new();
         }
     };
@@ -199,7 +199,7 @@ fn scan_avatar_json_dependencies(
     let json: serde_json::Value = match serde_json::from_str(&content) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("[dep_scan] Cannot parse avatar json {}: {e}", asset_path.display());
+            log::warn!("[dep_scan] Cannot parse avatar json {}: {e}", asset_path.display());
             return Vec::new();
         }
     };

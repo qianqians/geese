@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::thread;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -128,7 +127,7 @@ impl GateServer {
         let _rs = _redis_service.clone();
         {
             let mut _r = _rs.as_ref().lock().await;
-            let _ = _r.set(create_host_cache_key(gate_name.clone()), gate_hub_host.clone(), 10);
+            let _ = _r.set(create_host_cache_key(gate_name.clone()), gate_hub_host.clone(), 10, None).await;
         }
 
         let conn_mgr_clone_for_poll = _conn_mgr_clone.clone();
@@ -185,7 +184,7 @@ impl GateServer {
             }
 
             if tick < 33 {
-                thread::sleep(Duration::from_millis((33 - tick) as u64));
+                tokio::time::sleep(Duration::from_millis((33 - tick) as u64)).await;
                 let mut _health = self.health.as_ref().lock().await;
                 _health.set_health_status(true);
             }
@@ -197,7 +196,7 @@ impl GateServer {
             if (self.get_utc_unix_time_with_offset().await - flush_gate_key_time) > 1000 * 10 {
                 flush_gate_key_time = self.get_utc_unix_time_with_offset().await;
                 let mut _r = self.redis.as_ref().lock().await;
-                let _ = _r.expire(self.gate_name.clone(), 10).await;
+                let _ = _r.expire(self.gate_name.clone(), 10, None).await;
             }
         }
     }

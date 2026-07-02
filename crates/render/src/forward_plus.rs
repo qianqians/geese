@@ -2,8 +2,10 @@ use wgpu::util::DeviceExt;
 
 use crate::cluster::{ClusterUniform, TOTAL_CLUSTERS};
 use crate::common::{
-    create_sampler, identity_matrix, joint_uniforms, maybe_upload, CameraUniform,
-    DefaultTextures, GpuVertex, MaterialUniform, ObjectUniform, WgpuRenderCommand, WgpuRenderQueue,
+    compute_mesh_key, create_sampler, identity_matrix, joint_uniforms, upload_texture,
+    CameraUniform, CachedEntityResources, CachedMeshBuffers, CachedTexture, DefaultTextures,
+    GpuResourceCache, GpuVertex, MaterialUniform, ObjectUniform, WgpuRenderCommand,
+    WgpuRenderQueue,
 };
 use crate::light::{Light, LightStorage};
 use crate::pipeline::{RenderingPath, ScenePipeline, ScenePipelineDescriptor};
@@ -38,6 +40,7 @@ pub struct ForwardPlusPipeline {
 
     default_textures: DefaultTextures,
     prepared: WgpuRenderQueue,
+    cache: GpuResourceCache,
 }
 
 impl ForwardPlusPipeline {
@@ -257,6 +260,7 @@ impl ForwardPlusPipeline {
             culling_pipeline,
             default_textures,
             prepared: WgpuRenderQueue::default(),
+            cache: GpuResourceCache::new(),
         }
     }
 
@@ -325,6 +329,7 @@ impl ScenePipeline for ForwardPlusPipeline {
                     &self.material_bind_group_layout,
                     &self.object_bind_group_layout,
                     &self.default_textures,
+                    &mut self.cache,
                 )
             })
             .collect();
@@ -351,7 +356,13 @@ impl ScenePipeline for ForwardPlusPipeline {
         }
 
         // ---- forward render pass ----
-        let depth = depth_target.expect("forward+ requires depth target");
+        let depth = match depth_target {
+            Some(t) => t,
+            None => {
+                log::error!("[render] Missing depth target, skipping forward+ render pass");
+                return;
+            }
+        };
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("forward+ render pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -382,10 +393,14 @@ impl ScenePipeline for ForwardPlusPipeline {
         pass.set_pipeline(&self.forward_pipeline);
         pass.set_bind_group(0, &self.frame_bind_group, &[]);
         for command in &self.prepared.commands {
+            let mesh = match self.cache.mesh_buffers.get(&command.mesh_key) {
+                Some(m) => m,
+                None => continue,
+            };
             pass.set_bind_group(1, &command.material_bind_group, &[]);
             pass.set_bind_group(2, &command.object_bind_group, &[]);
-            pass.set_vertex_buffer(0, command.vertex_buffer.slice(..));
-            pass.set_index_buffer(command.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+            pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             pass.draw_indexed(0..command.index_count, 0, 0..1);
         }
     }
@@ -469,79 +484,247 @@ pub(crate) fn build_command(
     material_layout: &wgpu::BindGroupLayout,
     object_layout: &wgpu::BindGroupLayout,
     defaults: &DefaultTextures,
+    cache: &mut GpuResourceCache,
 ) -> WgpuRenderCommand {
-    let vertices: Vec<_> = command.mesh.vertices.iter().map(GpuVertex::from).collect();
-    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("scene vertex buffer"),
-        contents: bytemuck::cast_slice(&vertices),
-        usage: wgpu::BufferUsages::VERTEX,
-    });
-    let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("scene index buffer"),
-        contents: bytemuck::cast_slice(&command.mesh.indices),
-        usage: wgpu::BufferUsages::INDEX,
-    });
+    let mesh_key = compute_mesh_key(command.mesh);
+    let index_count = command.mesh.indices.len() as u32;
+    let entity_id = command.entity_id.to_string();
 
+    // ---- 1. Mesh buffers (vertex + index) ----
+    if !cache.mesh_buffers.contains_key(&mesh_key) {
+        let vertices: Vec<_> = command.mesh.vertices.iter().map(GpuVertex::from).collect();
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("cached vertex buffer"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("cached index buffer"),
+            contents: bytemuck::cast_slice(&command.mesh.indices),
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+        });
+        cache.mesh_buffers.insert(
+            mesh_key,
+            CachedMeshBuffers {
+                vertex_buffer,
+                index_buffer,
+            },
+        );
+    } else {
+        let mesh_buf = cache.mesh_buffers.get(&mesh_key).unwrap();
+        let vertices: Vec<_> = command.mesh.vertices.iter().map(GpuVertex::from).collect();
+        queue.write_buffer(&mesh_buf.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
+        queue.write_buffer(
+            &mesh_buf.index_buffer,
+            0,
+            bytemuck::cast_slice(&command.mesh.indices),
+        );
+    }
+
+    // ---- 2. Textures ----
     let has_tangent_uv = command.mesh.flags.has_tangents && command.mesh.flags.has_uv0;
-    let mat_uniform = MaterialUniform::from_material(command.material, has_tangent_uv);
-    let material_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("scene material buffer"),
-        contents: bytemuck::bytes_of(&mat_uniform),
-        usage: wgpu::BufferUsages::UNIFORM,
-    });
-
-    let base_color = maybe_upload(device, queue, materials, command.material.base_color_texture);
-    let mr = maybe_upload(
-        device,
-        queue,
-        materials,
-        command.material.metallic_roughness_texture,
-    );
     let normal_handle = if has_tangent_uv {
         command.material.normal_texture
     } else {
         None
     };
-    let normal = maybe_upload(device, queue, materials, normal_handle);
-    let occlusion = maybe_upload(device, queue, materials, command.material.occlusion_texture);
-    let emissive = maybe_upload(device, queue, materials, command.material.emissive_texture);
+    let tex_handles: [Option<crate::TextureHandle>; 5] = [
+        command.material.base_color_texture,
+        command.material.metallic_roughness_texture,
+        normal_handle,
+        command.material.occlusion_texture,
+        command.material.emissive_texture,
+    ];
 
-    // 自定义 sampler：取 base_color 的 sampler，缺省回退到 default
-    let sampler = command
-        .material
-        .base_color_texture
-        .and_then(|h| materials.texture(h))
-        .map(|tex| create_sampler(device, tex));
-    let sampler_ref: &wgpu::Sampler = sampler.as_ref().unwrap_or(&defaults.sampler);
+    // 确保所有需要的纹理都在缓存中
+    for handle in tex_handles.iter().copied().flatten() {
+        let idx = handle.0;
+        if !cache.textures.contains_key(&idx) {
+            if let Some(texture) = materials.texture(handle) {
+                let uploaded = upload_texture(device, queue, texture);
+                let view = uploaded.create_view(&wgpu::TextureViewDescriptor::default());
+                let sampler = create_sampler(device, texture);
+                cache.textures.insert(
+                    idx,
+                    CachedTexture {
+                        texture: uploaded,
+                        view,
+                        sampler,
+                    },
+                );
+            }
+        }
+    }
 
-    let base_view = base_color
-        .as_ref()
-        .map(|u| &u.view)
-        .unwrap_or(&defaults.white_view);
-    let mr_view = mr
-        .as_ref()
-        .map(|u| &u.view)
-        .unwrap_or(&defaults.metallic_roughness_view);
-    let normal_view = normal
-        .as_ref()
-        .map(|u| &u.view)
-        .unwrap_or(&defaults.normal_view);
-    let occlusion_view = occlusion
-        .as_ref()
-        .map(|u| &u.view)
-        .unwrap_or(&defaults.occlusion_view);
-    let emissive_view = emissive
-        .as_ref()
-        .map(|u| &u.view)
-        .unwrap_or(&defaults.black_view);
+    // 从缓存获取纹理 view 和 sampler
+    macro_rules! get_tex_view {
+        ($handle:expr, $default:expr) => {
+            $handle
+                .and_then(|h| cache.textures.get(&h.0))
+                .map(|t| &t.view)
+                .unwrap_or($default)
+        };
+    }
+    let base_view = get_tex_view!(tex_handles[0], &defaults.white_view);
+    let mr_view = get_tex_view!(tex_handles[1], &defaults.metallic_roughness_view);
+    let normal_view = get_tex_view!(tex_handles[2], &defaults.normal_view);
+    let occlusion_view = get_tex_view!(tex_handles[3], &defaults.occlusion_view);
+    let emissive_view = get_tex_view!(tex_handles[4], &defaults.black_view);
 
+    let sampler_ref = tex_handles[0]
+        .and_then(|h| cache.textures.get(&h.0))
+        .map(|t| &t.sampler)
+        .unwrap_or(&defaults.sampler);
+
+    // ---- 3. Material & Object uniform ----
+    let mat_uniform = MaterialUniform::from_material(command.material, has_tangent_uv);
+    let obj_uniform = ObjectUniform {
+        model: command.model_matrix,
+        normal: command.normal_matrix,
+        skin: [command.mesh.flags.has_skin as u32, 0, 0, 0],
+        joints: joint_uniforms(command.joint_matrices),
+    };
+
+    // ---- 4. Entity resources (material/object buffer + bind groups) ----
+    let tex_handle_indices: [Option<usize>; 5] = [
+        tex_handles[0].map(|h| h.0),
+        tex_handles[1].map(|h| h.0),
+        tex_handles[2].map(|h| h.0),
+        tex_handles[3].map(|h| h.0),
+        tex_handles[4].map(|h| h.0),
+    ];
+
+    let needs_material_bg_rebuild = cache
+        .entity_resources
+        .get(&entity_id)
+        .map(|r| r.tex_handles != tex_handle_indices || r.has_tangent_uv != has_tangent_uv)
+        .unwrap_or(true);
+
+    if !cache.entity_resources.contains_key(&entity_id) {
+        // 首次创建 entity 资源
+        let material_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("cached material buffer"),
+            contents: bytemuck::bytes_of(&mat_uniform),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let object_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("cached object buffer"),
+            contents: bytemuck::bytes_of(&obj_uniform),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let material_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("cached material bind group"),
+            layout: material_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: material_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(base_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(mr_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(normal_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(occlusion_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(emissive_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::Sampler(sampler_ref),
+                },
+            ],
+        });
+        let object_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("cached object bind group"),
+            layout: object_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: object_buffer.as_entire_binding(),
+            }],
+        });
+        cache.entity_resources.insert(
+            entity_id.clone(),
+            CachedEntityResources {
+                material_buffer,
+                object_buffer,
+                material_bind_group,
+                object_bind_group,
+                tex_handles: tex_handle_indices,
+                has_tangent_uv,
+            },
+        );
+    } else {
+        // 更新已有 entity 资源
+        let res = cache.entity_resources.get(&entity_id).unwrap();
+        queue.write_buffer(&res.material_buffer, 0, bytemuck::bytes_of(&mat_uniform));
+        queue.write_buffer(&res.object_buffer, 0, bytemuck::bytes_of(&obj_uniform));
+
+        if needs_material_bg_rebuild {
+            let material_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("cached material bind group"),
+                layout: material_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: res.material_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(base_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(mr_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(normal_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(occlusion_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::TextureView(emissive_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 6,
+                        resource: wgpu::BindingResource::Sampler(sampler_ref),
+                    },
+                ],
+            });
+            let res = cache.entity_resources.get_mut(&entity_id).unwrap();
+            res.material_bind_group = material_bind_group;
+            res.tex_handles = tex_handle_indices;
+            res.has_tangent_uv = has_tangent_uv;
+        }
+    }
+
+    // ---- 5. 构建 bind group 引用 ----
+    let res = cache.entity_resources.get(&entity_id).unwrap();
+
+    // Bind group 是 wgpu 内部引用计数资源，可以通过 create_bind_group 的返回值安全地
+    // 独立存在，不受缓存借用生命周期的约束。但为了简单起见，这里每帧重建 bind group。
     let material_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("scene material bind group"),
+        label: Some("frame material bind group"),
         layout: material_layout,
         entries: &[
             wgpu::BindGroupEntry {
                 binding: 0,
-                resource: material_buffer.as_entire_binding(),
+                resource: res.material_buffer.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 1,
@@ -569,47 +752,23 @@ pub(crate) fn build_command(
             },
         ],
     });
-
-    let object_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("scene object buffer"),
-        contents: bytemuck::bytes_of(&ObjectUniform {
-            model: command.model_matrix,
-            normal: command.normal_matrix,
-            skin: [command.mesh.flags.has_skin as u32, 0, 0, 0],
-            joints: joint_uniforms(command.joint_matrices),
-        }),
-        usage: wgpu::BufferUsages::UNIFORM,
-    });
     let object_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("scene object bind group"),
+        label: Some("frame object bind group"),
         layout: object_layout,
         entries: &[wgpu::BindGroupEntry {
             binding: 0,
-            resource: object_buffer.as_entire_binding(),
+            resource: res.object_buffer.as_entire_binding(),
         }],
     });
-
-    // 收集本帧上传的纹理资源以维持生命周期
-    let mut uploaded_textures = Vec::new();
-    let mut uploaded_views = Vec::new();
-    for slot in [base_color, mr, normal, occlusion, emissive].into_iter().flatten() {
-        uploaded_textures.push(slot.texture);
-        uploaded_views.push(slot.view);
-    }
 
     // 抑制未用变量警告
     let _ = identity_matrix;
 
     WgpuRenderCommand {
-        entity_id: command.entity_id.to_string(),
-        vertex_buffer,
-        index_buffer,
-        index_count: command.mesh.indices.len() as u32,
-        material_buffer,
+        entity_id,
+        mesh_key,
+        index_count,
         material_bind_group,
-        object_buffer,
         object_bind_group,
-        uploaded_textures,
-        uploaded_views,
     }
 }

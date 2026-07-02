@@ -178,32 +178,56 @@ impl RedisService {
         }
     }
 
-    pub async fn acquire_lock(&mut self, lock_key: String, timeout: usize) -> String {
+    pub async fn acquire_lock(&mut self, lock_key: String, timeout: usize, max_retries: Option<usize>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let value = Uuid::new_v4().to_string();
+        let max = max_retries.unwrap_or(100);
+        let mut attempts = 0;
         loop {
             let _c = self.conn.clone();
             let mut conn_ref = _c.as_ref().lock().await;
-            match conn_ref.set_nx(lock_key.clone(), value.clone()) {
-                Ok(ret) => {
-                    if ret {
-                        break;
-                    }
+            // Atomic SET key value EX timeout NX
+            let result: Result<Option<String>, RedisError> = redis::cmd("SET")
+                .arg(&lock_key)
+                .arg(&value)
+                .arg("EX")
+                .arg(timeout)
+                .arg("NX")
+                .query(&mut *conn_ref);
+            match result {
+                Ok(Some(_)) => {
+                    return Ok(value);
+                },
+                Ok(None) => {
+                    // Lock already held by another, retry
                 },
                 Err(_) => {
                     if let Ok(conn) = self.client.blocking_lock().get_connection() {
                         self.conn = Arc::new(Mutex::new(conn));
                     }
                 }
-            } 
+            }
+            attempts += 1;
+            if attempts >= max {
+                return Err("Redis acquire_lock timed out after max retries".into());
+            }
             tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
         }
+    }
+
+    pub async fn release_lock(&mut self, lock_key: String, value: String, max_retries: Option<usize>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let max = max_retries.unwrap_or(100);
+        let mut attempts = 0;
         loop {
             let _c = self.conn.clone();
             let mut conn_ref = _c.as_ref().lock().await;
-            let ret: Result<(), RedisError> = conn_ref.expire(lock_key.clone(), timeout as i64);
-            match ret {
+            // Atomic compare-and-delete via Lua script
+            let script = redis::Script::new(
+                "if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('del',KEYS[1]) else return 0 end"
+            );
+            let result: Result<i32, RedisError> = script.key(&lock_key).arg(&value).invoke(&mut *conn_ref);
+            match result {
                 Ok(_) => {
-                    break;
+                    return Ok(());
                 },
                 Err(_) => {
                     if let Ok(conn) = self.client.blocking_lock().get_connection() {
@@ -211,50 +235,24 @@ impl RedisService {
                     }
                 }
             }
-            tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
-        }
-        return value;
-    }
-
-    pub async fn release_lock(&mut self, lock_key: String, value: String) {
-        loop {
-            let _c = self.conn.clone();
-            let mut conn_ref = _c.as_ref().lock().await;
-            let v: Result<String, RedisError> = conn_ref.get(lock_key.clone());
-            match v {
-                Ok(_old_value) =>  {
-                    if _old_value == value {
-                        let ret: Result<(), RedisError> = conn_ref.del(lock_key.clone());
-                        match ret {
-                            Ok(_) => {
-                                break;
-                            },
-                            Err(_) => {
-                                if let Ok(conn) = self.client.blocking_lock().get_connection() {
-                                    self.conn = Arc::new(Mutex::new(conn));
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(_) => {
-                    if let Ok(conn) = self.client.blocking_lock().get_connection() {
-                        self.conn = Arc::new(Mutex::new(conn));
-                    }
-                }
+            attempts += 1;
+            if attempts >= max {
+                return Err("Redis release_lock timed out after max retries".into());
             }
             tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
         }
     }
 
-    pub async fn set(&mut self, key: String, value: String, timeout:usize) {
+    pub async fn set(&mut self, key: String, value: String, timeout: usize, max_retries: Option<usize>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let max = max_retries.unwrap_or(100);
+        let mut attempts = 0;
         loop {
             let _c = self.conn.clone();
             let mut conn_ref = _c.as_ref().lock().await;
             let ret: Result<(), RedisError> = conn_ref.set_ex(key.clone(), value.clone(), timeout as u64);
             match ret {
                 Ok(_) => {
-                    break;
+                    return Ok(());
                 },
                 Err(_) => {
                     if let Ok(conn) = self.client.blocking_lock().get_connection() {
@@ -262,34 +260,46 @@ impl RedisService {
                     }
                 }
             }
+            attempts += 1;
+            if attempts >= max {
+                return Err("Redis set timed out after max retries".into());
+            }
             tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
         }
     }
 
-    pub async fn get(&mut self, key: String) -> String {
+    pub async fn get(&mut self, key: String, max_retries: Option<usize>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let max = max_retries.unwrap_or(100);
+        let mut attempts = 0;
         loop {
             let _c = self.conn.clone();
             let mut conn_ref = _c.as_ref().lock().await;
             match conn_ref.get(key.clone()) {
-                Ok(v) => return v,
+                Ok(v) => return Ok(v),
                 Err(_) => {
                     if let Ok(conn) = self.client.blocking_lock().get_connection() {
                         self.conn = Arc::new(Mutex::new(conn));
                     }
                 }
             }
+            attempts += 1;
+            if attempts >= max {
+                return Err("Redis get timed out after max retries".into());
+            }
             tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
         }
     }
 
-    pub async fn expire(&mut self, key: String, timeout:usize) -> redis::RedisResult<()> {
+    pub async fn expire(&mut self, key: String, timeout: usize, max_retries: Option<usize>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let max = max_retries.unwrap_or(100);
+        let mut attempts = 0;
         loop {
             let _c = self.conn.clone();
             let mut conn_ref = _c.as_ref().lock().await;
             let ret: Result<(), RedisError> = conn_ref.expire(key.clone(), timeout as i64);
             match ret {
                 Ok(_) => {
-                    break;
+                    return Ok(());
                 },
                 Err(_) => {
                     if let Ok(conn) = self.client.blocking_lock().get_connection() {
@@ -297,8 +307,11 @@ impl RedisService {
                     }
                 }
             }
+            attempts += 1;
+            if attempts >= max {
+                return Err("Redis expire timed out after max retries".into());
+            }
             tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
         }
-        Ok(())
     }
 }

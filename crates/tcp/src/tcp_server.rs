@@ -5,7 +5,7 @@ use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use tokio::sync::Mutex;
 use async_trait::async_trait;
-use tracing::{trace, error};
+use tracing::{trace, info, error};
 
 use close_handle::CloseHandle;
 use crate::tcp_socket::{TcpReader, TcpWriter};
@@ -40,7 +40,7 @@ impl TcpServer {
                 }
                 
                 let _s_listen = _listener.accept().await;
-                let (socket, _) = match _s_listen {
+                let (socket, addr) = match _s_listen {
                     Err(e) => {
                         error!("TcpServer listener loop err:{}!", e);
                         continue;
@@ -48,7 +48,7 @@ impl TcpServer {
                     Ok(_s) => _s
                 };
 
-                trace!("tcp accept client ip:{:?}", socket.peer_addr());
+                info!("New TCP connection from: {}", addr);
 
                 let (rd, wr) = io::split(socket);
                 {

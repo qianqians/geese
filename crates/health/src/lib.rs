@@ -7,7 +7,7 @@ use axum::{
     extract::State,
     Router,
 };
-use tracing::info;
+use tracing::{info, error};
 
 pub struct HealthHandle {
     _addr: String,
@@ -31,16 +31,24 @@ impl HealthHandle {
         }
     }
 
-    pub async fn start_health_service(host: String, handle: Arc<Mutex<HealthHandle>>) {
+    pub async fn start_health_service(host: String, handle: Arc<Mutex<HealthHandle>>) -> Result<(), Box<dyn std::error::Error>> {
         let app = Router::new()
             .route("/health", get(HealthHandle::health_handle))
             .with_state(handle.clone());
         
-        let listener = tokio::net::TcpListener::bind(host).await.unwrap();
+        let listener = match tokio::net::TcpListener::bind(host).await {
+            Ok(l) => l,
+            Err(e) => {
+                error!("health service bind failed: {}", e);
+                return Err(Box::new(e));
+            }
+        };
 
-        axum::serve(listener, app.into_make_service())
-            .await
-            .unwrap();
+        if let Err(e) = axum::serve(listener, app.into_make_service()).await {
+            error!("health service error: {}", e);
+            return Err(Box::new(e));
+        }
+        Ok(())
     }
 
     pub fn set_health_status(&mut self, _status: bool) {

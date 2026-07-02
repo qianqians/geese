@@ -33,6 +33,10 @@ export class app {
     private __hub_global_callback__:Map<string, (hub_name:string, data:Uint8Array) => void>;
     
     public constructor() {
+        if (app.instance) {
+            throw new Error("App is a singleton, use App.instance instead of creating new instances");
+        }
+
         this.ctx = null;
         this.client_event_handle = null;
 

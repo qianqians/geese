@@ -8,6 +8,7 @@
 //! 快捷键：Ctrl+Z（撤销）、Ctrl+Shift+Z（重做）
 
 use cgmath::{Point3, Vector3};
+use std::collections::VecDeque;
 
 // ---------------------------------------------------------------------------
 // EditorCommand trait
@@ -357,8 +358,8 @@ impl EditorCommand for ReparentCommand {
 /// - `undo_stack`：可撤销的命令
 /// - `redo_stack`：可重做的命令（当有新命令执行时清空）
 pub struct CommandHistory {
-    /// 可撤销的命令栈
-    undo_stack: Vec<Box<dyn EditorCommand>>,
+    /// 可撤销的命令栈（VecDeque：pop_front 用于 O(1) 限制深度）
+    undo_stack: VecDeque<Box<dyn EditorCommand>>,
     /// 可重做的命令栈
     redo_stack: Vec<Box<dyn EditorCommand>>,
     /// 最大历史深度
@@ -368,7 +369,7 @@ pub struct CommandHistory {
 impl CommandHistory {
     pub fn new(max_depth: usize) -> Self {
         Self {
-            undo_stack: Vec::with_capacity(max_depth),
+            undo_stack: VecDeque::with_capacity(max_depth),
             redo_stack: Vec::new(),
             max_depth,
         }
@@ -383,12 +384,12 @@ impl CommandHistory {
             return false;
         }
 
-        // 限制栈深度
+        // 限制栈深度（VecDeque::pop_front 为 O(1)）
         if self.undo_stack.len() >= self.max_depth {
-            self.undo_stack.remove(0);
+            self.undo_stack.pop_front();
         }
 
-        self.undo_stack.push(command);
+        self.undo_stack.push_back(command);
         self.redo_stack.clear();
         true
     }
@@ -397,7 +398,7 @@ impl CommandHistory {
     ///
     /// 返回描述字符串，若无命令可撤销则返回 None。
     pub fn undo(&mut self) -> Option<String> {
-        let mut command = self.undo_stack.pop()?;
+        let mut command = self.undo_stack.pop_back()?;
         let desc = command.description().to_string();
         let success = command.undo();
         if success {
@@ -405,7 +406,7 @@ impl CommandHistory {
             Some(desc)
         } else {
             // 撤销失败，放回
-            self.undo_stack.push(command);
+            self.undo_stack.push_back(command);
             None
         }
     }
@@ -418,7 +419,7 @@ impl CommandHistory {
         let desc = command.description().to_string();
         let success = command.execute();
         if success {
-            self.undo_stack.push(command);
+            self.undo_stack.push_back(command);
             Some(desc)
         } else {
             self.redo_stack.push(command);
@@ -448,12 +449,12 @@ impl CommandHistory {
 
     /// 弹出最近一条 undo 命令（用于合并连续拖拽操作，不触发 undo 逻辑）。
     pub fn pop_last_undo(&mut self) -> Option<Box<dyn EditorCommand>> {
-        self.undo_stack.pop()
+        self.undo_stack.pop_back()
     }
 
     /// 最近命令的描述。
     pub fn last_undo_description(&self) -> Option<&str> {
-        self.undo_stack.last().map(|c| c.description())
+        self.undo_stack.back().map(|c| c.description())
     }
 
     /// 清空历史。
@@ -664,5 +665,115 @@ mod tests {
         assert_eq!(restored[0].id, "root");
         assert_eq!(restored[1].parent, Some("root".into()));
         assert_eq!(restored[1].position, [1.0, 2.0, 3.0]);
+    }
+
+    // -----------------------------------------------------------------------
+    // 新增 CommandHistory 测试
+    // -----------------------------------------------------------------------
+
+    /// 测试用的简单命令实现
+    struct SimpleCmd {
+        desc: String,
+        executed: bool,
+    }
+    impl SimpleCmd {
+        fn new(desc: &str) -> Self {
+            Self { desc: desc.into(), executed: false }
+        }
+    }
+    impl EditorCommand for SimpleCmd {
+        fn execute(&mut self) -> bool {
+            self.executed = true;
+            true
+        }
+        fn undo(&mut self) -> bool {
+            self.executed = false;
+            true
+        }
+        fn description(&self) -> &str {
+            &self.desc
+        }
+    }
+
+    #[test]
+    fn test_command_history_clear() {
+        let mut history = CommandHistory::new(10);
+        history.execute(Box::new(SimpleCmd::new("A")));
+        history.execute(Box::new(SimpleCmd::new("B")));
+        history.undo();
+
+        assert!(history.can_undo());
+        assert!(history.can_redo());
+
+        history.clear();
+        assert!(!history.can_undo());
+        assert!(!history.can_redo());
+        assert_eq!(history.undo_depth(), 0);
+        assert_eq!(history.redo_depth(), 0);
+    }
+
+    #[test]
+    fn test_command_history_pop_last_undo() {
+        let mut history = CommandHistory::new(10);
+        history.execute(Box::new(SimpleCmd::new("A")));
+        history.execute(Box::new(SimpleCmd::new("B")));
+
+        let popped = history.pop_last_undo();
+        assert!(popped.is_some());
+        assert_eq!(popped.unwrap().description(), "B");
+        assert_eq!(history.undo_depth(), 1);
+        assert_eq!(history.last_undo_description(), Some("A"));
+    }
+
+    #[test]
+    fn test_command_history_undo_empty() {
+        let mut history = CommandHistory::new(10);
+        assert!(!history.can_undo());
+        assert!(!history.can_redo());
+        assert_eq!(history.undo(), None);
+        assert_eq!(history.redo(), None);
+    }
+
+    #[test]
+    fn test_command_history_multiple_undo_redo_cycles() {
+        let mut history = CommandHistory::new(10);
+        history.execute(Box::new(SimpleCmd::new("A")));
+        history.execute(Box::new(SimpleCmd::new("B")));
+        history.execute(Box::new(SimpleCmd::new("C")));
+
+        // 全部撤销
+        assert_eq!(history.undo(), Some("C".into()));
+        assert_eq!(history.undo(), Some("B".into()));
+        assert_eq!(history.undo(), Some("A".into()));
+        assert!(!history.can_undo());
+        assert_eq!(history.redo_depth(), 3);
+
+        // 全部重做
+        assert_eq!(history.redo(), Some("A".into()));
+        assert_eq!(history.redo(), Some("B".into()));
+        assert_eq!(history.redo(), Some("C".into()));
+        assert!(!history.can_redo());
+        assert_eq!(history.undo_depth(), 3);
+    }
+
+    #[test]
+    fn test_command_history_default() {
+        let history = CommandHistory::default();
+        assert_eq!(history.undo_depth(), 0);
+        assert_eq!(history.redo_depth(), 0);
+    }
+
+    #[test]
+    fn test_max_depth_evicts_oldest() {
+        let mut history = CommandHistory::new(2);
+        history.execute(Box::new(SimpleCmd::new("A")));
+        history.execute(Box::new(SimpleCmd::new("B")));
+        history.execute(Box::new(SimpleCmd::new("C")));
+
+        assert_eq!(history.undo_depth(), 2);
+        // 最老的 A 应已被淘汰，undo 应返回 C 然后 B
+        assert_eq!(history.undo(), Some("C".into()));
+        assert_eq!(history.undo(), Some("B".into()));
+        assert!(!history.can_undo());
     }
 }

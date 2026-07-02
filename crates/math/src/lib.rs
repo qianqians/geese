@@ -1,6 +1,9 @@
 use cgmath::{Point3, Vector3, /* Matrix4, InnerSpace, EuclideanSpace, Rad, Deg, PerspectiveFov */};
 
-// 定义轴对齐包围盒
+/// 轴对齐包围盒。
+///
+/// **调用方需保证 `min` 各分量 ≤ `max` 对应分量**，
+/// 本结构不做自动校验或修正。
 #[derive(Debug, Clone, Copy)]
 pub struct AABB {
     pub min: Point3<f32>,

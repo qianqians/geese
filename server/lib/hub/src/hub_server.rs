@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::collections::HashSet;
 
 use tokio::sync::Mutex;
 use tracing::{trace, debug, info, warn, error};
@@ -32,7 +33,8 @@ pub struct HubServer {
     db_msg_handle: Arc<StdMutex<DBCallbackMsgHandle>>,
     conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>,
     consul_impl: Arc<Mutex<ConsulImpl>>,
-    close: Arc<Mutex<CloseHandle>>
+    close: Arc<Mutex<CloseHandle>>,
+    connecting_hubs: Arc<Mutex<HashSet<String>>>,
 }
 
 impl HubServer {
@@ -71,25 +73,19 @@ impl HubServer {
             db_msg_handle: _db_msg_handle,
             conn_msg_handle: _conn_msg_handle,
             consul_impl: _consul_impl,
-            close: _close
+            close: _close,
+            connecting_hubs: Arc::new(Mutex::new(HashSet::new())),
         })
     }
 
     pub fn log(level: String, content: String) {
-        if level == "trace" {
-            trace!(content)
-        }
-        else if level == "debug" {
-            debug!(content)
-        }
-        else if level == "info" {
-            info!(content)
-        }
-        else if level == "warn" {
-            warn!(content)
-        }
-        else if level == "error" {
-            error!(content)
+        match level.as_str() {
+            "trace" => trace!("{}", content),
+            "debug" => debug!("{}", content),
+            "info"  => info!("{}", content),
+            "warn"  => warn!("{}", content),
+            "error" => error!("{}", content),
+            _       => warn!("unknown log level '{}': {}", level, content),
         }
     }
 
@@ -131,7 +127,7 @@ impl HubServer {
         {    
             let _rs = self.hub_redis_service.as_mut().unwrap();
             let mut _r = _rs.as_ref().lock().await;
-            let _ = _r.set(create_host_cache_key(name.clone()), self.hub_host.clone(), 10);
+            let _ = _r.set(create_host_cache_key(name.clone()), self.hub_host.clone(), 10, None).await;
         }
         trace!("listen_hub_service end!");
 
@@ -182,14 +178,14 @@ impl HubServer {
         {
             if let Some(rs) = &self.hub_redis_service {
                 let mut _r = rs.as_ref().lock().await;
-                gate_host = _r.get(create_host_cache_key(_gate_name.clone())).await;
+                gate_host = _r.get(create_host_cache_key(_gate_name.clone()), None).await.unwrap_or_default();
             }
         }
 
         let redis_service = self.hub_redis_service.clone().unwrap();
         let mut _service = redis_service.as_ref().lock().await;
         let lock_key = create_lock_key( self.hub_name.clone(), _gate_name.clone());
-        let value = _service.acquire_lock(lock_key.clone(), 3).await;
+        let value = _service.acquire_lock(lock_key.clone(), 3, None).await.unwrap_or_default();
         let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
         if _conn_mgr.get_gate_proxy(&_gate_name).is_none() {
             _conn_mgr.add_lock(lock_key, value);
@@ -213,7 +209,7 @@ impl HubServer {
             }  
         }
         else {
-            let _ = _service.release_lock(lock_key.clone(), value).await;
+            let _ = _service.release_lock(lock_key.clone(), value, None).await;
         }
     }
 
@@ -223,6 +219,11 @@ impl HubServer {
 
     pub fn get_conn_msg_handle(&self) -> Arc<StdMutex<ConnCallbackMsgHandle>> {
         self.conn_msg_handle.clone()
+    }
+
+    pub fn set_conn_rt_handle(&self, handle: tokio::runtime::Handle) {
+        let mut conn_handle = self.conn_msg_handle.as_ref().lock().unwrap();
+        conn_handle.set_rt_handle(handle);
     }
 
     pub async fn gate_host(&self, gate_name: String) -> String {
@@ -237,7 +238,7 @@ impl HubServer {
     pub async fn flush_hub_host_cache(&mut self) {
         let _rs = self.hub_redis_service.as_mut().unwrap();
         let mut _r = _rs.as_ref().lock().await;
-        let _ = _r.set(create_host_cache_key(self.hub_name.clone()), self.hub_host.clone(), 10).await;
+        let _ = _r.set(create_host_cache_key(self.hub_name.clone()), self.hub_host.clone(), 10, None).await;
     }
 
     pub async fn send_db_msg(&mut self, db_name: String, msg: DbEvent) -> bool {
@@ -245,8 +246,13 @@ impl HubServer {
         {
             let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
             trace!("send_db_msg conn_mgr lock!");
-            let _db_arc_opt = _conn_mgr.get_dbproxy_proxy(&db_name);
-            _db_arc = _db_arc_opt.unwrap().clone();
+            match _conn_mgr.get_dbproxy_proxy(&db_name) {
+                Some(db) => _db_arc = db.clone(),
+                None => {
+                    error!("DBProxy '{}' not found", db_name);
+                    return false;
+                }
+            }
         }
             
         let send_result: bool;
@@ -259,17 +265,45 @@ impl HubServer {
     }
 
     pub async fn send_hub_msg(&mut self, hub_name: String, msg: HubService) -> bool {
-        let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
-        let mut _hub_opt = _conn_mgr.get_hub_proxy(&hub_name);
-        if _hub_opt.is_none() {
+        // 检查是否已有可用的 hub 连接
+        {
+            let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
+            if let Some(_hub_arc) = _conn_mgr.get_hub_proxy(&hub_name) {
+                let mut _hub = _hub_arc.as_ref().lock().await;
+                return _hub.send_hub_msg(msg).await;
+            }
+        }
+
+        // 检查是否正在尝试连接该 hub，避免重复连接
+        {
+            let mut connecting = self.connecting_hubs.as_ref().lock().await;
+            if !connecting.insert(hub_name.clone()) {
+                warn!("Already attempting to connect to hub '{}', skipping", hub_name);
+                return false;
+            }
+        }
+
+        // 尝试重新连接
+        let connect_result = async {
             self.entry_direct_hub_server(hub_name.clone()).await;
-            _hub_opt = _conn_mgr.get_hub_proxy(&hub_name);
+
+            let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
+            if let Some(_hub_arc) = _conn_mgr.get_hub_proxy(&hub_name) {
+                let mut _hub = _hub_arc.as_ref().lock().await;
+                _hub.send_hub_msg(msg).await
+            } else {
+                warn!("Failed to connect to hub '{}'", hub_name);
+                false
+            }
+        }.await;
+
+        // 无论成功失败，都从 connecting_hubs 中移除
+        {
+            let mut connecting = self.connecting_hubs.as_ref().lock().await;
+            connecting.remove(&hub_name);
         }
-        if let Some(_hub_arc) = _hub_opt {
-            let mut _hub = _hub_arc.as_ref().lock().await;
-            return _hub.send_hub_msg(msg).await;
-        }
-        return false;
+
+        connect_result
     }
 
     pub async fn send_gate_msg(&mut self, gate_name: String, msg: GateHubService) -> bool {

@@ -18,19 +18,21 @@ pub struct Particle {
     pub velocity: [f32; 3],
     /// 已存活时间（秒）。
     pub age: f32,
-    /// 总寿命（秒），<=0 视为已死亡。
+    /// 总寿命（秒）。
     pub lifetime: f32,
     pub color: [f32; 4],
     pub size: f32,
     /// 所属 emitter 在 ParticleSystem.emitters 中的索引。
     pub emitter_index: usize,
+    /// 是否存活。
+    pub alive: bool,
 }
 
 impl Particle {
-    pub fn is_alive(&self) -> bool { self.age < self.lifetime && self.lifetime > 0.0 }
+    pub fn is_alive(&self) -> bool { self.alive }
     /// 寿命比例 0..=1。
     pub fn life_t(&self) -> f32 {
-        if self.lifetime <= 0.0 { 1.0 } else { (self.age / self.lifetime).clamp(0.0, 1.0) }
+        if !self.alive || self.lifetime <= 0.0 { 1.0 } else { (self.age / self.lifetime).clamp(0.0, 1.0) }
     }
 }
 
@@ -131,12 +133,23 @@ impl Rng {
 pub struct ParticleSystem {
     pub emitters: Vec<Emitter>,
     pub particles: Vec<Particle>,
+    pub free_indices: Vec<usize>,
     rng: Rng,
 }
 
 impl ParticleSystem {
     pub fn new(seed: u32) -> Self {
-        Self { emitters: Vec::new(), particles: Vec::new(), rng: Rng::new(seed) }
+        let max_particles = 4096;
+        let dummy = Particle {
+            position: [0.0; 3], velocity: [0.0; 3], age: 0.0, lifetime: 0.0,
+            color: [0.0; 4], size: 0.0, emitter_index: 0, alive: false,
+        };
+        Self {
+            emitters: Vec::new(),
+            particles: vec![dummy; max_particles],
+            free_indices: (0..max_particles).rev().collect(),
+            rng: Rng::new(seed),
+        }
     }
     pub fn add_emitter(&mut self, e: Emitter) -> usize {
         self.emitters.push(e);
@@ -144,16 +157,31 @@ impl ParticleSystem {
     }
     pub fn alive_count(&self) -> usize { self.particles.iter().filter(|p| p.is_alive()).count() }
 
-    /// 按 dt 推进：发射 + 物理积分 + 颜色尺寸插值 + 移除过期粒子。
+    fn ensure_capacity(&mut self, needed: usize) {
+        while self.free_indices.len() < needed {
+            let idx = self.particles.len();
+            self.particles.push(Particle {
+                position: [0.0; 3], velocity: [0.0; 3], age: 0.0, lifetime: 0.0,
+                color: [0.0; 4], size: 0.0, emitter_index: 0, alive: false,
+            });
+            self.free_indices.push(idx);
+        }
+    }
+
+    /// 按 dt 推进：发射 + 物理积分 + 颜色尺寸插值 + 回收死亡粒子。
     pub fn tick(&mut self, dt: f32) {
-        // 1. 物理积分 + 颜色/尺寸插值
-        for p in &mut self.particles {
+        // 1. 物理积分 + 年龄更新 + 回收死亡粒子
+        for idx in 0..self.particles.len() {
+            let p = &mut self.particles[idx];
             if !p.is_alive() { continue; }
             p.age += dt;
+            if p.age >= p.lifetime {
+                p.alive = false;
+                // 刚刚死亡，回收到 free list
+                self.free_indices.push(idx);
+            }
         }
-        // 2. 移除过期粒子（保持顺序）
-        self.particles.retain(|p| p.is_alive());
-        // 3. 发射
+        // 2. 发射
         let emitters_len = self.emitters.len();
         for i in 0..emitters_len {
             let to_emit = {
@@ -162,17 +190,20 @@ impl ParticleSystem {
                 let n = e.emit_accumulator.floor() as usize;
                 e.emit_accumulator -= n as f32;
                 let budget = e.max_particles.saturating_sub(
-                    self.particles.iter().filter(|p| p.is_alive()).count(),
+                    self.particles.iter().filter(|p| p.is_alive() && p.emitter_index == i).count(),
                 );
                 n.min(budget)
             };
+            self.ensure_capacity(to_emit);
             for _ in 0..to_emit {
-                let p = Self::spawn_one(&self.emitters[i], i, &mut self.rng);
-                self.particles.push(p);
+                if let Some(idx) = self.free_indices.pop() {
+                    self.particles[idx] = Self::spawn_one(&self.emitters[i], i, &mut self.rng);
+                }
             }
         }
-        // 4. 位置积分（用更新后的 dt）
+        // 3. 位置积分（用更新后的 dt）
         for p in &mut self.particles {
+            if !p.is_alive() { continue; }
             // 每个粒子使用所属 emitter 的重力；若 emitter 已被移除则无额外重力
             let gravity = self.emitters
                 .get(p.emitter_index)
@@ -219,6 +250,7 @@ impl ParticleSystem {
             color: e.start_color,
             size: e.start_size,
             emitter_index,
+            alive: true,
         }
     }
 }
@@ -265,10 +297,10 @@ mod tests {
         let mut p = Particle {
             position: [0.0; 3], velocity: [0.0; 3], age: 0.0, lifetime: 1.0,
             color: [1.0; 4], size: 1.0,
-            emitter_index: 0,
+            emitter_index: 0, alive: true,
         };
         assert!(p.is_alive());
-        p.age = 1.1;
+        p.alive = false;
         assert!(!p.is_alive());
     }
 

@@ -86,7 +86,7 @@ impl GateHubMsgHandle {
     }
 
     fn enque_event(&mut self, ev: HubEvent) {
-        self.queue.enque(Box::new(ev))
+        let _ = self.queue.enque(Box::new(ev));
     }
 
     pub async fn on_event(&mut self, _proxy: Arc<Mutex<HubProxy>>, data: Vec<u8>) {
@@ -195,7 +195,7 @@ impl GateHubMsgHandle {
             if let Some(value) = _conn_mgr.remove_lock(lock_key.clone()) {
                 let _service = _conn_mgr.get_redis_service();
                 let mut _s = _service.as_ref().lock().await;
-                let _ = _s.release_lock(lock_key, value).await;
+                let _ = _s.release_lock(lock_key, value, None).await;
             }
         }
         else {

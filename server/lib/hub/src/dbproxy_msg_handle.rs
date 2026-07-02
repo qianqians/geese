@@ -1,9 +1,9 @@
-use std::sync::Arc;
+﻿use std::sync::Arc;
 
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use tokio::sync::Mutex;
-use tracing::{trace, error};
+use tracing::{trace, warn, error};
 
 use thrift::protocol::{TCompactInputProtocol, TSerializable};
 use thrift::transport::TBufferChannel;
@@ -45,7 +45,7 @@ impl DBCallbackMsgHandle {
     }
 
     fn enque_event(&mut self, ev: DbCallback) {
-        self.queue.enque(Box::new(ev))
+        let _ = self.queue.enque(Box::new(ev));
     }
 
     pub async fn on_event(_proxy: Arc<Mutex<DBProxyProxy>>, data: Vec<u8>) {
@@ -95,9 +95,18 @@ impl DBCallbackMsgHandle {
     pub fn do_ack_get_guid(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: AckGetGuid) {
         trace!("do_ack_get_guid begin!");
 
+        let callback_id = match ev.callback_id {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'callback_id' in AckGetGuid, skipping");
+                return;
+            }
+        };
+        let guid = ev.guid.unwrap_or_default();
+
         let args = (
-            ev.callback_id.unwrap(), 
-            ev.guid.unwrap()
+            callback_id, 
+            guid
         );
         
         if let Err(e) = py_handle.call_method1(py, "on_ack_get_guid", args) {
@@ -108,9 +117,18 @@ impl DBCallbackMsgHandle {
     pub fn do_ack_create_object(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: AckCreateObject) {
         trace!("do_ack_create_object begin!");
 
+        let callback_id = match ev.callback_id {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'callback_id' in AckCreateObject, skipping");
+                return;
+            }
+        };
+        let result = ev.result.unwrap_or_default();
+
         let args = (
-            ev.callback_id.unwrap(), 
-            ev.result.unwrap()
+            callback_id, 
+            result
         );
 
         if let Err(e) = py_handle.call_method1(py, "on_ack_create_object", args) {
@@ -121,9 +139,18 @@ impl DBCallbackMsgHandle {
     pub fn do_ack_updata_object(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: AckUpdataObject) {
         trace!("do_ack_updata_object begin!");
 
+        let callback_id = match ev.callback_id {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'callback_id' in AckUpdataObject, skipping");
+                return;
+            }
+        };
+        let result = ev.result.unwrap_or_default();
+
         let args = (
-            ev.callback_id.unwrap(), 
-            ev.result.unwrap()
+            callback_id, 
+            result
         );
 
         if let Err(e) = py_handle.call_method1(py, "on_ack_updata_object", args) {
@@ -134,9 +161,18 @@ impl DBCallbackMsgHandle {
     pub fn do_ack_find_and_modify(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: AckFindAndModify) {
         trace!("do_ack_find_and_modify begin!");
 
+        let callback_id = match ev.callback_id {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'callback_id' in AckFindAndModify, skipping");
+                return;
+            }
+        };
+        let object_info = ev.object_info.unwrap_or_default();
+
         let args = (
-            ev.callback_id.unwrap(), 
-            PyBytes::new(py, &ev.object_info.unwrap())
+            callback_id, 
+            PyBytes::new(py, &object_info)
         );
 
         if let Err(e) = py_handle.call_method1(py, "on_ack_find_and_modify", args) {
@@ -147,9 +183,18 @@ impl DBCallbackMsgHandle {
     pub fn do_ack_remove_object(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: AckRemoveObject) {
         trace!("do_ack_remove_object begin!");
 
+        let callback_id = match ev.callback_id {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'callback_id' in AckRemoveObject, skipping");
+                return;
+            }
+        };
+        let result = ev.result.unwrap_or_default();
+
         let args = (
-            ev.callback_id.unwrap(), 
-            ev.result.unwrap()
+            callback_id, 
+            result
         );
 
         if let Err(e) = py_handle.call_method1(py, "on_ack_remove_object", args) {
@@ -160,9 +205,18 @@ impl DBCallbackMsgHandle {
     pub fn do_ack_get_object_count(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: AckGetObjectCount) {
         trace!("do_ack_get_object_count begin!");
 
+        let callback_id = match ev.callback_id {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'callback_id' in AckGetObjectCount, skipping");
+                return;
+            }
+        };
+        let count = ev.count.unwrap_or_default();
+
         let args = (
-            ev.callback_id.unwrap(), 
-            ev.count.unwrap()
+            callback_id, 
+            count
         );
 
         if let Err(e) = py_handle.call_method1(py, "on_ack_get_object_count", args) {
@@ -173,8 +227,14 @@ impl DBCallbackMsgHandle {
     pub fn do_ack_get_object_info(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: AckGetObjectInfo) {
         trace!("do_ack_get_object_info begin!");
 
-        let callback_id = ev.callback_id.unwrap();
-        let data = ev.object_info.unwrap();
+        let callback_id = match ev.callback_id {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'callback_id' in AckGetObjectInfo, skipping");
+                return;
+            }
+        };
+        let data = ev.object_info.unwrap_or_default();
 
         let args = (
             callback_id.clone(), 
@@ -189,7 +249,13 @@ impl DBCallbackMsgHandle {
     pub fn do_ack_get_object_info_end(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: AckGetObjectInfoEnd) {
         trace!("do_ack_get_object_info_end begin!");
 
-        let callback_id = ev.callback_id.unwrap();
+        let callback_id = match ev.callback_id {
+            Some(v) => v,
+            None => {
+                warn!("Missing required field 'callback_id' in AckGetObjectInfoEnd, skipping");
+                return;
+            }
+        };
 
         let args = (
             callback_id.clone(), 
@@ -201,4 +267,3 @@ impl DBCallbackMsgHandle {
     }
     
 }
-

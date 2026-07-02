@@ -1,9 +1,13 @@
+use std::collections::HashMap;
+
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
 use crate::{FilterMode, Material, MaterialLibrary, Texture, TextureFormat, Vertex, WrapMode};
 
-pub const MAX_JOINTS: usize = 128;
+/// GPU uniform 中关节矩阵的上限。当前设为 32 以减小 ObjectUniform 体积（~2 KB）。
+/// 若后续需要支持更多骨骼，可增大此值或改用独立的 storage buffer。
+pub const MAX_JOINTS: usize = 32;
 
 /// 共享给 forward+ 与 deferred+ 两条管线的 GPU 顶点格式。
 #[repr(C)]
@@ -274,7 +278,10 @@ pub fn invert_4x4(m: [[f32; 4]; 4]) -> Option<[[f32; 4]; 4]> {
         - a[8] * a[2] * a[5];
 
     let det = a[0] * inv[0] + a[1] * inv[4] + a[2] * inv[8] + a[3] * inv[12];
-    if det.abs() < 1e-8 {
+    // 使用相对阈值：将行列式与矩阵元素尺度的 4 次方比较
+    let max_abs = a.iter().fold(0.0f32, |acc, &v| acc.max(v.abs()));
+    let threshold = 1e-8 * max_abs.powi(4);
+    if det.abs() < threshold {
         return None;
     }
     let inv_det = 1.0 / det;
@@ -287,19 +294,74 @@ pub fn invert_4x4(m: [[f32; 4]; 4]) -> Option<[[f32; 4]; 4]> {
     Some(result)
 }
 
-/// 单条已 prepare 的绘制命令，含 mesh 顶点/索引、材质 bind group、对象 bind group
-/// 与本帧上传的所有材质贴图（保活）。
-pub struct WgpuRenderCommand {
-    pub entity_id: String,
+// -------- GPU 资源缓存 --------
+
+/// 网格缓存键：(vertex_ptr, vertex_len, index_ptr, index_len)
+pub type MeshCacheKey = (u64, u64, u64, u64);
+
+pub fn compute_mesh_key(mesh: &crate::ModelMesh) -> MeshCacheKey {
+    (
+        mesh.vertices.as_ptr() as u64,
+        mesh.vertices.len() as u64,
+        mesh.indices.as_ptr() as u64,
+        mesh.indices.len() as u64,
+    )
+}
+
+pub struct CachedTexture {
+    pub texture: wgpu::Texture,
+    pub view: wgpu::TextureView,
+    pub sampler: wgpu::Sampler,
+}
+
+pub struct CachedMeshBuffers {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
-    pub index_count: u32,
+}
+
+pub struct CachedEntityResources {
     pub material_buffer: wgpu::Buffer,
-    pub material_bind_group: wgpu::BindGroup,
     pub object_buffer: wgpu::Buffer,
+    pub material_bind_group: wgpu::BindGroup,
     pub object_bind_group: wgpu::BindGroup,
-    pub uploaded_textures: Vec<wgpu::Texture>,
-    pub uploaded_views: Vec<wgpu::TextureView>,
+    /// 记录用于构建 material bind group 的纹理 handle，用于检测是否需要重建
+    pub(crate) tex_handles: [Option<usize>; 5],
+    pub(crate) has_tangent_uv: bool,
+}
+
+/// GPU 资源缓存，避免每帧重建 buffer 和重新上传纹理。
+pub struct GpuResourceCache {
+    pub mesh_buffers: HashMap<MeshCacheKey, CachedMeshBuffers>,
+    pub textures: HashMap<usize, CachedTexture>,
+    pub entity_resources: HashMap<String, CachedEntityResources>,
+}
+
+impl GpuResourceCache {
+    pub fn new() -> Self {
+        Self {
+            mesh_buffers: HashMap::new(),
+            textures: HashMap::new(),
+            entity_resources: HashMap::new(),
+        }
+    }
+}
+
+impl Default for GpuResourceCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// -------- Render command (轻量级，引用缓存中的 GPU 资源) --------
+
+/// 单条已 prepare 的绘制命令。GPU 资源（buffer / 纹理）保存在 `GpuResourceCache` 中，
+/// 此处仅保存查找键和每帧重建的 bind group。
+pub struct WgpuRenderCommand {
+    pub entity_id: String,
+    pub mesh_key: MeshCacheKey,
+    pub index_count: u32,
+    pub material_bind_group: wgpu::BindGroup,
+    pub object_bind_group: wgpu::BindGroup,
 }
 
 pub struct WgpuRenderQueue {
@@ -378,7 +440,10 @@ fn to_rgba8(texture: &Texture) -> Vec<u8> {
             .flat_map(|px| [px[0], px[1], px[2], 255])
             .collect(),
         TextureFormat::R8G8B8A8 => texture.pixels.clone(),
-        _ => vec![128, 128, 255, 255],
+        _ => {
+            log::error!("Unsupported texture format: {:?}", texture.format);
+            Vec::new()
+        }
     }
 }
 

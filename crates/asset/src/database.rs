@@ -153,35 +153,39 @@ impl AssetDatabase {
 
             // 检查是否有对应的 .meta 文件
             let meta_path = meta::meta_path_for(path);
-            if !meta_path.exists() {
-                // 生成新的 .meta 文件
+            let asset_meta = if meta_path.exists() {
+                // 从磁盘读取已有的 .meta 文件
+                match meta::read_meta(&meta_path) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        report.errors.push(format!("Cannot read meta for {rel_path}: {e}"));
+                        continue;
+                    }
+                }
+            } else {
+                // 生成新的 .meta 文件并直接使用返回值（避免重复读盘）
                 match meta::create_meta_for(path) {
-                    Ok(_) => report.new_assets += 1,
+                    Ok(m) => {
+                        report.new_assets += 1;
+                        m
+                    }
                     Err(e) => {
                         report.errors.push(format!("Cannot create meta for {rel_path}: {e}"));
                         continue;
                     }
                 }
-            }
+            };
 
-            // 读取 .meta 文件并填充索引
-            match meta::read_meta(&meta_path) {
-                Ok(asset_meta) => {
-                    let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-                    let db_entry = DatabaseEntry {
-                        uuid: asset_meta.uuid.clone(),
-                        path: rel_path.clone(),
-                        asset_type: asset_meta.asset_type,
-                        dependencies: asset_meta.dependencies.clone(),
-                        file_size,
-                    };
-                    self.path_to_uuid.insert(rel_path.clone(), asset_meta.uuid.clone());
-                    self.entries.insert(asset_meta.uuid.clone(), db_entry);
-                }
-                Err(e) => {
-                    report.errors.push(format!("Cannot read meta for {rel_path}: {e}"));
-                }
-            }
+            let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+            let db_entry = DatabaseEntry {
+                uuid: asset_meta.uuid.clone(),
+                path: rel_path.clone(),
+                asset_type: asset_meta.asset_type,
+                dependencies: asset_meta.dependencies.clone(),
+                file_size,
+            };
+            self.path_to_uuid.insert(rel_path.clone(), asset_meta.uuid.clone());
+            self.entries.insert(asset_meta.uuid.clone(), db_entry);
         }
 
         // 扫描依赖（需要所有条目已注册）
@@ -235,16 +239,21 @@ impl AssetDatabase {
             }
         }
 
-        // 同步更新 meta 文件中的依赖
+        // 收集需要同步到磁盘的依赖更新，放入后台线程写入。
+        // 内存索引已经更新完毕，磁盘写入不阻塞调用方。
+        let mut pending_writes: Vec<(PathBuf, crate::meta::AssetMeta)> = Vec::new();
         for entry in self.entries.values() {
             let abs_path = self.project_root.join(&entry.path);
             let meta_path = meta::meta_path_for(&abs_path);
             if let Ok(mut asset_meta) = meta::read_meta(&meta_path) {
                 if asset_meta.dependencies != entry.dependencies {
                     asset_meta.dependencies = entry.dependencies.clone();
-                    let _ = meta::write_meta(&meta_path, &asset_meta);
+                    pending_writes.push((meta_path, asset_meta));
                 }
             }
+        }
+        if !pending_writes.is_empty() {
+            Self::spawn_dependency_meta_writes(pending_writes);
         }
 
         // 循环依赖检测：扫描完成后检查 Prefab 之间是否存在环路
@@ -253,9 +262,23 @@ impl AssetDatabase {
         if !cycles.is_empty() {
             for cycle in &cycles {
                 let chain = cycle.join(" → ");
-                eprintln!("[asset] cycle dependency detected: {}", chain);
+                log::error!("[asset] cycle dependency detected: {}", chain);
             }
         }
+    }
+
+    /// 在后台线程中写入已更新的依赖 .meta 文件。
+    ///
+    /// 内存索引已同步更新，磁盘写入不阻塞调用方；
+    /// 线程结束后自动 join（`JoinHandle` drop 时不等待）。
+    fn spawn_dependency_meta_writes(
+        writes: Vec<(PathBuf, crate::meta::AssetMeta)>,
+    ) {
+        std::thread::spawn(move || {
+            for (meta_path, asset_meta) in writes {
+                let _ = meta::write_meta(&meta_path, &asset_meta);
+            }
+        });
     }
 
     /// 按 UUID 查询条目。

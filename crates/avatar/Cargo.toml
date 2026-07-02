@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 cgmath = "0.18"
+log = "0.4"

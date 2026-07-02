@@ -18,6 +18,9 @@ use proto::hub::HubService;
 use crate::hub_service_manager::{ConnCallbackMsgHandle, StdMutex};
 use crate::conn_manager::ConnManager;
 
+/// Thrift 序列化缓冲区容量（1MB）
+const THRIFT_BUFFER_CAPACITY: usize = 1_048_576;
+
 pub async fn entry_direct_hub_server(
     _hub_name: String,
     _conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>, 
@@ -28,15 +31,15 @@ pub async fn entry_direct_hub_server(
     let mut _hub_host: String = "".to_string();
     {
         let mut _r = _redis_mq_service.as_ref().lock().await;
-        _hub_host = _r.get(create_host_cache_key(_hub_name.clone())).await;
+        _hub_host = _r.get(create_host_cache_key(_hub_name.clone()), None).await.unwrap_or_default();
     }
 
     let mut _conn_mgr_handle = _conn_mgr.as_ref().lock().await;
     let mut _service = _redis_mq_service.as_ref().lock().await;
     let lock_key = create_lock_key(_conn_mgr_handle.get_hub_name(), _hub_name.clone());
-    let value = _service.acquire_lock(lock_key.clone(), 3).await;
+    let value = _service.acquire_lock(lock_key.clone(), 3, None).await.unwrap_or_default();
     if let Some(_hubproxy) = _conn_mgr_handle.get_hub_proxy(&_hub_name) {
-        let _ = _service.release_lock(lock_key.clone(), value.clone()).await;
+        let _ = _service.release_lock(lock_key.clone(), value.clone(), None).await;
         return;
     }
 
@@ -87,9 +90,9 @@ pub async fn entry_hub_service(
         else {
             let mut _service = _redis_mq_service.as_ref().lock().await;
             let lock_key = create_lock_key(_conn_mgr_handle.get_hub_name(), service.id.clone());
-            let value = _service.acquire_lock(lock_key.clone(), 3).await;
+            let value = _service.acquire_lock(lock_key.clone(), 3, None).await.unwrap_or_default();
             if let Some(_hubproxy) = _conn_mgr_handle.get_hub_proxy(&service.id) {
-                let _ = _service.release_lock(lock_key.clone(), value.clone()).await;
+                let _ = _service.release_lock(lock_key.clone(), value.clone(), None).await;
                 return service.id.clone();
             }
 
@@ -134,16 +137,19 @@ impl HubProxy {
     }
 
     pub async fn send_hub_msg(&mut self, msg: HubService) -> bool {
-        let t = TBufferChannel::with_capacity(0, 16384);
+        let t = TBufferChannel::with_capacity(0, THRIFT_BUFFER_CAPACITY);
         let (rd, wr) = match t.split() {
             Ok(_t) => (_t.0, _t.1),
             Err(_e) => {
-                error!("do_get_guid t.split error {}", _e);
+                error!("send_hub_msg t.split error {}", _e);
                 return false;
             }
         };
         let mut o_prot = TCompactOutputProtocol::new(wr);
-        let _ = HubService::write_to_out_protocol(&msg, &mut o_prot);
+        if let Err(e) = HubService::write_to_out_protocol(&msg, &mut o_prot) {
+            error!("Failed to serialize Thrift message in send_hub_msg: {}", e);
+            return false;
+        }
         let wr = self.wr.clone();
         let mut p_send = wr.as_ref().lock().await;
         p_send.send(&rd.write_bytes()).await

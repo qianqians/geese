@@ -45,7 +45,7 @@ pub fn instantiate_prefab(
     max_depth: u32,
 ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     if max_depth == 0 {
-        eprintln!(
+        log::warn!(
             "[prefab] max_depth reached for '{}', stopping recursion",
             manifest.name
         );
@@ -73,7 +73,7 @@ pub fn instantiate_prefab(
 
     for &root_idx in &manifest.root_nodes {
         if root_idx >= manifest.nodes.len() {
-            eprintln!(
+            log::warn!(
                 "[prefab] invalid root node index {} in '{}'",
                 root_idx, manifest.name
             );
@@ -158,7 +158,7 @@ fn instantiate_node_recursive(
 
     for &child_idx in &node_def.children {
         if child_idx >= manifest.nodes.len() {
-            eprintln!(
+            log::warn!(
                 "[prefab] invalid child node index {} in '{}'",
                 child_idx, prefab_name
             );
@@ -222,7 +222,7 @@ fn instantiate_gltf_model(
     _node_def: &PrefabNodeDef,
 ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     // 加载 GLTF 到一个临时 Scene
-    let mut temp_scene = import_scene(gltf_path.to_string(), scene.objects.capacity(), 8)?;
+    let mut temp_scene = import_scene(gltf_path.to_string(), scene.objects.capacity(), crate::loader::DEFAULT_MAX_PREFAB_DEPTH as usize)?;
 
     let node_offset = scene.nodes.len();
     let object_offset = scene.objects.len();
@@ -305,7 +305,7 @@ fn instantiate_procedural_mesh(
         "plane" => loader::create_plane_mesh_procedural(dimensions[0], dimensions[2]),
         "cube" => loader::create_cube_mesh_procedural(dimensions[0], dimensions[1], dimensions[2]),
         _ => {
-            eprintln!(
+            log::warn!(
                 "[prefab] unknown procedural type '{}', defaulting to cube",
                 object_type
             );

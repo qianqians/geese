@@ -8,6 +8,6 @@ pub use animation::{
     sample_quat, sample_vec3,
 };
 pub use animation_graph::{
-    ActiveAnimation, AnimationState, AnimationStateMachine, Blend1DEntry, BlendTree, Parameter,
-    Transition, TransitionCondition,
+    ActiveAnimation, AnimationEvent, AnimationState, AnimationStateMachine, Blend1DEntry, BlendTree, Parameter,
+    StateId, Transition, TransitionCondition,
 };

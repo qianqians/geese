@@ -19,8 +19,8 @@ pub use cluster::{
     ClusterUniform, CLUSTER_DEPTH_SLICES, CLUSTER_TILES_X, CLUSTER_TILES_Y, TOTAL_CLUSTERS,
 };
 pub use common::{
-    CameraUniform, DefaultTextures, GpuVertex, MaterialUniform, ObjectUniform, WgpuRenderCommand,
-    WgpuRenderQueue, MAX_JOINTS, TEX_BIT_BASE_COLOR, TEX_BIT_EMISSIVE,
+    CameraUniform, DefaultTextures, GpuResourceCache, GpuVertex, MaterialUniform, ObjectUniform,
+    WgpuRenderCommand, WgpuRenderQueue, MAX_JOINTS, TEX_BIT_BASE_COLOR, TEX_BIT_EMISSIVE,
     TEX_BIT_METALLIC_ROUGHNESS, TEX_BIT_NORMAL, TEX_BIT_OCCLUSION,
 };
 pub use deferred_plus::DeferredPlusPipeline;

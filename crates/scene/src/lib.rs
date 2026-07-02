@@ -18,12 +18,12 @@ pub mod net;
 
 pub use avatar::{AnimationClip, AnimationPlayer, SceneNode, Skin, Transform};
 pub use avatar::{
-    ActiveAnimation, AnimationState, AnimationStateMachine, Blend1DEntry, BlendTree, Parameter,
+    ActiveAnimation, AnimationEvent, AnimationState, AnimationStateMachine, Blend1DEntry, BlendTree, Parameter,
     Transition, TransitionCondition,
 };
 pub use octree::Octree;
 pub use scene::Scene;
-pub use scene::MarkerEvent;
+pub use scene::{MarkerEvent, SceneAnimationEvent, EntityAnimationGraph};
 pub use scene_object::SceneObject;
 pub use scene_object::DirtyFlags;
 #[cfg(feature = "physics")]

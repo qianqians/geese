@@ -2,7 +2,7 @@
 // 与 [pbr_common.wgsl](file:///Users/qianqians/Documents/geese/crates/render/shaders/pbr_common.wgsl)
 // 共享 MaterialUniform 结构。
 
-const MAX_JOINTS: u32 = 128u;
+const MAX_JOINTS: u32 = 32u;
 
 struct Object {
     model: mat4x4<f32>,

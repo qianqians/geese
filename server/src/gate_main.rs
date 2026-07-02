@@ -73,7 +73,13 @@ async fn main() {
 
     let _local_ip = get_local_ip();
     let _health_host = format!("http://{_local_ip}:{health_port}/health");
-    let mut consul_impl = ConsulImpl::new(cfg.consul_url);
+    let mut consul_impl = match ConsulImpl::new(cfg.consul_url) {
+        Err(e) => {
+            error!("Gate ConsulImpl new faild {}!", e);
+            return;
+        },
+        Ok(c) => c
+    };
     consul_impl.register("gate".to_string(), Some(
         RegisterServiceRequest::builder()
             .name("gate")
@@ -111,7 +117,13 @@ async fn main() {
     };
     trace!("server new server!");
 
-    let health_service = tokio::spawn(HealthHandle::start_health_service(health_host.clone(), health_handle.clone()));
+    let health_service = tokio::spawn({
+        let health_host = health_host.clone();
+        let health_handle = health_handle.clone();
+        async move {
+            let _ = HealthHandle::start_health_service(health_host, health_handle).await;
+        }
+    });
 
     trace!("server start run!");
     server.run().await;

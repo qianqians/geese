@@ -9,16 +9,11 @@ desktop_lib_path = os.path.join(os.path.dirname(__file__), 'desktop', 'target', 
 sys.path.insert(0, desktop_lib_path)
 
 try:
-    from pydesktop import launch
+    from pydesktop import run
     print("正在启动 Geese Launcher...")
-    project_path = launch()
-    
-    if project_path:
-        print(f"\n✅ 用户选择了项目: {project_path}")
-        print("可以调用 open_editor(project_path) 打开编辑器")
-    else:
-        print("\n❌ 用户关闭了 Launcher，未选择项目")
-        
+    run()
+    print("\n✅ Launcher 已退出")
+
 except ImportError as e:
     print(f"❌ 无法导入 pydesktop 模块: {e}")
     print(f"请确保已编译 desktop crate: cd desktop && cargo build")

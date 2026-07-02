@@ -110,6 +110,31 @@ pub enum AnimationOutputs {
     Scales(Vec<Vector3<f32>>),
 }
 
+impl AnimationOutputs {
+    pub fn len(&self) -> usize {
+        match self {
+            AnimationOutputs::Translations(v) => v.len(),
+            AnimationOutputs::Rotations(v) => v.len(),
+            AnimationOutputs::Scales(v) => v.len(),
+        }
+    }
+
+    pub fn get_vec3_or_default(&self, index: usize) -> Vector3<f32> {
+        match self {
+            AnimationOutputs::Translations(v) => v.get(index).copied().unwrap_or(Vector3::new(0.0, 0.0, 0.0)),
+            AnimationOutputs::Scales(v) => v.get(index).copied().unwrap_or(Vector3::new(1.0, 1.0, 1.0)),
+            _ => Vector3::new(0.0, 0.0, 0.0),
+        }
+    }
+
+    pub fn get_quat_or_default(&self, index: usize) -> Quaternion<f32> {
+        match self {
+            AnimationOutputs::Rotations(v) => v.get(index).copied().unwrap_or(Quaternion::new(1.0, 0.0, 0.0, 0.0)),
+            _ => Quaternion::new(1.0, 0.0, 0.0, 0.0),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct AnimationPlayer {
     pub clip: usize,
@@ -117,6 +142,8 @@ pub struct AnimationPlayer {
     pub speed: f32,
     pub looping: bool,
     pub playing: bool,
+    /// 上一次 `advance` 中动画播放到末尾并停止（非循环）。
+    pub just_ended: bool,
 }
 
 impl AnimationPlayer {
@@ -127,6 +154,7 @@ impl AnimationPlayer {
             speed: 1.0,
             looping: true,
             playing: true,
+            just_ended: false,
         }
     }
 
@@ -135,6 +163,7 @@ impl AnimationPlayer {
             return;
         }
 
+        self.just_ended = false;
         self.time += dt * self.speed;
         if duration <= 0.0 {
             self.time = 0.0;
@@ -143,6 +172,7 @@ impl AnimationPlayer {
         } else if self.time > duration {
             self.time = duration;
             self.playing = false;
+            self.just_ended = true;
         }
     }
 }
@@ -193,20 +223,21 @@ pub fn sample_clip(clip: &AnimationClip, time: f32, nodes: &mut [SceneNode]) {
             continue;
         }
 
+        let outputs = &channel.outputs;
         let (left, right, factor, interval) = sample_indices(&channel.inputs, time, channel.interpolation);
         let transform = &mut nodes[channel.target_node].local_transform;
 
         match (&channel.property, &channel.outputs) {
-            (AnimatedProperty::Translation, AnimationOutputs::Translations(values)) => {
+            (AnimatedProperty::Translation, AnimationOutputs::Translations(_)) => {
                 transform.translation =
-                    sample_vec3(values, left, right, factor, interval, channel.interpolation);
+                    sample_vec3(outputs, left, right, factor, interval, channel.interpolation);
             }
-            (AnimatedProperty::Rotation, AnimationOutputs::Rotations(values)) => {
+            (AnimatedProperty::Rotation, AnimationOutputs::Rotations(_)) => {
                 transform.rotation =
-                    sample_quat(values, left, right, factor, interval, channel.interpolation);
+                    sample_quat(outputs, left, right, factor, interval, channel.interpolation);
             }
-            (AnimatedProperty::Scale, AnimationOutputs::Scales(values)) => {
-                transform.scale = sample_vec3(values, left, right, factor, interval, channel.interpolation);
+            (AnimatedProperty::Scale, AnimationOutputs::Scales(_)) => {
+                transform.scale = sample_vec3(outputs, left, right, factor, interval, channel.interpolation);
             }
             _ => {}
         }
@@ -235,15 +266,8 @@ pub fn sample_indices(inputs: &[f32], time: f32, interpolation: Interpolation) -
     (last, last, 0.0, 0.0)
 }
 
-fn output_index(index: usize, interpolation: Interpolation) -> usize {
-    match interpolation {
-        Interpolation::CubicSpline => index * 3 + 1,
-        _ => index,
-    }
-}
-
 pub fn sample_vec3(
-    values: &[Vector3<f32>],
+    outputs: &AnimationOutputs,
     left: usize,
     right: usize,
     factor: f32,
@@ -252,10 +276,18 @@ pub fn sample_vec3(
 ) -> Vector3<f32> {
     match interpolation {
         Interpolation::CubicSpline => {
-            let p0 = values[left * 3 + 1];
-            let m0 = values[left * 3 + 2] * interval;
-            let p1 = values[right * 3 + 1];
-            let m1 = values[right * 3] * interval;
+            let p0 = outputs.get_vec3_or_default(left * 3 + 1);
+            let m0 = outputs.get_vec3_or_default(left * 3 + 2) * interval;
+            let p1 = outputs.get_vec3_or_default(right * 3 + 1);
+            let m1 = outputs.get_vec3_or_default(right * 3) * interval;
+
+            if left * 3 + 2 >= outputs.len() / 3 * 3 || right * 3 >= outputs.len() / 3 * 3 {
+                log::warn!(
+                    "CubicSpline vec3 index out of bounds: left={}, right={}, len={}",
+                    left, right, outputs.len()
+                );
+            }
+
             let f2 = factor * factor;
             let f3 = f2 * factor;
             p0 * (2.0 * f3 - 3.0 * f2 + 1.0)
@@ -264,15 +296,15 @@ pub fn sample_vec3(
                 + m1 * (f3 - f2)
         }
         _ => {
-            let a = values[output_index(left, interpolation)];
-            let b = values[output_index(right, interpolation)];
+            let a = outputs.get_vec3_or_default(left);
+            let b = outputs.get_vec3_or_default(right);
             a + (b - a) * factor
         }
     }
 }
 
 pub fn sample_quat(
-    values: &[Quaternion<f32>],
+    outputs: &AnimationOutputs,
     left: usize,
     right: usize,
     factor: f32,
@@ -281,10 +313,17 @@ pub fn sample_quat(
 ) -> Quaternion<f32> {
     match interpolation {
         Interpolation::CubicSpline => {
-            let p0 = values[left * 3 + 1];
-            let m0 = values[left * 3 + 2];
-            let p1 = values[right * 3 + 1];
-            let m1 = values[right * 3];
+            let p0 = outputs.get_quat_or_default(left * 3 + 1);
+            let m0 = outputs.get_quat_or_default(left * 3 + 2);
+            let p1 = outputs.get_quat_or_default(right * 3 + 1);
+            let m1 = outputs.get_quat_or_default(right * 3);
+
+            if left * 3 + 2 >= outputs.len() / 3 * 3 || right * 3 >= outputs.len() / 3 * 3 {
+                log::warn!(
+                    "CubicSpline quat index out of bounds: left={}, right={}, len={}",
+                    left, right, outputs.len()
+                );
+            }
 
             let p1 = if quat_dot(p0, p1) < 0.0 { -p1 } else { p1 };
             let m0 = m0 * interval;
@@ -306,8 +345,8 @@ pub fn sample_quat(
             }
         }
         _ => {
-            let a = values[output_index(left, interpolation)];
-            let b = values[output_index(right, interpolation)];
+            let a = outputs.get_quat_or_default(left);
+            let b = outputs.get_quat_or_default(right);
             if interpolation == Interpolation::Step {
                 a
             } else {
@@ -348,7 +387,7 @@ pub fn quat_exp(v: Vector3<f32>) -> Quaternion<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cgmath::Vector3;
+    use cgmath::{Quaternion, Vector3};
 
     #[test]
     fn test_animation_player_advance_looping() {
@@ -403,30 +442,30 @@ mod tests {
 
     #[test]
     fn test_sample_vec3_linear() {
-        let values = vec![Vector3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 2.0, 3.0)];
-        let result = sample_vec3(&values, 0, 1, 0.5, 1.0, Interpolation::Linear);
+        let outputs = AnimationOutputs::Translations(vec![Vector3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 2.0, 3.0)]);
+        let result = sample_vec3(&outputs, 0, 1, 0.5, 1.0, Interpolation::Linear);
         assert!((result - Vector3::new(0.5, 1.0, 1.5)).magnitude() < 1e-6);
     }
 
     #[test]
     fn test_sample_vec3_step() {
-        let values = vec![Vector3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 2.0, 3.0)];
+        let outputs = AnimationOutputs::Translations(vec![Vector3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 2.0, 3.0)]);
         let (left, right, factor, interval) = sample_indices(&[0.0, 1.0], 0.5, Interpolation::Step);
-        let result = sample_vec3(&values, left, right, factor, interval, Interpolation::Step);
+        let result = sample_vec3(&outputs, left, right, factor, interval, Interpolation::Step);
         assert!((result - Vector3::new(0.0, 0.0, 0.0)).magnitude() < 1e-6);
     }
 
     #[test]
     fn test_sample_vec3_cubic_spline_zero_tangents() {
-        let values = vec![
+        let outputs = AnimationOutputs::Translations(vec![
             Vector3::new(0.0, 0.0, 0.0), // in-tangent 0
             Vector3::new(0.0, 0.0, 0.0), // value 0
             Vector3::new(0.0, 0.0, 0.0), // out-tangent 0
             Vector3::new(0.0, 0.0, 0.0), // in-tangent 1
             Vector3::new(1.0, 1.0, 1.0), // value 1
             Vector3::new(0.0, 0.0, 0.0), // out-tangent 1
-        ];
-        let result = sample_vec3(&values, 0, 1, 0.5, 1.0, Interpolation::CubicSpline);
+        ]);
+        let result = sample_vec3(&outputs, 0, 1, 0.5, 1.0, Interpolation::CubicSpline);
         assert!((result - Vector3::new(0.5, 0.5, 0.5)).magnitude() < 1e-6);
     }
 
@@ -434,8 +473,8 @@ mod tests {
     fn test_sample_quat_linear() {
         let a = Quaternion::new(1.0, 0.0, 0.0, 0.0);
         let b = Quaternion::new(0.0, 1.0, 0.0, 0.0);
-        let values = vec![a, b];
-        let result = sample_quat(&values, 0, 1, 0.5, 1.0, Interpolation::Linear);
+        let outputs = AnimationOutputs::Rotations(vec![a, b]);
+        let result = sample_quat(&outputs, 0, 1, 0.5, 1.0, Interpolation::Linear);
         let expected = Quaternion::new(0.70710678, 0.70710678, 0.0, 0.0);
         let dot = quat_dot(result, expected);
         assert!((dot - 1.0).abs() < 1e-5, "dot was {}", dot);
@@ -445,8 +484,8 @@ mod tests {
     fn test_sample_quat_step() {
         let a = Quaternion::new(1.0, 0.0, 0.0, 0.0);
         let b = Quaternion::new(0.0, 1.0, 0.0, 0.0);
-        let values = vec![a, b];
-        let result = sample_quat(&values, 0, 1, 0.5, 1.0, Interpolation::Step);
+        let outputs = AnimationOutputs::Rotations(vec![a, b]);
+        let result = sample_quat(&outputs, 0, 1, 0.5, 1.0, Interpolation::Step);
         assert!((quat_dot(result, a) - 1.0).abs() < 1e-6);
     }
 
@@ -454,15 +493,15 @@ mod tests {
     fn test_sample_quat_cubic_spline_zero_tangents() {
         let a = Quaternion::new(1.0, 0.0, 0.0, 0.0);
         let b = Quaternion::new(0.0, 1.0, 0.0, 0.0);
-        let values = vec![
+        let outputs = AnimationOutputs::Rotations(vec![
             Quaternion::new(0.0, 0.0, 0.0, 0.0), // in-tangent 0
             a,                                    // value 0
             Quaternion::new(0.0, 0.0, 0.0, 0.0), // out-tangent 0
             Quaternion::new(0.0, 0.0, 0.0, 0.0), // in-tangent 1
             b,                                    // value 1
             Quaternion::new(0.0, 0.0, 0.0, 0.0), // out-tangent 1
-        ];
-        let result = sample_quat(&values, 0, 1, 0.5, 1.0, Interpolation::CubicSpline);
+        ]);
+        let result = sample_quat(&outputs, 0, 1, 0.5, 1.0, Interpolation::CubicSpline);
         let expected = Quaternion::new(0.70710678, 0.70710678, 0.0, 0.0);
         let dot = quat_dot(result, expected);
         assert!((dot - 1.0).abs() < 1e-5, "dot was {}", dot);

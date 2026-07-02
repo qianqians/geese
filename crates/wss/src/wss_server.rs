@@ -85,9 +85,10 @@ impl WSSServer {
                 };
 
                 let (write, read) = _websocket.split();
+                let write = Arc::new(Mutex::new(write));
 
                 let mut f_handle = _f_clone.as_ref().lock().await;
-                f_handle.cb(WSSReader::new(read), WSSWriter::new(write)).await;
+                f_handle.cb(WSSReader::new(read, write.clone()), WSSWriter::new(write)).await;
             }
         });
 
@@ -132,9 +133,10 @@ impl WSSServer {
                     Ok(s) => s
                 };
                 let (write, read) = _websocket.split();
+                let write = Arc::new(Mutex::new(write));
                 
                 let mut f_handle = _f_clone.as_ref().lock().await;
-                f_handle.cb(WSSReader::new(read), WSSWriter::new(write)).await;      
+                f_handle.cb(WSSReader::new(read, write.clone()), WSSWriter::new(write)).await;      
             }
         });
 

@@ -12,6 +12,9 @@ use net::{NetReaderCallback, NetWriter};
 
 use proto::common::RedisMsg;
 
+/// Thrift 序列化缓冲区容量（1MB）
+const THRIFT_BUFFER_CAPACITY: usize = 1_048_576;
+
 pub struct RedisMQReader {
     cb_handle: Option<Arc<Mutex<Box<dyn NetReaderCallback + Send + 'static>>>>, 
 }
@@ -77,7 +80,7 @@ impl NetWriter for RedisMQWriter {
 
         let msg = RedisMsg::new(self.lname.clone(), buf.to_vec());
 
-        let t = TBufferChannel::with_capacity(0, 16384);
+        let t = TBufferChannel::with_capacity(0, THRIFT_BUFFER_CAPACITY);
         let (rd, wr) = match t.split() {
             Ok(_t) => (_t.0, _t.1),
             Err(_e) => {
@@ -86,7 +89,10 @@ impl NetWriter for RedisMQWriter {
             }
         };
         let mut o_prot = TCompactOutputProtocol::new(wr);
-        let _ = RedisMsg::write_to_out_protocol(&msg, &mut o_prot);
+        if let Err(e) = RedisMsg::write_to_out_protocol(&msg, &mut o_prot) {
+            error!("Failed to serialize Thrift message in RedisMQWriter send: {}", e);
+            return false;
+        }
         let tmp = rd.write_bytes();
 
         match self._redis_mq_send(tmp).await {

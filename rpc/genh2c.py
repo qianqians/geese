@@ -64,12 +64,12 @@ def gen(lang, inputdir, commondir, clioutputdir, svroutputdir):
             s_code += gen.gencaller(pretreatment) + "\n\n"
 
             if clioutputdir != None and len(clioutputdir) > 0:
-                file = open(clioutputdir + '//' + pretreatment.name + "_cli.py", 'w')
+                file = open(os.path.join(clioutputdir, pretreatment.name + "_cli.py"), 'w')
                 file.write(c_code)
                 file.close()
 
             if svroutputdir != None and len(svroutputdir) > 0:
-                file = open(svroutputdir + '//' + pretreatment.name + "_svr.py", 'w')
+                file = open(os.path.join(svroutputdir, pretreatment.name + "_svr.py"), 'w')
                 file.write(s_code)
                 file.close()
             
@@ -84,11 +84,14 @@ def gen(lang, inputdir, commondir, clioutputdir, svroutputdir):
             s_code += gen.genmodule(pretreatment) + "\n\n"
             
             if clioutputdir != None and len(clioutputdir) > 0:
-                file = open(clioutputdir + '//' + pretreatment.name + "_cli.ts", 'w')
+                file = open(os.path.join(clioutputdir, pretreatment.name + "_cli.ts"), 'w')
                 file.write(s_code)
                 file.close()
 
 if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        print(f"Usage: {sys.argv[0]} <lang> <inputdir> [commondir] <outputdir> [svroutputdir]")
+        sys.exit(1)
     if sys.argv[1] == "python":
         if len(sys.argv) == 6:
             gen(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5])

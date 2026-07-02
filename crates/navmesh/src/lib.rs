@@ -103,8 +103,8 @@ struct Node { f: f32, tri: TriId }
 impl Eq for Node {}
 impl Ord for Node {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // 最小堆
-        other.f.partial_cmp(&self.f).unwrap_or(std::cmp::Ordering::Equal)
+        // 最小堆；使用 total_cmp 避免 NaN 导致排序不稳定
+        other.f.total_cmp(&self.f)
     }
 }
 impl PartialOrd for Node { fn partial_cmp(&self, o: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(o)) } }

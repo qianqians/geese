@@ -67,6 +67,7 @@ name = "asset"
 version = "0.1.0"
 dependencies = [
  "gltf",
+ "log",
  "serde",
  "serde_json",
  "uuid",
@@ -95,6 +96,7 @@ name = "avatar"
 version = "0.1.0"
 dependencies = [
  "cgmath",
+ "log",
 ]
 
 [[package]]
@@ -1959,6 +1961,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "cgmath",
+ "log",
  "wgpu",
 ]
 
@@ -2063,6 +2066,7 @@ dependencies = [
  "camera",
  "cgmath",
  "gltf",
+ "log",
  "math",
  "physics",
  "render",

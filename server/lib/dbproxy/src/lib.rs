@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::thread;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -166,7 +165,7 @@ impl DBProxyServer {
             }
 
             if tick < 33 {
-                thread::sleep(Duration::from_millis((33 - tick) as u64));
+                tokio::time::sleep(Duration::from_millis((33 - tick) as u64)).await;
                 let mut _health = self.health.as_ref().lock().await;
                 _health.set_health_status(true);
             }

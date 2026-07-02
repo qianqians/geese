@@ -5,6 +5,11 @@
 //! - 鼠标拖拽 Gizmo 手柄执行变换
 //! - X/Y/Z 键锁定单轴
 //! - Shift+W/E/R 切换坐标系（Local/World）
+//!
+//! ## Suggested module split (future refactoring):
+//! - `gizmo_interaction.rs` — Drag state, hit testing, and keyboard shortcuts
+//! - `gizmo_render.rs` — Gizmo drawing (arrows, rings, boxes)
+//! - `gizmo_frame.rs` — Shared screen-space axis computation
 
 use cgmath::{InnerSpace, Matrix4, Point3, Vector3, Vector4};
 use crate::viewport::{GizmoMode, OrbitCamera};
@@ -82,6 +87,10 @@ pub struct GizmoDragState {
     pub delta: Vector3<f32>,
 }
 
+/// Drag interaction sensitivities.
+const ROTATE_SENSITIVITY: f32 = 0.01;
+const SCALE_SENSITIVITY: f32 = 0.01;
+
 /// Gizmo 交互管理器。
 pub struct GizmoInteraction {
     /// 当前模式
@@ -90,6 +99,8 @@ pub struct GizmoInteraction {
     pub locked_axis: Option<Axis>,
     /// 是否使用本地坐标系
     pub local_space: bool,
+    /// 本地旋转矩阵（仅 local_space 时使用）
+    pub local_rotation: Matrix4<f32>,
     /// 拖拽状态（None 表示未拖拽）
     pub dragging: Option<GizmoDragState>,
     /// 悬停的轴
@@ -104,6 +115,7 @@ impl GizmoInteraction {
             mode: GizmoMode::Translate,
             locked_axis: None,
             local_space: false,
+            local_rotation: Matrix4::from_scale(1.0),
             dragging: None,
             hovered_axis: None,
             last_mouse: None,
@@ -172,8 +184,7 @@ impl GizmoInteraction {
     }
 
     fn local_rotation(&self) -> Matrix4<f32> {
-        // 默认使用单位旋转
-        Matrix4::from_scale(1.0)
+        self.local_rotation
     }
 
     /// 开始拖拽。
@@ -230,7 +241,7 @@ impl GizmoInteraction {
                 }
                 GizmoMode::Rotate => {
                     // 屏幕拖拽 → 绕轴旋转角度
-                    let sensitivity = 0.01;
+                    let sensitivity = ROTATE_SENSITIVITY;
                     let angle = (dx + dy) * sensitivity;
                     drag.delta = match drag_axis {
                         Axis::X => Vector3::new(angle, 0.0, 0.0),
@@ -240,7 +251,7 @@ impl GizmoInteraction {
                     };
                 }
                 GizmoMode::Scale => {
-                    let sensitivity = 0.01;
+                    let sensitivity = SCALE_SENSITIVITY;
                     let scale_factor = 1.0 + (dx + dy) * sensitivity;
                     let scale_delta = scale_factor - 1.0;
                     drag.delta = match drag_axis {
@@ -272,35 +283,18 @@ impl GizmoInteraction {
         gizmo_screen_pos: (f32, f32),
         camera: &OrbitCamera,
     ) -> Option<Axis> {
-        let (axis_x, axis_y, axis_z) = self.axis_directions();
-
-        let origin = gizmo_screen_pos;
+        let frame = GizmoScreenFrame::build(gizmo_screen_pos, camera, self);
+        let origin = frame.origin;
         if origin.0 < 0.0 || origin.1 < 0.0 {
             return None;
         }
 
-        // 将世界空间轴方向近似投影到屏幕 2D
-        let right = camera.right_direction();
-        let up = camera.up_direction();
+        let handle_len = GizmoConfig::default().handle_length;
+        let hit_r = GizmoConfig::default().hit_radius;
 
-        let proj = |v: Vector3<f32>| -> (f32, f32) {
-            // 简化：将世界方向投影到屏幕
-            let sx = right.dot(v);
-            let sy = up.dot(v);
-            (sx, -sy)
-        };
-
-        let handle_len = 80.0;
-        let hit_r = 12.0;
-
-        let (x_sx, x_sy) = proj(axis_x);
-        let x_tip = (origin.0 + x_sx * handle_len, origin.1 + x_sy * handle_len);
-
-        let (y_sx, y_sy) = proj(axis_y);
-        let y_tip = (origin.0 + y_sx * handle_len, origin.1 + y_sy * handle_len);
-
-        let (z_sx, z_sy) = proj(axis_z);
-        let z_tip = (origin.0 + z_sx * handle_len, origin.1 + z_sy * handle_len);
+        let x_tip = frame.raw_tip(frame.axis_x_screen, handle_len);
+        let y_tip = frame.raw_tip(frame.axis_y_screen, handle_len);
+        let z_tip = frame.raw_tip(frame.axis_z_screen, handle_len);
 
         // 点到线段的距离
         let dist_to_seg = |p: (f32, f32), a: (f32, f32), b: (f32, f32)| -> f32 {
@@ -346,6 +340,69 @@ impl GizmoInteraction {
 }
 
 // ---------------------------------------------------------------------------
+// Shared gizmo screen-space frame (used by both hit_test and draw_gizmo)
+// ---------------------------------------------------------------------------
+
+/// Precomputed screen-space gizmo frame: projected axes and origin.
+/// Shared between hit testing and drawing to avoid duplicate coordinate math.
+struct GizmoScreenFrame {
+    /// Gizmo origin in screen pixels.
+    origin: (f32, f32),
+    /// X axis projected to screen (unnormalized 2D direction).
+    axis_x_screen: (f32, f32),
+    /// Y axis projected to screen.
+    axis_y_screen: (f32, f32),
+    /// Z axis projected to screen.
+    axis_z_screen: (f32, f32),
+}
+
+impl GizmoScreenFrame {
+    /// Build a gizmo screen frame from camera and interaction state.
+    fn build(
+        screen_pos: (f32, f32),
+        camera: &OrbitCamera,
+        interaction: &GizmoInteraction,
+    ) -> Self {
+        let (axis_x, axis_y, axis_z) = interaction.axis_directions();
+        let right = camera.right_direction();
+        let up = camera.up_direction();
+
+        let proj = |v: Vector3<f32>| -> (f32, f32) {
+            let sx = right.dot(v);
+            let sy = up.dot(v);
+            (sx, -sy)
+        };
+
+        Self {
+            origin: screen_pos,
+            axis_x_screen: proj(axis_x),
+            axis_y_screen: proj(axis_y),
+            axis_z_screen: proj(axis_z),
+        }
+    }
+
+    /// Compute the normalized screen-space tip position for an axis direction.
+    fn tip(&self, axis_screen: (f32, f32), handle_len: f32) -> (f32, f32) {
+        let len = (axis_screen.0 * axis_screen.0 + axis_screen.1 * axis_screen.1).sqrt();
+        if len < 1e-6 {
+            return self.origin;
+        }
+        (
+            self.origin.0 + axis_screen.0 / len * handle_len,
+            self.origin.1 + axis_screen.1 / len * handle_len,
+        )
+    }
+
+    /// Compute the unnormalized screen-space tip (for hit testing).
+    fn raw_tip(&self, axis_screen: (f32, f32), handle_len: f32) -> (f32, f32) {
+        (
+            self.origin.0 + axis_screen.0 * handle_len,
+            self.origin.1 + axis_screen.1 * handle_len,
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Gizmo 绘制
 // ---------------------------------------------------------------------------
 
@@ -356,43 +413,17 @@ pub fn draw_gizmo(
     camera: &OrbitCamera,
     interaction: &GizmoInteraction,
 ) {
-    if screen_pos.0 < -100.0 || screen_pos.1 < -100.0 {
+    if screen_pos.0 < -GIZMO_OFFSCREEN_THRESHOLD || screen_pos.1 < -GIZMO_OFFSCREEN_THRESHOLD {
         return;
     }
 
-    let (axis_x, axis_y, axis_z) = interaction.axis_directions();
-    let right = camera.right_direction();
-    let up = camera.up_direction();
+    let frame = GizmoScreenFrame::build(screen_pos, camera, interaction);
+    let handle_len = GizmoConfig::default().handle_length;
+    let origin = frame.origin;
 
-    let proj = |v: Vector3<f32>| -> (f32, f32) {
-        let sx = right.dot(v);
-        let sy = up.dot(v);
-        (sx, -sy)
-    };
-
-    let handle_len = 80.0;
-    let origin = (screen_pos.0, screen_pos.1);
-
-    let (x_sx, x_sy) = proj(axis_x);
-    let x_len = (x_sx * x_sx + x_sy * x_sy).sqrt();
-    let x_tip = (
-        origin.0 + x_sx / x_len * handle_len,
-        origin.1 + x_sy / x_len * handle_len,
-    );
-
-    let (y_sx, y_sy) = proj(axis_y);
-    let y_len = (y_sx * y_sx + y_sy * y_sy).sqrt();
-    let y_tip = (
-        origin.0 + y_sx / y_len * handle_len,
-        origin.1 + y_sy / y_len * handle_len,
-    );
-
-    let (z_sx, z_sy) = proj(axis_z);
-    let z_len = (z_sx * z_sx + z_sy * z_sy).sqrt();
-    let z_tip = (
-        origin.0 + z_sx / z_len * handle_len,
-        origin.1 + z_sy / z_len * handle_len,
-    );
+    let x_tip = frame.tip(frame.axis_x_screen, handle_len);
+    let y_tip = frame.tip(frame.axis_y_screen, handle_len);
+    let z_tip = frame.tip(frame.axis_z_screen, handle_len);
 
     let p = |(x, y): (f32, f32)| egui::Pos2::new(x, y);
 
@@ -452,6 +483,9 @@ fn draw_arrow(
         ));
     }
 }
+
+/// Off-screen threshold for gizmo visibility (pixels).
+const GIZMO_OFFSCREEN_THRESHOLD: f32 = 100.0;
 
 fn draw_rotation_ring(
     painter: &egui::Painter,

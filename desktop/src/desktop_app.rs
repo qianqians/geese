@@ -76,8 +76,10 @@ impl eframe::App for DesktopApp {
                     format!("请先关闭 {} 个 Editor 窗口", count),
                     true,
                 );
+                // 不 return，继续渲染当前帧
+            } else {
+                return;
             }
-            return;
         }
 
         // 渲染 Launcher

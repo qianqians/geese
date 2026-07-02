@@ -125,7 +125,7 @@ impl DBProxyHubMsgHandle {
             Some(_callback_id) => _callback_id
         };
         let ev = db::DBEvent::new(Arc::downgrade(&rsp),  db::DBEventType::EvGetGuid, db, collection, callback_id, Box::new(ev_data));
-        self.queue.enque(Box::new(ev));
+        let _ = self.queue.enque(Box::new(ev));
     }
 
     async fn do_create_object(&mut self, _data: CreateObjectEvent, rsp: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>) {
@@ -161,7 +161,7 @@ impl DBProxyHubMsgHandle {
             Some(_callback_id) => _callback_id
         };
         let ev = db::DBEvent::new(Arc::downgrade(&rsp), db::DBEventType::EvCreateObject, db, collection, callback_id, Box::new(ev_data));
-        self.queue.enque(Box::new(ev));
+        let _ = self.queue.enque(Box::new(ev));
     }
 
     async fn do_update_object(&mut self, _data: UpdateObjectEvent, rsp: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>) {
@@ -211,7 +211,7 @@ impl DBProxyHubMsgHandle {
             Some(_callback_id) => _callback_id
         };
         let ev = db::DBEvent::new(Arc::downgrade(&rsp), db::DBEventType::EvUpdataObject, db, collection, callback_id, Box::new(ev_data));
-        self.queue.enque(Box::new(ev));
+        let _ = self.queue.enque(Box::new(ev));
     }
 
     async fn do_find_and_modify(&mut self, _data: FindAndModifyEvent, rsp: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>) {
@@ -268,7 +268,7 @@ impl DBProxyHubMsgHandle {
             Some(_callback_id) => _callback_id
         };
         let ev = db::DBEvent::new(Arc::downgrade(&rsp), db::DBEventType::EvFindAndModify, db, collection, callback_id, Box::new(ev_data));
-        self.queue.enque(Box::new(ev));
+        let _ = self.queue.enque(Box::new(ev));
     }
 
     async fn do_remove_object(&mut self, _data: RemoveObjectEvent, rsp: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>) {
@@ -304,7 +304,7 @@ impl DBProxyHubMsgHandle {
             Some(_callback_id) => _callback_id
         };
         let ev = db::DBEvent::new(Arc::downgrade(&rsp), db::DBEventType::EvRemoveObject, db, collection, callback_id, Box::new(ev_data));
-        self.queue.enque(Box::new(ev));
+        let _ = self.queue.enque(Box::new(ev));
     }
 
     async fn do_get_object_info(&mut self, _data: GetObjectInfoEvent, rsp: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>) {
@@ -368,7 +368,7 @@ impl DBProxyHubMsgHandle {
             Some(_callback_id) => _callback_id
         };
         let ev = db::DBEvent::new(Arc::downgrade(&rsp), db::DBEventType::EvGetObjectInfo, db, collection, callback_id, Box::new(ev_data));
-        self.queue.enque(Box::new(ev));
+        let _ = self.queue.enque(Box::new(ev));
     }
 
     async fn do_get_object_count(&mut self, _data: GetObjectCountEvent, rsp: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>) {
@@ -404,7 +404,7 @@ impl DBProxyHubMsgHandle {
             Some(_callback_id) => _callback_id
         };
         let ev = db::DBEvent::new(Arc::downgrade(&rsp), db::DBEventType::EvGetObjectCount, db, collection, callback_id, Box::new(ev_data));
-        self.queue.enque(Box::new(ev));
+        let _ = self.queue.enque(Box::new(ev));
     }
 
 }
