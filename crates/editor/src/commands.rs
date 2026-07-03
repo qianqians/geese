@@ -348,6 +348,98 @@ impl EditorCommand for ReparentCommand {
     }
 }
 
+/// 物理类型切换命令。
+pub struct SetBodyKindCommand {
+    pub entity_id: String,
+    pub old_kind: scene::manifest::BodyKindDef,
+    pub new_kind: scene::manifest::BodyKindDef,
+    pub on_apply: Option<Box<dyn Fn(&str, scene::manifest::BodyKindDef)>>,
+    executed: bool,
+}
+
+impl SetBodyKindCommand {
+    pub fn new(
+        entity_id: String,
+        old_kind: scene::manifest::BodyKindDef,
+        new_kind: scene::manifest::BodyKindDef,
+    ) -> Self {
+        Self {
+            entity_id,
+            old_kind,
+            new_kind,
+            on_apply: None,
+            executed: false,
+        }
+    }
+}
+
+impl EditorCommand for SetBodyKindCommand {
+    fn execute(&mut self) -> bool {
+        if let Some(ref apply) = self.on_apply {
+            apply(&self.entity_id, self.new_kind);
+        }
+        self.executed = true;
+        true
+    }
+
+    fn undo(&mut self) -> bool {
+        if !self.executed { return false; }
+        if let Some(ref apply) = self.on_apply {
+            apply(&self.entity_id, self.old_kind);
+        }
+        self.executed = false;
+        true
+    }
+
+    fn description(&self) -> &str {
+        "Set Body Kind"
+    }
+}
+
+/// 重命名实体命令。
+pub struct RenameEntityCommand {
+    pub entity_id: String,
+    pub old_name: String,
+    pub new_name: String,
+    pub on_apply: Option<Box<dyn Fn(&str, &str)>>,
+    executed: bool,
+}
+
+impl RenameEntityCommand {
+    pub fn new(entity_id: String, old_name: String, new_name: String) -> Self {
+        Self {
+            entity_id,
+            old_name,
+            new_name,
+            on_apply: None,
+            executed: false,
+        }
+    }
+}
+
+impl EditorCommand for RenameEntityCommand {
+    fn execute(&mut self) -> bool {
+        if let Some(ref apply) = self.on_apply {
+            apply(&self.entity_id, &self.new_name);
+        }
+        self.executed = true;
+        true
+    }
+
+    fn undo(&mut self) -> bool {
+        if !self.executed { return false; }
+        if let Some(ref apply) = self.on_apply {
+            apply(&self.entity_id, &self.old_name);
+        }
+        self.executed = false;
+        true
+    }
+
+    fn description(&self) -> &str {
+        "Rename Entity"
+    }
+}
+
 // ---------------------------------------------------------------------------
 // CommandHistory - 双栈命令历史
 // ---------------------------------------------------------------------------

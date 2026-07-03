@@ -390,7 +390,7 @@ pub struct ViewportPanel {
     /// GPU grid renderer (created lazily when render_state is available)
     gpu_grid: Option<GpuGridRenderer>,
     /// Gizmo 交互状态
-    gizmo_interaction: GizmoInteraction,
+    pub gizmo_interaction: GizmoInteraction,
     /// Pickable scene objects for ray-casting selection
     pub pickable_objects: Vec<(String, Point3<f32>, AABB)>,
 }

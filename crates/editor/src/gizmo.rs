@@ -107,6 +107,10 @@ pub struct GizmoInteraction {
     pub hovered_axis: Option<Axis>,
     /// 上次鼠标位置
     last_mouse: Option<(f32, f32)>,
+    /// 是否启用网格吸附
+    pub snap_enabled: bool,
+    /// 网格吸附间距（世界单位）
+    pub snap_increment: f32,
 }
 
 impl GizmoInteraction {
@@ -119,6 +123,8 @@ impl GizmoInteraction {
             dragging: None,
             hovered_axis: None,
             last_mouse: None,
+            snap_enabled: false,
+            snap_increment: 1.0,
         }
     }
 
@@ -238,6 +244,22 @@ impl GizmoInteraction {
 
                     drag.current_world = drag.start_world + projected;
                     drag.delta = projected;
+
+                    // 网格吸附
+                    if self.snap_enabled {
+                        let snap = self.snap_increment;
+                        let snapped = Point3::new(
+                            (drag.current_world.x / snap).round() * snap,
+                            (drag.current_world.y / snap).round() * snap,
+                            (drag.current_world.z / snap).round() * snap,
+                        );
+                        drag.delta = Vector3::new(
+                            snapped.x - drag.start_world.x,
+                            snapped.y - drag.start_world.y,
+                            snapped.z - drag.start_world.z,
+                        );
+                        drag.current_world = snapped;
+                    }
                 }
                 GizmoMode::Rotate => {
                     // 屏幕拖拽 → 绕轴旋转角度

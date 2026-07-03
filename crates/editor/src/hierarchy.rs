@@ -159,6 +159,11 @@ impl HierarchyPanel {
         &self.tree
     }
 
+    /// 返回场景节点树的可变引用。
+    pub fn tree_mut(&mut self) -> &mut SceneNodeTree {
+        &mut self.tree
+    }
+
     /// 从外部添加场景节点到层次树
     pub fn add_scene_node(&mut self, data: SceneNodeData) {
         self.tree.add_node(data);

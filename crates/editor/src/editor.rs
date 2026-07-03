@@ -367,6 +367,7 @@ impl Editor {
                 hierarchy: &mut HierarchyPanel,
                 tx_cache: &mut std::collections::HashMap<String, ([f32;3],[f32;3],[f32;3])>,
                 body_kind_cache: &mut std::collections::HashMap<String, scene::manifest::BodyKindDef>,
+                name_cache: &mut std::collections::HashMap<String, String>,
                 model_uuid: Option<String>,
                 body_kind: scene::manifest::BodyKindDef,
             ) {
@@ -376,7 +377,7 @@ impl Editor {
 
                 let cids: Vec<String> = node.children().map(|c| {
                     let cid = format!("node_{}", c.index());
-                    walk_gltf_node(&c, Some(eid.clone()), hierarchy, tx_cache, body_kind_cache, model_uuid.clone(), body_kind);
+                    walk_gltf_node(&c, Some(eid.clone()), hierarchy, tx_cache, body_kind_cache, name_cache, model_uuid.clone(), body_kind);
                     cid
                 }).collect();
 
@@ -389,7 +390,7 @@ impl Editor {
 
                 hierarchy.add_scene_node(SceneNodeData {
                     id: eid.clone(),
-                    name: nname,
+                    name: nname.clone(),
                     children: cids,
                     parent: parent_id,
                     visible: true,
@@ -405,12 +406,13 @@ impl Editor {
                     [0.0, 0.0, 0.0],
                     [1.0, 1.0, 1.0],
                 ));
-                body_kind_cache.entry(eid).or_insert(body_kind);
+                body_kind_cache.entry(eid.clone()).or_insert(body_kind);
+                name_cache.entry(eid.clone()).or_insert_with(|| nname.clone());
             }
 
             for gltf_scene in document.scenes() {
                 for node in gltf_scene.nodes() {
-                    walk_gltf_node(&node, None, &mut self.hierarchy, &mut self.state.transform_cache, &mut self.state.body_kind_cache, model_uuid.clone(), model.body_kind);
+                    walk_gltf_node(&node, None, &mut self.hierarchy, &mut self.state.transform_cache, &mut self.state.body_kind_cache, &mut self.state.name_cache, model_uuid.clone(), model.body_kind);
                 }
             }
             eprintln!("[Editor] Loaded '{}' into hierarchy", model.id);
@@ -497,6 +499,12 @@ impl Editor {
                 ui.selectable_value(&mut self.viewport.gizmo_mode, crate::viewport::GizmoMode::Translate, "W");
                 ui.selectable_value(&mut self.viewport.gizmo_mode, crate::viewport::GizmoMode::Rotate, "E");
                 ui.selectable_value(&mut self.viewport.gizmo_mode, crate::viewport::GizmoMode::Scale, "R");
+
+                // Snap toggle
+                let snap_label = if self.viewport.gizmo_interaction.snap_enabled { "Snap ON" } else { "Snap OFF" };
+                if ui.add_sized([56.0, 22.0], egui::Button::new(snap_label)).clicked() {
+                    self.viewport.gizmo_interaction.snap_enabled = !self.viewport.gizmo_interaction.snap_enabled;
+                }
 
                 ui.separator();
 
@@ -822,6 +830,17 @@ impl Editor {
                 EditorAction::SetBodyKind { node_id, body_kind } => {
                     self.state.body_kind_cache.insert(node_id.clone(), body_kind);
                     eprintln!("[Editor] SetBodyKind: node={node_id}, body_kind={body_kind:?}");
+                }
+                EditorAction::RenameEntity { node_id, new_name } => {
+                    self.state.name_cache.insert(node_id.clone(), new_name.clone());
+                    if let Some(node) = self.hierarchy.tree_mut().get_mut(&node_id) {
+                        node.name = new_name;
+                    }
+                }
+                EditorAction::ToggleVisibility { node_id, visible } => {
+                    if let Some(node) = self.hierarchy.tree_mut().get_mut(&node_id) {
+                        node.visible = visible;
+                    }
                 }
             }
         }

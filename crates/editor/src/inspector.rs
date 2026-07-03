@@ -11,26 +11,29 @@ use crate::panels::{EditorAction, EditorPanel, EditorState, PendingTransform};
 
 /// Inspector 面板。
 pub struct InspectorPanel {
+    /// 当前编辑的实体名称
+    entity_name: String,
     /// 当前编辑的 Transform 值
     position: [f32; 3],
-    rotation: [f32; 3], // Euler 角度
+    rotation: [f32; 3],
     scale: [f32; 3],
-    /// 上次选中的实体 ID，用于检测选中变化
+    /// 上次选中的实体 ID
     last_selected: Option<String>,
-    /// 角色控制器参数（模拟）
+    /// 角色控制器参数
     cc_move_speed: f32,
     cc_jump_impulse: f32,
     cc_air_control: f32,
     cc_half_height: f32,
     cc_radius: f32,
     cc_enabled: bool,
-    /// Physics Body 类型索引 (0=Static, 1=Dynamic)
+    /// Physics Body 类型索引
     body_kind_idx: usize,
 }
 
 impl InspectorPanel {
     pub fn new() -> Self {
         Self {
+            entity_name: String::new(),
             position: [0.0, 0.0, 0.0],
             rotation: [0.0, 0.0, 0.0],
             scale: [1.0, 1.0, 1.0],
@@ -99,41 +102,59 @@ impl EditorPanel for InspectorPanel {
     fn show(&mut self, ui: &mut egui::Ui, state: &mut EditorState) {
         ui.strong("Inspector");
 
-        // 检测选中实体变化，从缓存同步变换值
+        // 检测选中实体变化，从缓存同步
         let selection_changed = state.selected_entity.as_deref() != self.last_selected.as_deref();
         if selection_changed {
             self.last_selected = state.selected_entity.clone();
             if let Some(ref entity_id) = state.selected_entity {
+                // 同步名称
+                self.entity_name = state.name_cache
+                    .get(entity_id)
+                    .cloned()
+                    .unwrap_or_default();
+                // 同步 Transform
                 if let Some(&(pos, rot, scl)) = state.transform_cache.get(entity_id) {
                     self.position = pos;
                     self.rotation = rot;
                     self.scale = scl;
                 } else {
-                    // 首次选中：初始化缓存
                     let defaults = ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
                     state.transform_cache.insert(entity_id.clone(), defaults);
                     self.position = defaults.0;
                     self.rotation = defaults.1;
                     self.scale = defaults.2;
                 }
+                // 同步 Physics Body
+                self.body_kind_idx = match state.body_kind_cache.get(entity_id).copied() {
+                    Some(scene::manifest::BodyKindDef::Dynamic) => 1,
+                    _ => 0,
+                };
             }
         }
 
         match &state.selected_entity {
             Some(entity_id) => {
-                ui.add_space(8.0);
-
-                // 实体名称
-                ui.horizontal(|ui| {
-                    ui.label("Entity:");
-                    ui.label(egui::RichText::new(entity_id).strong());
-                });
-
-                ui.add_space(8.0);
-                ui.separator();
                 ui.add_space(4.0);
 
-                // ── Prefab 操作按钮 ──
+                // ═══ Entity Name ═══
+                ui.horizontal(|ui| {
+                    ui.label("Name:");
+                    let mut name = self.entity_name.clone();
+                    let resp = ui.text_edit_singleline(&mut name);
+                    if resp.changed() {
+                        self.entity_name = name.clone();
+                        state.name_cache.insert(entity_id.clone(), name.clone());
+                        state.pending_actions.push(EditorAction::RenameEntity {
+                            node_id: entity_id.clone(),
+                            new_name: name,
+                        });
+                    }
+                });
+
+                ui.add_space(4.0);
+                ui.separator();
+
+                // ═══ Prefab 操作 ═══
                 ui.horizontal(|ui| {
                     if ui.button("📦 Save as Prefab").clicked() {
                         state.pending_actions.push(EditorAction::SaveAsPrefab {
@@ -144,9 +165,8 @@ impl EditorPanel for InspectorPanel {
 
                 ui.add_space(4.0);
                 ui.separator();
-                ui.add_space(4.0);
 
-                // Transform 组件
+                // ═══ Transform ═══
                 egui::CollapsingHeader::new("▼ Transform")
                     .default_open(true)
                     .show(ui, |ui| {
@@ -155,24 +175,16 @@ impl EditorPanel for InspectorPanel {
                         let scl_before = self.scale;
 
                         let mut changed = false;
-                        if drag_value_row(ui, "Position", &mut self.position, 0.1) {
-                            changed = true;
-                        }
-                        if drag_value_row(ui, "Rotation", &mut self.rotation, 1.0) {
-                            changed = true;
-                        }
-                        if drag_value_row(ui, "Scale   ", &mut self.scale, 0.01) {
-                            changed = true;
-                        }
+                        if drag_value_row(ui, "Position", &mut self.position, 0.1) { changed = true; }
+                        if drag_value_row(ui, "Rotation", &mut self.rotation, 1.0) { changed = true; }
+                        if drag_value_row(ui, "Scale   ", &mut self.scale, 0.01) { changed = true; }
 
                         if changed {
                             if let Some(ref entity_id) = state.selected_entity {
-                                // 更新缓存
                                 state.transform_cache.insert(
                                     entity_id.clone(),
                                     (self.position, self.rotation, self.scale),
                                 );
-                                // 推入待提交变更
                                 state.pending_transform = Some(PendingTransform {
                                     entity_id: entity_id.clone(),
                                     old_position: pos_before,
@@ -188,40 +200,24 @@ impl EditorPanel for InspectorPanel {
 
                 ui.add_space(4.0);
 
-                // Mesh 信息
-                egui::CollapsingHeader::new("▼ Mesh Renderer")
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        ui.label("Vertices: —");
-                        ui.label("Triangles: —");
-                        ui.label("Material: —");
-                        ui.label("Bounds: —");
-                    });
-
-                ui.add_space(4.0);
-
-                // 组件管理
-                egui::CollapsingHeader::new("▼ Components")
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            if ui.button("+ Add Component").clicked() {
-                                // TODO: 添加组件对话框
-                            }
+                // ═══ Mesh Renderer ═══
+                let has_mesh = state.name_cache.contains_key(entity_id);
+                if has_mesh {
+                    egui::CollapsingHeader::new("▼ Mesh Renderer")
+                        .default_open(false)
+                        .show(ui, |ui| {
+                            ui.label("Vertices: (from GLTF)");
+                            ui.label("Triangles: (from GLTF)");
+                            ui.label("Material: (from GLTF)");
                         });
-                        ui.add_space(4.0);
-                        // 显示已有组件列表
-                        ui.label("• Transform");
-                        ui.label("• Mesh Renderer");
-                    });
+                    ui.add_space(4.0);
+                }
 
-                ui.add_space(4.0);
-
-                // Physics Body 组件
-                egui::CollapsingHeader::new("▼ Physics Body")
-                    .default_open(false)
-                    .show(ui, |ui| {
-                        if let Some(ref entity_id) = state.selected_entity {
+                // ═══ Physics Body ═══
+                if state.body_kind_cache.contains_key(entity_id) {
+                    egui::CollapsingHeader::new("▼ Physics Body")
+                        .default_open(false)
+                        .show(ui, |ui| {
                             if let Some(kind) = state.body_kind_cache.get(entity_id).copied() {
                                 let mut idx = match kind {
                                     scene::manifest::BodyKindDef::Fixed => 0,
@@ -246,23 +242,19 @@ impl EditorPanel for InspectorPanel {
                                     });
                                     self.body_kind_idx = idx;
                                 }
-                            } else {
-                                ui.label("No collision enabled");
                             }
-                        }
-                    });
+                        });
+                    ui.add_space(4.0);
+                }
 
-                ui.add_space(4.0);
-
-                // 角色控制器组件
+                // ═══ Character Controller ═══
                 egui::CollapsingHeader::new("▼ Character Controller")
                     .default_open(false)
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            let label = if self.cc_enabled { "Remove Controller" } else { "Add Controller" };
+                            let label = if self.cc_enabled { "Disable" } else { "Add Component" };
                             if ui.button(label).clicked() {
                                 self.cc_enabled = !self.cc_enabled;
-                                // 推送 EditorAction，让 Editor 处理角色控制器的添加/移除
                                 state.pending_actions.push(EditorAction::ToggleCharacterController {
                                     node_id: entity_id.clone(),
                                     enabled: self.cc_enabled,
@@ -282,6 +274,20 @@ impl EditorPanel for InspectorPanel {
                             ui.add(egui::Slider::new(&mut self.cc_half_height, 0.1..=3.0).text("Half Height"));
                             ui.add(egui::Slider::new(&mut self.cc_radius, 0.1..=1.0).text("Radius"));
                         }
+                    });
+
+                ui.add_space(4.0);
+
+                // ═══ Component Overview ═══
+                egui::CollapsingHeader::new("▼ All Components")
+                    .default_open(false)
+                    .show(ui, |ui| {
+                        ui.label("• Transform");
+                        if has_mesh { ui.label("• Mesh Renderer"); }
+                        if state.body_kind_cache.contains_key(entity_id) { ui.label("• Physics Body"); }
+                        ui.horizontal(|ui| {
+                            if ui.button("+ Add Component").clicked() {}
+                        });
                     });
             }
             None => {

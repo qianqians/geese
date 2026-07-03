@@ -49,6 +49,16 @@ pub enum EditorAction {
         node_id: String,
         body_kind: scene::manifest::BodyKindDef,
     },
+    /// 重命名实体
+    RenameEntity {
+        node_id: String,
+        new_name: String,
+    },
+    /// 切换实体可见性
+    ToggleVisibility {
+        node_id: String,
+        visible: bool,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +113,8 @@ pub struct EditorState {
     pub transform_cache: HashMap<String, ([f32; 3], [f32; 3], [f32; 3])>,
     /// 实体物理类型缓存 (entity_id → body_kind)
     pub body_kind_cache: HashMap<String, scene::manifest::BodyKindDef>,
+    /// 实体名称缓存 (entity_id → name)，用于 Inspector 即时编辑
+    pub name_cache: HashMap<String, String>,
     /// Inspector 写回的待提交变换变更
     pub pending_transform: Option<PendingTransform>,
     /// 面板请求的待处理操作队列
@@ -134,6 +146,7 @@ impl EditorState {
             physics_debug_bodies: Vec::new(),
             transform_cache: HashMap::new(),
             body_kind_cache: HashMap::new(),
+            name_cache: HashMap::new(),
             pending_transform: None,
             pending_actions: Vec::new(),
             dragged_asset_uuid: None,
