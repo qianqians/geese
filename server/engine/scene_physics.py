@@ -109,9 +109,15 @@ def load_scene_collision_from_manifest(
         else:
             continue
 
-        body = PhysicsBody.add_fixed(
-            physics_world, scene_id, shape, position=pos, rotation=rot
-        )
+        body_kind = obj_def.get("body_kind", "fixed")
+        if body_kind == "dynamic":
+            body = PhysicsBody.add_dynamic(
+                physics_world, scene_id, shape, position=pos, rotation=rot
+            )
+        else:
+            body = PhysicsBody.add_fixed(
+                physics_world, scene_id, shape, position=pos, rotation=rot
+            )
         entity_bodies[f"proc_{len(entity_bodies)}"] = body
 
     return entity_bodies

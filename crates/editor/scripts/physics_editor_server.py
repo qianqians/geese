@@ -170,7 +170,11 @@ def _load_scene_collision(manifest_path: str) -> dict[str, PhysicsBody]:
             shape = PhysicsShape.cuboid(scale[0] * 0.5, scale[1] * 0.5, scale[2] * 0.5)
         else:
             continue
-        body = PhysicsBody.add_fixed(_world, _scene_id, shape, position=pos, rotation=rot)
+        body_kind = obj_def.get("body_kind", "fixed")
+        if body_kind == "dynamic":
+            body = PhysicsBody.add_dynamic(_world, _scene_id, shape, position=pos, rotation=rot)
+        else:
+            body = PhysicsBody.add_fixed(_world, _scene_id, shape, position=pos, rotation=rot)
         bodies[f"proc_{len(bodies)}"] = body
 
     return bodies

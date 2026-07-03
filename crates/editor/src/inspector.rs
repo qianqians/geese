@@ -24,6 +24,8 @@ pub struct InspectorPanel {
     cc_half_height: f32,
     cc_radius: f32,
     cc_enabled: bool,
+    /// Physics Body 类型索引 (0=Static, 1=Dynamic)
+    body_kind_idx: usize,
 }
 
 impl InspectorPanel {
@@ -39,6 +41,7 @@ impl InspectorPanel {
             cc_half_height: 1.0,
             cc_radius: 0.5,
             cc_enabled: false,
+            body_kind_idx: 0,
         }
     }
 
@@ -210,6 +213,43 @@ impl EditorPanel for InspectorPanel {
                         // 显示已有组件列表
                         ui.label("• Transform");
                         ui.label("• Mesh Renderer");
+                    });
+
+                ui.add_space(4.0);
+
+                // Physics Body 组件
+                egui::CollapsingHeader::new("▼ Physics Body")
+                    .default_open(false)
+                    .show(ui, |ui| {
+                        if let Some(ref entity_id) = state.selected_entity {
+                            if let Some(kind) = state.body_kind_cache.get(entity_id).copied() {
+                                let mut idx = match kind {
+                                    scene::manifest::BodyKindDef::Fixed => 0,
+                                    scene::manifest::BodyKindDef::Dynamic => 1,
+                                };
+                                let old_idx = idx;
+                                ui.horizontal(|ui| {
+                                    ui.label("Type:");
+                                    ui.selectable_value(&mut idx, 0, "Static");
+                                    ui.selectable_value(&mut idx, 1, "Dynamic");
+                                });
+                                if idx != old_idx {
+                                    let new_kind = if idx == 0 {
+                                        scene::manifest::BodyKindDef::Fixed
+                                    } else {
+                                        scene::manifest::BodyKindDef::Dynamic
+                                    };
+                                    state.body_kind_cache.insert(entity_id.clone(), new_kind);
+                                    state.pending_actions.push(EditorAction::SetBodyKind {
+                                        node_id: entity_id.clone(),
+                                        body_kind: new_kind,
+                                    });
+                                    self.body_kind_idx = idx;
+                                }
+                            } else {
+                                ui.label("No collision enabled");
+                            }
+                        }
                     });
 
                 ui.add_space(4.0);

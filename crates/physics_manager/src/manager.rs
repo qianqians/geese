@@ -141,8 +141,34 @@ impl PhysicsManager {
                 ) {
                     Ok(meshes) => {
                         if let Some(scene) = self.world.scene_mut(self.scene_id) {
-                            if let Err(e) = scene.add_static_trimeshes(&meshes, iso, 0.5, 0.0) {
-                                eprintln!("[PhysicsManager] add_static_trimeshes failed: {e}");
+                            let body_kind = match model["body_kind"].as_str().unwrap_or("fixed") {
+                                "dynamic" => BodyKind::Dynamic,
+                                _ => BodyKind::Fixed,
+                            };
+
+                            if body_kind == BodyKind::Dynamic {
+                                // Dynamic + trimesh 在 Rapier 中不支持。
+                                // 改用从顶点计算出的包围盒 (AABB) 作为凸碰撞体。
+                                let bbox = compute_aabb_from_trimeshes(&meshes);
+                                let half = Vec3::new(
+                                    (bbox.max_x - bbox.min_x) * 0.5,
+                                    (bbox.max_y - bbox.min_y) * 0.5,
+                                    (bbox.max_z - bbox.min_z) * 0.5,
+                                );
+                                let shape = ShapeDesc::Cuboid { half_extents: half };
+                                let desc = BodyDesc {
+                                    kind: BodyKind::Dynamic,
+                                    position: iso,
+                                    friction: 0.5,
+                                    ..Default::default()
+                                };
+                                if let Err(e) = scene.add_body(desc, shape) {
+                                    eprintln!("[PhysicsManager] add_body (dynamic bbox) failed: {e}");
+                                }
+                            } else {
+                                if let Err(e) = scene.add_trimeshes(&meshes, iso, body_kind, 0.5, 0.0) {
+                                    eprintln!("[PhysicsManager] add_trimeshes failed: {e}");
+                                }
                             }
                         }
                     }
@@ -186,7 +212,10 @@ impl PhysicsManager {
                 };
 
                 let desc = BodyDesc {
-                    kind: BodyKind::Fixed,
+                    kind: match obj["body_kind"].as_str().unwrap_or("fixed") {
+                        "dynamic" => BodyKind::Dynamic,
+                        _ => BodyKind::Fixed,
+                    },
                     position: iso,
                     ..Default::default()
                 };
@@ -442,4 +471,44 @@ fn wait_for_server(port: u16, timeout: Duration) -> Result<(), String> {
         thread::sleep(Duration::from_millis(100));
     }
     Err(format!("server startup timeout after {}s", timeout.as_secs()))
+}
+
+/// 轴对齐包围盒。
+struct Aabb {
+    min_x: f32,
+    min_y: f32,
+    min_z: f32,
+    max_x: f32,
+    max_y: f32,
+    max_z: f32,
+}
+
+/// 从三角网格顶点集合计算轴对齐包围盒。
+fn compute_aabb_from_trimeshes(meshes: &[physics::scene_builder::TrimeshData]) -> Aabb {
+    let mut min_x = f32::MAX;
+    let mut min_y = f32::MAX;
+    let mut min_z = f32::MAX;
+    let mut max_x = f32::MIN;
+    let mut max_y = f32::MIN;
+    let mut max_z = f32::MIN;
+
+    for mesh in meshes {
+        for v in &mesh.vertices {
+            min_x = min_x.min(v[0]);
+            min_y = min_y.min(v[1]);
+            min_z = min_z.min(v[2]);
+            max_x = max_x.max(v[0]);
+            max_y = max_y.max(v[1]);
+            max_z = max_z.max(v[2]);
+        }
+    }
+
+    Aabb {
+        min_x,
+        min_y,
+        min_z,
+        max_x,
+        max_y,
+        max_z,
+    }
 }

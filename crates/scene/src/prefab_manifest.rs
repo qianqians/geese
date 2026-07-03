@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::manifest::TransformDef;
+use crate::manifest::{BodyKindDef, TransformDef, default_body_kind};
 
 /// Prefab 清单——`.prefab.json` 文件的顶级结构。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +64,9 @@ pub struct PrefabNodeDef {
     /// 对嵌套 Prefab 实例的变换覆写
     #[serde(skip_serializing_if = "Option::is_none")]
     pub overrides: Option<PrefabOverrides>,
+    /// 物理刚体类型："fixed"（静止）或 "dynamic"（受重力影响）
+    #[serde(default = "default_body_kind")]
+    pub body_kind: BodyKindDef,
 }
 
 /// 网格定义——支持 GLTF 模型引用和程序化网格。
@@ -214,6 +217,7 @@ mod tests {
             }),
             prefab_ref: None,
             overrides: None,
+            body_kind: BodyKindDef::Fixed,
         });
         manifest.root_nodes.push(0);
 

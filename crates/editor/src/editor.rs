@@ -366,7 +366,9 @@ impl Editor {
                 parent_id: Option<String>,
                 hierarchy: &mut HierarchyPanel,
                 tx_cache: &mut std::collections::HashMap<String, ([f32;3],[f32;3],[f32;3])>,
+                body_kind_cache: &mut std::collections::HashMap<String, scene::manifest::BodyKindDef>,
                 model_uuid: Option<String>,
+                body_kind: scene::manifest::BodyKindDef,
             ) {
                 let eid = format!("node_{}", node.index());
                 let nname = node.name().unwrap_or("Node").to_string();
@@ -374,7 +376,7 @@ impl Editor {
 
                 let cids: Vec<String> = node.children().map(|c| {
                     let cid = format!("node_{}", c.index());
-                    walk_gltf_node(&c, Some(eid.clone()), hierarchy, tx_cache, model_uuid.clone());
+                    walk_gltf_node(&c, Some(eid.clone()), hierarchy, tx_cache, body_kind_cache, model_uuid.clone(), body_kind);
                     cid
                 }).collect();
 
@@ -395,18 +397,20 @@ impl Editor {
                     node_type: ntype,
                     asset_source_uuid: asset_uuid,
                     prefab_ref_uuid: None,
+                    body_kind,
                 });
 
-                tx_cache.entry(eid).or_insert((
+                tx_cache.entry(eid.clone()).or_insert((
                     [0.0, 0.0, 0.0],
                     [0.0, 0.0, 0.0],
                     [1.0, 1.0, 1.0],
                 ));
+                body_kind_cache.entry(eid).or_insert(body_kind);
             }
 
             for gltf_scene in document.scenes() {
                 for node in gltf_scene.nodes() {
-                    walk_gltf_node(&node, None, &mut self.hierarchy, &mut self.state.transform_cache, model_uuid.clone());
+                    walk_gltf_node(&node, None, &mut self.hierarchy, &mut self.state.transform_cache, &mut self.state.body_kind_cache, model_uuid.clone(), model.body_kind);
                 }
             }
             eprintln!("[Editor] Loaded '{}' into hierarchy", model.id);
@@ -815,6 +819,10 @@ impl Editor {
                 EditorAction::ModifyAnimationMarker { clip_index, time, name, remove } => {
                     self.handle_modify_animation_marker(clip_index, time, name, remove);
                 }
+                EditorAction::SetBodyKind { node_id, body_kind } => {
+                    self.state.body_kind_cache.insert(node_id.clone(), body_kind);
+                    eprintln!("[Editor] SetBodyKind: node={node_id}, body_kind={body_kind:?}");
+                }
             }
         }
     }
@@ -900,6 +908,7 @@ impl Editor {
                 mesh,
                 prefab_ref,
                 overrides,
+                body_kind: scene::manifest::BodyKindDef::Fixed,
             });
         }
 
@@ -1034,6 +1043,7 @@ impl Editor {
                 node_type: ntype,
                 asset_source_uuid: asset_uuid,
                 prefab_ref_uuid,
+                body_kind: node_def.body_kind,
             });
 
             // 变换：根节点使用世界位置，子节点使用 manifest 中的变换

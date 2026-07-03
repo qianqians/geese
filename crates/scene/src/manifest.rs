@@ -60,6 +60,9 @@ pub struct ModelRef {
     /// 是否为模型生成碰撞体
     #[serde(default)]
     pub collision_enabled: bool,
+    /// 物理刚体类型："fixed"（静止）或 "dynamic"（受重力影响）
+    #[serde(default = "default_body_kind")]
+    pub body_kind: BodyKindDef,
 }
 
 /// 3D 变换定义。
@@ -109,6 +112,33 @@ pub struct SceneObjectDef {
     /// 网格类型标识（用于特殊标识，如 "player_spawn"、"directional_light"）
     #[serde(default)]
     pub tag: Option<String>,
+    /// 物理刚体类型："fixed"（静止）或 "dynamic"（受重力影响）
+    #[serde(default = "default_body_kind")]
+    pub body_kind: BodyKindDef,
+}
+
+/// 场景清单中的物理刚体类型定义。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BodyKindDef {
+    /// 固定位置，不受物理影响（地面、墙壁）
+    Fixed,
+    /// 受重力影响，会下落（石块、箱子）
+    Dynamic,
+}
+
+pub fn default_body_kind() -> BodyKindDef {
+    BodyKindDef::Fixed
+}
+
+impl BodyKindDef {
+    /// 转换为 physics crate 的 `BodyKind`。
+    pub fn to_physics_kind(&self) -> physics::world::BodyKind {
+        match self {
+            Self::Fixed => physics::world::BodyKind::Fixed,
+            Self::Dynamic => physics::world::BodyKind::Dynamic,
+        }
+    }
 }
 
 fn default_color() -> [f32; 3] {
@@ -211,7 +241,8 @@ mod tests {
                     "id": "house",
                     "path": "assets/models/house.gltf",
                     "transform": { "translation": [10,0,5], "rotation": [0,45,0], "scale": [1,1,1] },
-                    "collision_enabled": true
+                    "collision_enabled": true,
+                    "body_kind": "fixed"
                 }
             ],
             "environment": {
@@ -224,7 +255,7 @@ mod tests {
                 { "name": "player_start", "position": [0,1,0], "rotation": [0,0,0] }
             ],
             "objects": [
-                { "object_type": "plane", "position": [0,0,0], "scale": [20,1,20], "color": [0.4,0.4,0.4] }
+                { "object_type": "plane", "position": [0,0,0], "scale": [20,1,20], "color": [0.4,0.4,0.4], "body_kind": "fixed" }
             ]
         }"#;
         let manifest: SceneManifest = serde_json::from_str(json).unwrap();
@@ -250,5 +281,38 @@ mod tests {
         assert_eq!(obj.color, [0.5, 0.5, 0.5]);
         assert!(obj.rotation_euler.is_none());
         assert!(obj.tag.is_none());
+        assert_eq!(obj.body_kind, BodyKindDef::Fixed);
+    }
+
+    #[test]
+    fn body_kind_serialization() {
+        let def = BodyKindDef::Dynamic;
+        let json = serde_json::to_string(&def).unwrap();
+        assert_eq!(json, "\"dynamic\"");
+
+        let def = BodyKindDef::Fixed;
+        let json = serde_json::to_string(&def).unwrap();
+        assert_eq!(json, "\"fixed\"");
+    }
+
+    #[test]
+    fn body_kind_deserialization() {
+        let def: BodyKindDef = serde_json::from_str("\"dynamic\"").unwrap();
+        assert_eq!(def, BodyKindDef::Dynamic);
+
+        let def: BodyKindDef = serde_json::from_str("\"fixed\"").unwrap();
+        assert_eq!(def, BodyKindDef::Fixed);
+    }
+
+    #[test]
+    fn to_physics_kind_conversion() {
+        assert_eq!(
+            BodyKindDef::Fixed.to_physics_kind(),
+            physics::world::BodyKind::Fixed
+        );
+        assert_eq!(
+            BodyKindDef::Dynamic.to_physics_kind(),
+            physics::world::BodyKind::Dynamic
+        );
     }
 }
