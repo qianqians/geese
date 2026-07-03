@@ -59,6 +59,8 @@ pub enum EditorAction {
         node_id: String,
         visible: bool,
     },
+    /// 导出游戏（构建独立 .exe + assets）
+    ExportGameWindows,
 }
 
 // ---------------------------------------------------------------------------
@@ -133,6 +135,8 @@ pub struct EditorState {
     pub animation_clips: Vec<(String, f32, usize)>,
     /// 每个剪辑的标记列表: Vec<(time, name)>
     pub animation_markers: Vec<Vec<(f32, String)>>,
+    /// 状态栏消息
+    pub status_message: Option<String>,
 }
 
 impl EditorState {
@@ -156,6 +160,7 @@ impl EditorState {
             drop_target_hint: None,
             animation_clips: Vec::new(),
             animation_markers: Vec::new(),
+            status_message: None,
         }
     }
 }

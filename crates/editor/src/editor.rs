@@ -467,6 +467,12 @@ impl Editor {
                     let mut bv = self.bundle_panel_visible;
                     if ui.checkbox(&mut bv, "Bundle Panel").clicked() { self.bundle_panel_visible = bv; ui.close_menu(); }
                 });
+                ui.menu_button("Build", |ui| {
+                    if ui.button("Export Game (Windows)").clicked() {
+                        self.state.pending_actions.push(EditorAction::ExportGameWindows);
+                        ui.close_menu();
+                    }
+                });
                 ui.menu_button("Help", |ui| {
                     if ui.button("About Geese Editor").clicked() { ui.close_menu(); }
                 });
@@ -842,7 +848,62 @@ impl Editor {
                         node.visible = visible;
                     }
                 }
+                EditorAction::ExportGameWindows => {
+                    self.handle_export_windows();
+                }
             }
+        }
+    }
+
+    /// 导出游戏为独立 Windows 可执行文件。
+    fn handle_export_windows(&mut self) {
+        let project_name = std::path::Path::new(&self.state.project_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "game".to_string());
+
+        let export_dir = format!("{}/export/{}", self.state.project_path, project_name);
+
+        // 创建输出目录
+        let _ = std::fs::create_dir_all(&export_dir);
+        let _ = std::fs::create_dir_all(format!("{}/assets", export_dir));
+        let _ = std::fs::create_dir_all(format!("{}/config", export_dir));
+
+        // 复制资产
+        let assets_src = format!("{}/assets", self.state.project_path);
+        let assets_dst = format!("{}/assets", export_dir);
+        if let Err(e) = copy_dir_recursive(&assets_src, &assets_dst) {
+            eprintln!("[Editor] copy assets failed: {e}");
+        }
+
+        // 复制 config
+        let config_src = format!("{}/config", self.state.project_path);
+        let config_dst = format!("{}/config", export_dir);
+        if let Err(e) = copy_dir_recursive(&config_src, &config_dst) {
+            eprintln!("[Editor] copy config failed: {e}");
+        }
+
+        // 复制 game_runtime .exe（从 workspace target 目录）
+        let exe_src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .map(|p| p.join("target/release/geese_game.exe"))
+            .unwrap_or_else(|| std::path::PathBuf::from("target/release/geese_game.exe"));
+        let exe_dst = format!("{}/{}.exe", export_dir, project_name);
+
+        if exe_src.exists() {
+            if let Err(e) = std::fs::copy(&exe_src, &exe_dst) {
+                eprintln!("[Editor] copy exe failed: {e}");
+                self.state.status_message = Some(format!("Export failed: {e}"));
+                return;
+            }
+            self.state.status_message = Some(format!(
+                "Export: {}/export/{}/{}  ← Run: cargo build --release -p game_runtime first",
+                self.state.project_path, project_name, project_name
+            ));
+        } else {
+            self.state.status_message = Some(
+                "geese_game.exe not found. Build first: cargo build --release -p game_runtime".into()
+            );
         }
     }
 
@@ -1176,4 +1237,25 @@ impl Editor {
             self.state.panel_layer.set_play_alpha();
         }
     }
+}
+
+/// 递归复制目录。
+fn copy_dir_recursive(src: &str, dst: &str) -> std::io::Result<()> {
+    let src_path = std::path::Path::new(src);
+    if !src_path.is_dir() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src_path)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let src_file = entry.path();
+        let dst_file = std::path::Path::new(dst).join(entry.file_name());
+        if file_type.is_dir() {
+            copy_dir_recursive(&src_file.to_string_lossy(), &dst_file.to_string_lossy())?;
+        } else {
+            std::fs::copy(&src_file, &dst_file)?;
+        }
+    }
+    Ok(())
 }
