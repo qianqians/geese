@@ -1,0 +1,86 @@
+version: 1
+
+scope:
+  include:
+    - "crates/**"
+    - "desktop/**"
+    - "server/**"
+    - "client/**"
+    - "rpc/**"
+    - "expand/ts/**"
+    - "external/behavior3py/**"
+  exclude:
+    - "**/target/**"
+    - "**/node_modules/**"
+    - "**/__pycache__/**"
+    - "**/*.lock"
+    - "**/Cargo.lock"
+
+repowiki:
+  template: architecture
+
+  notes:
+    - text: >
+        项目没有 Cargo workspace，desktop/server/client 是独立入口项目，通过
+        `path = "../crates/xxx"` 引用共享 crate。rust-analyzer 需在
+        `.vscode/settings.json` 中配置 linkedProjects。
+    - text: >
+        坐标系为右手坐标系（cgmath），Y 轴朝上。编辑器视口中 Y=0 与窗口底部对齐。
+        渲染管线默认 Forward+，支持切换到 Deferred+。
+    - text: >
+        后续开发分三个阶段推进：S1 场景对象物理类型（Inspector 新增 Physics Body 组件，
+        支持 Static/Dynamic 切换，场景清单加 body_kind 字段）、
+        S2 编辑器体验增强（Inspector 组件化深化、Prefab 工作流、Transform Gizmo 完善）、
+        S3 跨平台构建验证（macOS/Linux 编译修复与 CI）。
+    - text: >
+        物理刚体类型：Static（固定位置不受物理影响，BodyKind::Fixed）
+        与 Dynamic（受重力影响会下落，BodyKind::Dynamic）。
+        当前所有碰撞体默认以 Fixed 加载，需改为从场景清单读取 body_kind。
+    - text: >
+        资源加载当前为同步，后续计划异步（tokio）+ 热重载（notify）。
+        AssetLoader 使用 UUID + 文件路径映射，资源存储在项目 config/ 目录中。
+
+  documents:
+    - title: 项目全景
+      goal: 描述 Geese 3D 游戏引擎/编辑器的定位、三层架构（desktop/crates/server+client）和核心设计理念
+      hints: >
+        覆盖项目概述、技术栈（Rust + wgpu + PyO3 + egui）、构建方式、
+        核心 crate 分类（渲染/场景/物理/编辑器/网络）。
+
+    - title: 架构设计
+      goal: 深入描述各子系统的架构设计、模块职责和数据流
+      children:
+        - title: 渲染管线
+          goal: 描述 wgpu 渲染器架构、Forward+/Deferred+ 两条管线、光照系统（CLI/CSM/IBL）、后处理链、骨骼蒙皮
+        - title: 场景与资源系统
+          goal: 描述 Scene/SceneObject/Octree/Prefab/glTF 导入/动画状态机、AssetLoader 资源管线
+        - title: 物理系统
+          goal: 描述 physics 引擎后端、BodyKind 类型体系、physics_manager 统一管理层、Ragdoll 骨骼刚体、碰撞体加载流程
+        - title: 编辑器架构
+          goal: 描述面板系统（Viewport/Hierarchy/Inspector/AssetBrowser）、CommandHistory 撤销重做、PlayMode、开发目标切换
+        - title: 网络与服务端
+          goal: 描述 Hub/Gate/DBProxy 三层服务端架构、WSS/TCP 通信、Consul 服务发现、RPC 代码生成
+
+    - title: 开发路线图
+      goal: 记录当前开发计划的阶段划分、依赖关系和里程碑
+      hints: >
+        阶段 0（已完成）：编辑器物理双端支持（PhysicsManager 统一抽象层、Local/Remote 后端切换）。
+        阶段 1（当前）：场景对象物理类型——Inspector 新增 Physics Body 组件（Static/Dynamic 下拉切换）、
+        SceneManifest 的 ModelRef 和 SceneObjectDef 加 body_kind 字段、物理加载逻辑按类型创建刚体。
+        阶段 2：编辑器体验增强——Inspector 组件化属性编辑、Prefab 嵌套编辑与变体、Transform Gizmo 多选/吸附、
+        Undo/Redo 扩展覆盖。
+        阶段 3：跨平台构建验证——macOS/Linux 平台编译修复、CI 流水线、打包脚本。
+
+knowledgecard:
+  notes:
+    - text: >
+        physics_manager 是统一物理后端管理层，整合本地（physics crate 直接调用）
+        和远程（physics_client + TCP）两种模式，独立于编辑器和服务端。
+    - text: >
+        EditorState 是编辑器全局状态容器，但 editor.rs 过于庞大（1000+ 行），
+        建议按注释中的拆分方向重构：editor_state / editor_layout / editor_prefab /
+        editor_animation / editor_play_mode。
+    - text: >
+        SceneManifest（.scene.json）是场景序列化的核心格式，包含 models/objects/
+        environment/spawn_points/prefab_instances 五个子列表。
+        新增字段需保持向后兼容——使用 serde(default)。
