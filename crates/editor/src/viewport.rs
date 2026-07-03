@@ -122,34 +122,12 @@ fn project_to_screen_unclamped(world_pos: Point3<f32>, vp: &Matrix4<f32>, rect: 
 // OrbitCamera - 编辑器摄像机
 // ---------------------------------------------------------------------------
 
-/// 编辑器轨道摄像机。
+/// 编辑器轨道摄像机——`camera::Camera` 的薄封装。
 ///
-/// 交互方式：
-/// - 右键拖拽：绕焦点旋转（yaw/pitch）
-/// - 滚轮：缩放距离
-/// - WASD/方向键：移动焦点
+/// 保持原有 pub 字段和接口签名，内部委托给共享的 `camera::Camera`。
 #[derive(Debug, Clone)]
 pub struct OrbitCamera {
-    /// 摄像机围绕的焦点
-    pub focal_point: Point3<f32>,
-    /// 水平旋转角（弧度）
-    pub yaw: f32,
-    /// 垂直旋转角（弧度），范围 [-89°, 89°]
-    pub pitch: f32,
-    /// 摄像机到焦点的距离
-    pub distance: f32,
-    /// 最小缩放距离
-    pub min_distance: f32,
-    /// 最大缩放距离
-    pub max_distance: f32,
-    /// 视口宽高比
-    pub aspect_ratio: f32,
-    /// 垂直视场角（弧度）
-    pub fov: f32,
-    /// 近裁剪面
-    pub z_near: f32,
-    /// 远裁剪面
-    pub z_far: f32,
+    inner: camera::Camera,
     /// 轨道灵敏度
     pub orbit_sensitivity: f32,
     /// 平移灵敏度
@@ -160,17 +138,19 @@ pub struct OrbitCamera {
 
 impl Default for OrbitCamera {
     fn default() -> Self {
+        let inner = camera::Camera::new(
+            camera::CameraMode::Orbit {
+                yaw: std::f32::consts::FRAC_PI_4,
+                pitch: -0.5236,
+                focal_point: Point3::new(0.0, 15.0, 0.0),
+                distance: 35.0,
+                min_distance: 0.5,
+                max_distance: 200.0,
+            },
+            16.0 / 9.0,
+        );
         Self {
-            focal_point: Point3::new(0.0, 15.0, 0.0),  // 焦点抬高，网格沉到视口底部
-            yaw: std::f32::consts::FRAC_PI_4,  // 45度水平角
-            pitch: -0.5236,  // -30度俯角
-            distance: 35.0,  // 相机距离
-            min_distance: 0.5,
-            max_distance: 200.0,
-            aspect_ratio: 16.0 / 9.0,
-            fov: std::f32::consts::FRAC_PI_4,
-            z_near: 0.1,
-            z_far: 500.0,
+            inner,
             orbit_sensitivity: 0.005,
             pan_sensitivity: 0.01,
             zoom_sensitivity: 0.5,
@@ -179,106 +159,39 @@ impl Default for OrbitCamera {
 }
 
 impl OrbitCamera {
-    /// 计算摄像机在世界空间中的位置。
-    pub fn eye_position(&self) -> Point3<f32> {
-        // Orbit相机：相机围绕焦点旋转，从上方俯视
-        // pitch为负值时相机在上方，正值时在下方
-        let x = self.yaw.sin() * (-self.pitch).cos() * self.distance;
-        let y = (-self.pitch).sin() * self.distance;  // pitch取反，确保负pitch时y为正（在上方）
-        let z = self.yaw.cos() * (-self.pitch).cos() * self.distance;
-        Point3::new(
-            self.focal_point.x + x,
-            self.focal_point.y + y,
-            self.focal_point.z + z,
-        )
-    }
+    // ── 委托给 inner ──
+    pub fn eye_position(&self) -> Point3<f32> { self.inner.eye_position() }
+    pub fn forward_direction(&self) -> Vector3<f32> { self.inner.forward() }
+    pub fn right_direction(&self) -> Vector3<f32> { self.inner.right() }
+    pub fn up_direction(&self) -> Vector3<f32> { self.inner.up() }
+    pub fn view_matrix(&self) -> Matrix4<f32> { self.inner.view_matrix() }
+    pub fn projection_matrix(&self) -> Matrix4<f32> { self.inner.projection_matrix() }
+    pub fn view_projection_matrix(&self) -> Matrix4<f32> { self.inner.view_projection_matrix() }
 
-    /// 摄像机前向方向（相机看向的方向，从相机指向焦点）
-    pub fn forward_direction(&self) -> Vector3<f32> {
-        let eye = self.eye_position();
-        (self.focal_point - eye).normalize()
-    }
-
-    /// 摄像机右向向量。
-    pub fn right_direction(&self) -> Vector3<f32> {
-        let forward = self.forward_direction();
-        let world_up = Vector3::unit_y();
-        forward.cross(world_up).normalize()
-    }
-
-    /// 摄像机上向向量。
-    pub fn up_direction(&self) -> Vector3<f32> {
-        let forward = self.forward_direction();
-        let right = self.right_direction();
-        right.cross(forward).normalize()
-    }
-
-    /// 视图矩阵。
-    pub fn view_matrix(&self) -> Matrix4<f32> {
-        let eye = self.eye_position();
-        Matrix4::look_at_rh(eye, self.focal_point, Vector3::unit_y())
-    }
-
-    /// 投影矩阵。
-    pub fn projection_matrix(&self) -> Matrix4<f32> {
-        perspective(
-            Rad(self.fov),
-            self.aspect_ratio,
-            self.z_near,
-            self.z_far,
-        )
-    }
-
-    /// 视图-投影矩阵。
-    pub fn view_projection_matrix(&self) -> Matrix4<f32> {
-        self.projection_matrix() * self.view_matrix()
-    }
-
-    /// 绕焦点旋转摄像机。
     pub fn orbit(&mut self, delta_x: f32, delta_y: f32) {
-        self.yaw -= delta_x * self.orbit_sensitivity;
-        self.pitch += delta_y * self.orbit_sensitivity;
-
-        // 限制 pitch 防止翻转
-        let pitch_limit = std::f32::consts::FRAC_PI_2 - PITCH_LIMIT_EPSILON;
-        self.pitch = self.pitch.clamp(-pitch_limit, pitch_limit);
+        self.inner.orbit(delta_x * self.orbit_sensitivity / self.inner.sensitivity, delta_y * self.orbit_sensitivity / self.inner.sensitivity);
     }
 
-    /// 平移焦点。
     pub fn pan(&mut self, delta_x: f32, delta_y: f32) {
-        let right = self.right_direction();
-        let up = self.up_direction();
-        let pan_speed = self.distance * self.pan_sensitivity;
-        self.focal_point += right * (-delta_x * pan_speed);
-        self.focal_point += up * (delta_y * pan_speed);
+        self.inner.pan(delta_x * self.pan_sensitivity, delta_y * self.pan_sensitivity);
     }
 
-    /// 缩放距离。
     pub fn zoom(&mut self, delta: f32) {
-        self.distance -= delta * self.zoom_sensitivity;
-        self.distance = self.distance.clamp(self.min_distance, self.max_distance);
+        self.inner.zoom(delta * self.zoom_sensitivity);
     }
 
-    /// 基于鼠标垂直拖拽缩放（Unity风格Alt+右键）
     pub fn zoom_by_drag(&mut self, delta_y: f32) {
-        self.distance += delta_y * self.zoom_sensitivity * 0.5;
-        self.distance = self.distance.clamp(self.min_distance, self.max_distance);
+        self.inner.zoom(delta_y * self.zoom_sensitivity * 0.5);
     }
 
-    /// 聚焦到指定位置。
     pub fn focus_on(&mut self, point: Point3<f32>) {
-        self.focal_point = point;
+        self.inner.focus_on(point);
     }
 
-    /// 重置为默认视角。
     pub fn reset(&mut self) {
-        self.focal_point = Point3::new(0.0, 15.0, 0.0);  // 与默认值保持一致
-        self.yaw = std::f32::consts::FRAC_PI_4;
-        self.pitch = -0.5236;  // -30度，与默认值保持一致
-        self.distance = 35.0;  // 与默认值保持一致
+        *self = Self::default();
     }
 
-    /// 从屏幕坐标生成世界空间射线。
     pub fn screen_to_world_ray(
         &self,
         screen_x: f32,
@@ -286,35 +199,38 @@ impl OrbitCamera {
         viewport_width: f32,
         viewport_height: f32,
     ) -> Option<(Point3<f32>, Vector3<f32>)> {
-        let vp_inv = match self.view_projection_matrix().invert() {
-            Some(inv) => inv,
-            None => {
-                eprintln!("[Viewport] Matrix inversion failed, skipping ray pick");
-                return None;
-            }
-        };
-
-        // 将屏幕坐标映射到 NDC [-1, 1]
+        let vp = self.view_projection_matrix();
+        let vp_inv = vp.invert()?;
         let ndc_x = (screen_x / viewport_width) * 2.0 - 1.0;
         let ndc_y = 1.0 - (screen_y / viewport_height) * 2.0;
-
         let near_point = vp_inv * Vector4::new(ndc_x, ndc_y, -1.0, 1.0);
         let far_point = vp_inv * Vector4::new(ndc_x, ndc_y, 1.0, 1.0);
-
-        let near = Point3::new(
-            near_point.x / near_point.w,
-            near_point.y / near_point.w,
-            near_point.z / near_point.w,
-        );
-        let far = Point3::new(
-            far_point.x / far_point.w,
-            far_point.y / far_point.w,
-            far_point.z / far_point.w,
-        );
-
+        let near = Point3::new(near_point.x / near_point.w, near_point.y / near_point.w, near_point.z / near_point.w);
+        let far = Point3::new(far_point.x / far_point.w, far_point.y / far_point.w, far_point.z / far_point.w);
         let direction = (far - near).normalize();
         Some((near, direction))
     }
+
+    // ── 访问器（替代 pub 字段，外部通过 c.yaw()/c.set_yaw() 访问） ──
+    pub fn yaw(&self) -> f32 { self.inner.mode_yaw().unwrap_or(0.0) }
+    pub fn set_yaw(&mut self, v: f32) { self.inner.set_mode_yaw(v); }
+    pub fn pitch(&self) -> f32 { self.inner.mode_pitch().unwrap_or(0.0) }
+    pub fn set_pitch(&mut self, v: f32) { self.inner.set_mode_pitch(v); }
+    pub fn distance(&self) -> f32 { self.inner.mode_distance().unwrap_or(0.0) }
+    pub fn set_distance(&mut self, v: f32) { self.inner.set_mode_distance(v); }
+    pub fn focal_point(&self) -> Point3<f32> { self.inner.mode_focal_point().unwrap_or(Point3::new(0.0, 0.0, 0.0)) }
+    pub fn set_focal_point(&mut self, v: Point3<f32>) { self.inner.set_mode_focal_point(v); }
+
+    // ── 穿透访问（gizmo 需要） ──
+    pub fn inner(&self) -> &camera::Camera { &self.inner }
+
+    // 兼容旧 pub 字段：aspect_ratio/fov/z_near/z_far/min_distance/max_distance
+    pub fn aspect_ratio(&self) -> f32 { self.inner.aspect }
+    pub fn set_aspect_ratio(&mut self, v: f32) { self.inner.aspect = v; }
+    pub fn fov(&self) -> f32 { self.inner.fov.to_radians() }
+    pub fn set_fov(&mut self, v: f32) { self.inner.fov = v.to_degrees(); }
+    pub fn z_near(&self) -> f32 { self.inner.z_near }
+    pub fn z_far(&self) -> f32 { self.inner.z_far }
 }
 
 // ---------------------------------------------------------------------------
@@ -442,7 +358,7 @@ impl ViewportPanel {
 
         // 处理WASD/方向键移动相机
         if hovered {
-            let move_speed = self.camera.distance * KEYBOARD_MOVE_SPEED_FACTOR;
+            let move_speed = self.camera.distance() * KEYBOARD_MOVE_SPEED_FACTOR;
             ui.input(|input| {
                 let mut move_vec = Vector3::new(0.0, 0.0, 0.0);
                 
@@ -462,7 +378,7 @@ impl ViewportPanel {
                 
                 if move_vec.magnitude() > 0.0 {
                     move_vec = move_vec.normalize() * move_speed;
-                    self.camera.focal_point += move_vec;
+                    self.camera.set_focal_point(self.camera.focal_point() + move_vec);
                 }
             });
         }
@@ -683,16 +599,16 @@ impl ViewportPanel {
                     } else {
                         // 射线远离地平面，使用相机焦点投影
                         Point3::new(
-                            self.camera.focal_point.x,
+                            self.camera.focal_point().x,
                             0.0,
-                            self.camera.focal_point.z,
+                            self.camera.focal_point().z,
                         )
                     }
                 } else {
                     Point3::new(
-                        self.camera.focal_point.x,
+                        self.camera.focal_point().x,
                         0.0,
-                        self.camera.focal_point.z,
+                        self.camera.focal_point().z,
                     )
                 };
 
@@ -948,7 +864,7 @@ impl EditorPanel for ViewportPanel {
         });
 
         self.viewport_size = (rect.width(), rect.height());
-        self.camera.aspect_ratio = rect.width() / rect.height().max(1.0);
+        self.camera.set_aspect_ratio(rect.width() / rect.height().max(1.0));
 
         self.gizmo_interaction.mode = self.gizmo_mode;
         self.gizmo_interaction.handle_shortcuts(ui);
@@ -1027,7 +943,7 @@ impl EditorPanel for ViewportPanel {
                 ui.label(
                     egui::RichText::new(format!(
                         "Eye: ({:.1}, {:.1}, {:.1})  Dist: {:.1}",
-                        eye.x, eye.y, eye.z, self.camera.distance
+                        eye.x, eye.y, eye.z, self.camera.distance()
                     ))
                     .size(10.0)
                     .color(egui::Color32::from_gray(160)),
@@ -1283,7 +1199,7 @@ impl GpuGridRenderer {
         let eye = camera.eye_position();
         let vp = camera.view_projection_matrix();
         self.line_renderer.update_camera(queue, vp.into(), [eye.x, eye.y, eye.z]);
-        let vertices = build_camera_grid_vertices(eye, camera.distance);
+        let vertices = build_camera_grid_vertices(eye, camera.distance());
         self.line_renderer.upload(device, queue, &vertices);
 
         // Encode the grid render pass
@@ -1443,7 +1359,7 @@ fn draw_grid_impl(
     let painter = ui.painter();
     let vp = camera.view_projection_matrix();
     let eye = camera.eye_position();
-    let dist = camera.distance;
+    let dist = camera.distance();
 
     // --- 自适应网格 LOD ---
     // 相机越近网格越精细
@@ -1647,26 +1563,26 @@ mod tests {
     fn test_orbit_camera_eye_position() {
         let cam = OrbitCamera::default();
         let eye = cam.eye_position();
-        let dist = (eye - cam.focal_point).magnitude();
-        assert!((dist - cam.distance).abs() < 0.01);
+        let dist = (eye - cam.focal_point()).magnitude();
+        assert!((dist - cam.distance()).abs() < 0.01);
     }
 
     #[test]
     fn test_orbit_camera_orbit_clamps_pitch() {
         let mut cam = OrbitCamera::default();
         cam.orbit(0.0, 10000.0);
-        assert!(cam.pitch.abs() <= std::f32::consts::FRAC_PI_2);
+        assert!(cam.pitch().abs() <= std::f32::consts::FRAC_PI_2);
     }
 
     #[test]
     fn test_orbit_camera_zoom_clamped() {
         let mut cam = OrbitCamera::default();
-        cam.distance = 5.0;
+        cam.set_distance(5.0);
         cam.zoom(100.0);
-        assert!(cam.distance >= cam.min_distance);
-        cam.distance = 90.0;
+        assert!(cam.distance() >= 0.5);  // min_distance
+        cam.set_distance(90.0);
         cam.zoom(-100.0);
-        assert!(cam.distance <= cam.max_distance);
+        assert!(cam.distance() <= 200.0);  // max_distance
     }
 
     #[test]
@@ -1674,9 +1590,10 @@ mod tests {
         let mut cam = OrbitCamera::default();
         let target = Point3::new(5.0, 10.0, -3.0);
         cam.focus_on(target);
-        assert_eq!(cam.focal_point.x, 5.0);
-        assert_eq!(cam.focal_point.y, 10.0);
-        assert_eq!(cam.focal_point.z, -3.0);
+        let fp = cam.focal_point();
+        assert_eq!(fp.x, 5.0);
+        assert_eq!(fp.y, 10.0);
+        assert_eq!(fp.z, -3.0);
     }
 
     #[test]

@@ -23,83 +23,46 @@ use winit::{
 };
 
 // ---------------------------------------------------------------------------
-// FPS 摄像机
+// 游戏摄像机（camera::Camera 薄封装 + 模式切换）
 // ---------------------------------------------------------------------------
 
+use camera::{Camera, CameraMode};
+
 struct GameCamera {
-    position: Point3<f32>,
-    yaw: f32,   // 水平旋转（弧度）
-    pitch: f32, // 垂直旋转（弧度，限制在 ±89°）
-    aspect: f32,
-    fov: f32,
-    z_near: f32,
-    z_far: f32,
+    inner: Camera,
+    active_mode: CameraMode,
 }
 
 impl GameCamera {
     fn new(aspect: f32) -> Self {
-        Self {
-            position: Point3::new(0.0, 2.0, 5.0),
+        let mode = CameraMode::Fps {
             yaw: -90.0_f32.to_radians(),
             pitch: 0.0,
-            aspect,
-            fov: 60.0,
-            z_near: 0.1,
-            z_far: 500.0,
-        }
+        };
+        let mut inner = Camera::new(mode, aspect);
+        inner.position = Point3::new(0.0, 2.0, 5.0);
+        Self { inner, active_mode: mode }
     }
 
-    fn forward(&self) -> Vector3<f32> {
-        Vector3::new(
-            self.yaw.cos() * self.pitch.cos(),
-            self.pitch.sin(),
-            self.yaw.sin() * self.pitch.cos(),
-        )
-    }
+    fn move_forward(&mut self, amount: f32) { self.inner.move_forward(amount); }
+    fn move_right(&mut self, amount: f32) { self.inner.move_right(amount); }
+    fn rotate_fps(&mut self, dx: f32, dy: f32) { self.inner.rotate_fps(dx, dy); }
 
-    fn right(&self) -> Vector3<f32> {
-        Vector3::new(-self.yaw.sin(), 0.0, self.yaw.cos())
-    }
+    fn orbit(&mut self, dx: f32, dy: f32) { self.inner.orbit(dx, dy); }
+    fn pan(&mut self, dx: f32, dy: f32) { self.inner.pan(dx, dy); }
+    fn zoom(&mut self, delta: f32) { self.inner.zoom(delta); }
 
-    fn view_matrix(&self) -> Matrix4<f32> {
-        let forward = self.forward();
-        let target = self.position + forward;
-        Matrix4::look_at_rh(self.position, target, Vector3::unit_y())
-    }
+    fn topdown_pan(&mut self, dx: f32, dy: f32) { self.inner.topdown_pan(dx, dy); }
+    fn topdown_zoom(&mut self, delta: f32) { self.inner.topdown_zoom(delta); }
 
-    fn projection_matrix(&self) -> Matrix4<f32> {
-        perspective(Deg(self.fov), self.aspect, self.z_near, self.z_far)
-    }
+    fn update_aspect(&mut self, w: u32, h: u32) { self.inner.update_aspect(w, h); }
+    fn view_projection(&self) -> [[f32;4];4] { self.inner.view_projection_raw() }
+    fn camera_position(&self) -> [f32;3] { self.inner.camera_position_raw() }
+    fn frustum(&self) -> camera::frustum::Frustum { self.inner.frustum() }
 
-    fn view_projection(&self) -> [[f32; 4]; 4] {
-        let vp = self.projection_matrix() * self.view_matrix();
-        vp.into()
-    }
-
-    fn frustum(&self) -> Frustum {
-        let vp = self.projection_matrix() * self.view_matrix();
-        Frustum::from_view_projection_matrix(&vp)
-    }
-
-    fn update_aspect(&mut self, width: u32, height: u32) {
-        self.aspect = width as f32 / height.max(1) as f32;
-    }
-
-    fn move_forward(&mut self, amount: f32) {
-        self.position += self.forward() * amount;
-    }
-
-    fn move_right(&mut self, amount: f32) {
-        self.position += self.right() * amount;
-    }
-
-    fn rotate(&mut self, dx: f32, dy: f32) {
-        const SENSITIVITY: f32 = 0.003;
-        self.yaw += dx * SENSITIVITY;
-        self.pitch = (self.pitch - dy * SENSITIVITY).clamp(
-            -89.0_f32.to_radians(),
-            89.0_f32.to_radians(),
-        );
+    fn switch_mode(&mut self, mode: CameraMode) {
+        self.active_mode = mode;
+        self.inner.set_mode(mode);
     }
 }
 
@@ -295,11 +258,7 @@ impl GameState {
             .render_queue(&self.scene_renderer, Some(&frustum));
 
         self.renderer
-            .update_camera(&self.queue, self.camera.view_projection(), [
-                self.camera.position.x,
-                self.camera.position.y,
-                self.camera.position.z,
-            ]);
+            .update_camera(&self.queue, self.camera.view_projection(), self.camera.camera_position());
 
         let ambient = [0.05, 0.05, 0.08];
         let lights: Vec<Light> = vec![
@@ -411,26 +370,35 @@ fn main() {
                 let dt = (now - state.last_frame).as_secs_f32().min(0.1);
                 state.last_frame = now;
 
-                // 摄像机移动
+                // 摄像机输入——路由到当前模式
                 const MOVE_SPEED: f32 = 5.0;
-                if keys_pressed.contains(&KeyCode::KeyW) {
-                    state.camera.move_forward(MOVE_SPEED * dt);
+                match state.camera.active_mode {
+                    CameraMode::Fps { .. } => {
+                        if keys_pressed.contains(&KeyCode::KeyW) { state.camera.move_forward(MOVE_SPEED * dt); }
+                        if keys_pressed.contains(&KeyCode::KeyS) { state.camera.move_forward(-MOVE_SPEED * dt); }
+                        if keys_pressed.contains(&KeyCode::KeyA) { state.camera.move_right(-MOVE_SPEED * dt); }
+                        if keys_pressed.contains(&KeyCode::KeyD) { state.camera.move_right(MOVE_SPEED * dt); }
+                        if mouse_delta.0 != 0.0 || mouse_delta.1 != 0.0 {
+                            state.camera.rotate_fps(mouse_delta.0, mouse_delta.1);
+                        }
+                    }
+                    CameraMode::Orbit { .. } => {
+                        if mouse_delta.0 != 0.0 || mouse_delta.1 != 0.0 {
+                            state.camera.orbit(mouse_delta.0, mouse_delta.1);
+                        }
+                        if keys_pressed.contains(&KeyCode::KeyW) { state.camera.pan(0.0, 5.0 * dt); }
+                        if keys_pressed.contains(&KeyCode::KeyS) { state.camera.pan(0.0, -5.0 * dt); }
+                        if keys_pressed.contains(&KeyCode::KeyA) { state.camera.pan(-5.0 * dt, 0.0); }
+                        if keys_pressed.contains(&KeyCode::KeyD) { state.camera.pan(5.0 * dt, 0.0); }
+                    }
+                    CameraMode::TopDown { .. } => {
+                        if keys_pressed.contains(&KeyCode::KeyW) { state.camera.topdown_pan(0.0, 5.0 * dt); }
+                        if keys_pressed.contains(&KeyCode::KeyS) { state.camera.topdown_pan(0.0, -5.0 * dt); }
+                        if keys_pressed.contains(&KeyCode::KeyA) { state.camera.topdown_pan(-5.0 * dt, 0.0); }
+                        if keys_pressed.contains(&KeyCode::KeyD) { state.camera.topdown_pan(5.0 * dt, 0.0); }
+                    }
                 }
-                if keys_pressed.contains(&KeyCode::KeyS) {
-                    state.camera.move_forward(-MOVE_SPEED * dt);
-                }
-                if keys_pressed.contains(&KeyCode::KeyA) {
-                    state.camera.move_right(-MOVE_SPEED * dt);
-                }
-                if keys_pressed.contains(&KeyCode::KeyD) {
-                    state.camera.move_right(MOVE_SPEED * dt);
-                }
-
-                // 鼠标旋转
-                if mouse_delta.0 != 0.0 || mouse_delta.1 != 0.0 {
-                    state.camera.rotate(mouse_delta.0, mouse_delta.1);
-                    mouse_delta = (0.0, 0.0);
-                }
+                mouse_delta = (0.0, 0.0);
 
                 // 物理
                 state.update(dt);

@@ -221,7 +221,7 @@ impl GizmoInteraction {
                     // 在世界空间中计算平移量
                     let right = camera.right_direction();
                     let up = camera.up_direction();
-                    let pan_speed = camera.distance * 0.005;
+                    let pan_speed = camera.distance() * 0.005;
 
                     // 屏幕移动 → 世界空间移动
                     let world_delta = right * (dx * pan_speed) + up * (-dy * pan_speed);

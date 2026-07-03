@@ -1180,9 +1180,9 @@ impl Editor {
             // Stop: 恢复编辑模式
             if let Some(mut snapshot) = self.play_mode.stop() {
                 PlayMode::restore_panel_state(&snapshot, &mut self.state);
-                self.viewport.camera.yaw = snapshot.camera_yaw;
-                self.viewport.camera.pitch = snapshot.camera_pitch;
-                self.viewport.camera.distance = snapshot.camera_distance;
+                self.viewport.camera.set_yaw(snapshot.camera_yaw);
+                self.viewport.camera.set_pitch(snapshot.camera_pitch);
+                self.viewport.camera.set_distance(snapshot.camera_distance);
                 self.state.selected_entity = snapshot.selected_entity.take();
             }
             // 停止远程物理服务器，切换到本地物理
@@ -1201,9 +1201,9 @@ impl Editor {
             // Play: 进入播放模式
             self.play_mode.play(
                 &self.state,
-                self.viewport.camera.yaw,
-                self.viewport.camera.pitch,
-                self.viewport.camera.distance,
+                self.viewport.camera.yaw(),
+                self.viewport.camera.pitch(),
+                self.viewport.camera.distance(),
             );
 
             // 切换到远程物理服务器
