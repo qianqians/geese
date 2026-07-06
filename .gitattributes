@@ -4,3 +4,4 @@ dependences/consul/consul.exe filter=lfs diff=lfs merge=lfs -text
 dist/desktop/*.pyd filter=lfs diff=lfs merge=lfs -text
 dependences/redis/RedisService.exe filter=lfs diff=lfs merge=lfs -text
 dist/server/dependences/consul/consul.exe filter=lfs diff=lfs merge=lfs -text
+*.exe filter=lfs diff=lfs merge=lfs -text
