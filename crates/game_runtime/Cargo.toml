@@ -3,6 +3,10 @@ name = "game_runtime"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "geese_game"
+crate-type = ["rlib", "cdylib"]
+
 [[bin]]
 name = "geese_game"
 path = "src/main.rs"
@@ -27,3 +31,13 @@ input = { path = "../input" }
 asset = { path = "../asset" }
 math = { path = "../math" }
 avatar = { path = "../avatar" }
+
+[target.'cfg(target_os = "android")'.dependencies]
+winit = { version = "0.30", features = ["android-native-activity"] }
+android_logger = "0.14"
+
+[package.metadata.android]
+package_name = "com.geese.game"
+label = "Geese Game"
+sdk_version = 24
+target_sdk_version = 34

@@ -3,3 +3,11 @@ rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]
 
 [target.x86_64-apple-darwin]
 rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]
+
+# Android NDK linker 配置（使用 cargo-ndk 时自动处理，此处作为后备）
+# 使用前需将 NDK 的 toolchains/llvm/prebuilt/<host>/bin 加入 PATH
+[target.aarch64-linux-android]
+linker = "aarch64-linux-android24-clang"
+
+[target.armv7-linux-androideabi]
+linker = "armv7a-linux-androideabi24-clang"

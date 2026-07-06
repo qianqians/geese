@@ -7,6 +7,7 @@
 
 pub mod animation_panel;
 pub mod asset_browser;
+pub mod build_panel;
 pub mod bundle_panel;
 pub mod commands;
 pub mod editor;

@@ -11,6 +11,7 @@
 
 use crate::animation_panel::AnimationPanel;
 use crate::asset_browser::AssetBrowser;
+use crate::build_panel::BuildPanel;
 use crate::bundle_panel::BundlePanel;
 use crate::commands::CommandHistory;
 use crate::commands::TransformCommand;
@@ -23,6 +24,7 @@ use crate::panels::{EditorAction, EditorLayout, EditorPanel, EditorState};
 use crate::physics_debug::PhysicsDebugRenderer;
 use crate::play_mode::PlayMode;
 use crate::viewport::ViewportPanel;
+use std::process::Command;
 use asset::database::AssetDatabase;
 use asset::meta;
 use avatar::AnimationMarker;
@@ -64,6 +66,10 @@ pub struct Editor {
     bundle_panel: BundlePanel,
     /// Bundle 面板是否可见
     bundle_panel_visible: bool,
+    /// 游戏打包面板
+    build_panel: BuildPanel,
+    /// Build 面板是否可见（独立字段，避免 egui::Window::open() 借用冲突）
+    build_panel_visible: bool,
     /// 统一物理管理器（支持本地/远程/二者同时）
     physics: PhysicsManager,
     /// 物理碰撞体调试渲染器
@@ -132,6 +138,8 @@ impl Editor {
             asset_database,
             bundle_panel: BundlePanel::new(),
             bundle_panel_visible: false,
+            build_panel: BuildPanel::new(),
+            build_panel_visible: false,
             physics,
             physics_debug: PhysicsDebugRenderer::new(),
             rt,
@@ -281,6 +289,23 @@ impl Editor {
                 .show(ctx, |ui| {
                     self.bundle_panel.show_panel(ui, &self.asset_database);
                 });
+        }
+
+        // 3.5.5 Build 面板轮询（每帧 try_recv 异步构建进度）
+        self.build_panel.poll();
+
+        // 3.5.6 Build 面板渲染（浮动窗口）
+        let mut build_visible = self.build_panel_visible;
+        if build_visible {
+            egui::Window::new("Build Game")
+                .open(&mut build_visible)
+                .default_pos([200.0, 100.0])
+                .default_width(420.0)
+                .default_height(360.0)
+                .show(ctx, |ui| {
+                    self.build_panel.show_panel(ui, &self.state.project_path);
+                });
+            self.build_panel_visible = build_visible;
         }
 
         // 3.6 动画面板（浮动窗口）
@@ -468,7 +493,12 @@ impl Editor {
                     if ui.checkbox(&mut bv, "Bundle Panel").clicked() { self.bundle_panel_visible = bv; ui.close_menu(); }
                 });
                 ui.menu_button("Build", |ui| {
-                    if ui.button("Export Game (Windows)").clicked() {
+                    if ui.button("Package Game...").clicked() {
+                        self.build_panel_visible = true;
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    if ui.button("Quick Export (Windows)").clicked() {
                         self.state.pending_actions.push(EditorAction::ExportGameWindows);
                         ui.close_menu();
                     }
@@ -851,11 +881,19 @@ impl Editor {
                 EditorAction::ExportGameWindows => {
                     self.handle_export_windows();
                 }
+                EditorAction::ExportGameAndroid => {
+                    self.build_panel.open_for_target(crate::build_panel::BuildTarget::Android);
+                    self.build_panel_visible = true;
+                }
+                EditorAction::OpenBuildPanel => {
+                    self.build_panel_visible = true;
+                }
             }
         }
     }
 
-    /// 导出游戏为独立 Windows 可执行文件。
+    /// 导出游戏为独立 Windows 可执行文件（Quick Export）。
+    /// 先执行 cargo build --release -p game_runtime，再复制产物。
     fn handle_export_windows(&mut self) {
         let project_name = std::path::Path::new(&self.state.project_path)
             .file_name()
@@ -863,6 +901,44 @@ impl Editor {
             .unwrap_or_else(|| "game".to_string());
 
         let export_dir = format!("{}/export/{}", self.state.project_path, project_name);
+
+        self.state.status_message = Some("Building game_runtime (release)...".into());
+
+        // 定位项目根目录
+        let root_path = match std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|p| p.parent())
+        {
+            Some(p) => p.to_path_buf(),
+            None => {
+                self.state.status_message = Some("Cannot determine project root.".into());
+                return;
+            }
+        };
+        let manifest = root_path.join("crates").join("game_runtime").join("Cargo.toml");
+
+        // 执行 cargo build
+        let build_status = Command::new("cargo")
+            .args(["build", "--release", "-p", "game_runtime", "--manifest-path"])
+            .arg(&manifest)
+            .status();
+
+        match build_status {
+            Ok(s) if s.success() => {
+                // 构建成功，继续复制
+            }
+            Ok(s) => {
+                self.state.status_message = Some(format!(
+                    "Build failed with exit code: {}",
+                    s.code().map(|c| c.to_string()).unwrap_or_else(|| "unknown".into())
+                ));
+                return;
+            }
+            Err(e) => {
+                self.state.status_message = Some(format!("Failed to start cargo: {e}"));
+                return;
+            }
+        }
 
         // 创建输出目录
         let _ = std::fs::create_dir_all(&export_dir);
@@ -883,11 +959,13 @@ impl Editor {
             eprintln!("[Editor] copy config failed: {e}");
         }
 
-        // 复制 game_runtime .exe（从 workspace target 目录）
-        let exe_src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .map(|p| p.join("target/release/geese_game.exe"))
-            .unwrap_or_else(|| std::path::PathBuf::from("target/release/geese_game.exe"));
+        // 复制 game_runtime .exe
+        let exe_src = root_path
+            .join("crates")
+            .join("game_runtime")
+            .join("target")
+            .join("release")
+            .join("geese_game.exe");
         let exe_dst = format!("{}/{}.exe", export_dir, project_name);
 
         if exe_src.exists() {
@@ -897,13 +975,14 @@ impl Editor {
                 return;
             }
             self.state.status_message = Some(format!(
-                "Export: {}/export/{}/{}  ← Run: cargo build --release -p game_runtime first",
+                "Exported to {}/export/{}/{}.exe",
                 self.state.project_path, project_name, project_name
             ));
         } else {
-            self.state.status_message = Some(
-                "geese_game.exe not found. Build first: cargo build --release -p game_runtime".into()
-            );
+            self.state.status_message = Some(format!(
+                "geese_game.exe not found at {}. Build may have failed silently.",
+                exe_src.display()
+            ));
         }
     }
 

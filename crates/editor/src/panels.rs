@@ -61,6 +61,10 @@ pub enum EditorAction {
     },
     /// 导出游戏（构建独立 .exe + assets）
     ExportGameWindows,
+    /// 导出游戏（Android .so 构建）
+    ExportGameAndroid,
+    /// 打开构建面板
+    OpenBuildPanel,
 }
 
 // ---------------------------------------------------------------------------
