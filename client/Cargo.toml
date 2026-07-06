@@ -18,3 +18,8 @@ client = { path = "./lib/client", version = "0.1.0" }
 [lib]
 name="pyclient"
 crate-type = ["cdylib"]
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

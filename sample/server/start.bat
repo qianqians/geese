@@ -1,18 +1,18 @@
-cd ../../server/dependences/consul/
+cd /d ../../server/dependences/consul/
 start consul.exe agent -dev
 
-cd ../redis/
+cd /d ../redis/
 start start.bat
 
 timeout /t 3
 
-cd ../../../sample/server/bin
+cd /d ../../../sample/server/bin
 start dbproxy.exe ../config/dbproxy.cfg
 start gate.exe ../config/gate.cfg
 
 timeout /t 3
 
-cd ../src
+cd /d ../src
 start python rank_app.py ../config/rank.cfg
 
 timeout /t 3

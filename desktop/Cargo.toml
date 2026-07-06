@@ -14,3 +14,8 @@ egui-wgpu = "0.29"
 pyo3 = { version = "0.26.0", features = ["extension-module"] }
 launcher = { path = "../crates/launcher" }
 editor = { path = "../crates/editor" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

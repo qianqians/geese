@@ -41,3 +41,8 @@ path="./src/dbproxy_main.rs"
 [[bin]]
 name="gate"
 path="./src/gate_main.rs"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

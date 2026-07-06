@@ -3,13 +3,18 @@
 
 import sys
 import os
+import importlib.machinery, importlib.util
 
-# 添加 pydesktop 动态库路径
-desktop_lib_path = os.path.join(os.path.dirname(__file__), 'desktop', 'target', 'debug')
-sys.path.insert(0, desktop_lib_path)
+# Load the .dll directly (cargo build outputs .dll, not .pyd)
+_root = os.path.dirname(os.path.abspath(__file__))
+_dll = os.path.join(_root, 'desktop', 'target', 'debug', 'pydesktop.dll')
+_loader = importlib.machinery.ExtensionFileLoader('pydesktop', _dll)
+_spec = importlib.util.spec_from_loader('pydesktop', _loader, origin=_dll)
+pydesktop = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(pydesktop)
 
 try:
-    from pydesktop import run
+    run = pydesktop.run
     
     print("=" * 50)
     print("Geese Desktop 测试")

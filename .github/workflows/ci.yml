@@ -34,6 +34,169 @@ jobs:
           sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libwayland-dev
 
       - name: Build scene
+        working-directory: crates/scene
+        run: cargo build
+
+      - name: Test scene
+        working-directory: crates/scene
+        run: cargo test --lib
+
+      - name: Build physics
+        working-directory: crates/physics
+        run: cargo build
+
+      - name: Build physics_manager
+        working-directory: crates/physics_manager
+        run: cargo build
+
+      - name: Build math
+        working-directory: crates/math
+        run: cargo build
+
+      - name: Build asset
+        working-directory: crates/asset
+        run: cargo build
+
+      - name: Build avatar
+        working-directory: crates/avatar
+        run: cargo build
+
+      - name: Build camera
+        working-directory: crates/camera
+        run: cargo build
+
+      - name: Build render
+        working-directory: crates/render
+        run: cargo build
+
+  # ── Editor + Desktop (needs Python for PyO3) ─────────────────
+  editor:
+    name: Editor (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux deps (wgpu + Python)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libwayland-dev
+
+      - name: Install macOS deps
+        if: runner.os == 'macOS'
+        run: brew install python3
+
+      - name: Setup Python (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Build editor crate
+        working-directory: crates/editor
+        run: cargo build
+
+      - name: Build desktop
+        working-directory: desktop
+        run: cargo build --release
+
+  # ── Server + Client (needs Python for PyO3 cdylib) ──────────
+  server:
+    name: Server (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libwayland-dev
+
+      - name: Install macOS deps
+        if: runner.os == 'macOS'
+        run: brew install python3
+
+      - name: Setup Python (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Build server
+        working-directory: server
+        run: cargo build --release
+
+      - name: Build client
+        working-directory: client
+        run: cargo build --release
+
+      # ── Package (Windows only) ──
+      - name: Package dist
+        if: runner.os == 'Windows'
+        run: pwsh ./build.ps1 -Profile release
+
+      - name: Upload dist artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: geese-dist-windows
+          path: dist/
+          retention-days: 7
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ── Core crates (no GPU at runtime, but render needs wgpu deps) ──
+  core:
+    name: Core (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux deps (wgpu + X11)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libwayland-dev
+
+      - name: Build scene
         run: cargo build --package scene
 
       - name: Test scene

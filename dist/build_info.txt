@@ -1,0 +1,18 @@
+﻿Geese Engine Build Info
+=======================
+Build Time:    2026-07-06 14:36:01
+Profile:       debug
+Target:        all
+Python:        314 (cp314-win_amd64)
+Rust:          rustc 1.96.0 (ac68faa20 2026-05-25)
+OS:            Microsoft Windows NT 10.0.26200.0
+
+Output: dist/
+  desktop/   - pydesktop.pyd + run.py + run_launcher.py
+  server/    - dbproxy.exe + gate.exe + pyhub.pyd + engine/ + config/ + start.ps1
+  client/    - pyclient.pyd + engine/ + run.py
+
+Usage:
+  Desktop:  python dist/desktop/run.py [project_path]
+  Server:   pwsh dist/server/start.ps1
+  Client:   python dist/client/run.py
