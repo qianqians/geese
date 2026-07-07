@@ -2,10 +2,13 @@
 //!
 //! 提供：
 //! - `EventEntryDef`：事件条目（触发函数 → 响应函数）
-//! - `EventComponentDef`：实体事件组件定义（server/client enabled + entries 列表）
+//! - `EventComponentDef`：实体事件组件定义（事件条目列表）
 //!
 //! 触发函数签名：`fn() -> bool`，返回 true 时触发响应。
 //! 响应函数签名：`fn()`，无参数无返回值。
+//!
+//! 注意：事件系统仅用于客户端本地交互逻辑（播放动画、音效、开门等）。
+//! 服务器端游戏逻辑请直接在 hub Python 脚本中编写，不需要事件组件。
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -27,26 +30,14 @@ pub struct EventEntryDef {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct EventComponentDef {
-    /// 服务器是否启用事件评估
-    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
-    pub server_enabled: bool,
-    /// 客户端是否启用事件评估
-    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
-    pub client_enabled: bool,
     /// 事件条目列表
     #[cfg_attr(feature = "serde", serde(default))]
     pub entries: Vec<EventEntryDef>,
 }
 
-fn default_true() -> bool {
-    true
-}
-
 impl Default for EventComponentDef {
     fn default() -> Self {
         Self {
-            server_enabled: true,
-            client_enabled: true,
             entries: Vec::new(),
         }
     }
@@ -59,8 +50,6 @@ mod tests {
     #[test]
     fn default_component_has_empty_entries() {
         let def = EventComponentDef::default();
-        assert!(def.server_enabled);
-        assert!(def.client_enabled);
         assert!(def.entries.is_empty());
     }
 
@@ -78,8 +67,6 @@ mod tests {
 
         let json = serde_json::to_string(&def).unwrap();
         let restored: EventComponentDef = serde_json::from_str(&json).unwrap();
-        assert_eq!(restored.server_enabled, def.server_enabled);
-        assert_eq!(restored.client_enabled, def.client_enabled);
         assert_eq!(restored.entries.len(), 2);
         assert_eq!(restored.entries[0].trigger, "on_enter");
         assert_eq!(restored.entries[0].response, "open_door");
@@ -89,7 +76,7 @@ mod tests {
 
     #[test]
     fn deserialize_minimal() {
-        let json = r#"{"server_enabled":true,"client_enabled":true,"entries":[]}"#;
+        let json = r#"{"entries":[]}"#;
         let def: EventComponentDef = serde_json::from_str(json).unwrap();
         assert!(def.entries.is_empty());
     }
@@ -99,8 +86,6 @@ mod tests {
         // 空 JSON 对象应使用默认值
         let json = r#"{}"#;
         let def: EventComponentDef = serde_json::from_str(json).unwrap();
-        assert!(def.server_enabled);
-        assert!(def.client_enabled);
         assert!(def.entries.is_empty());
     }
 }

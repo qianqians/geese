@@ -36,8 +36,6 @@ pub struct InspectorPanel {
     navmesh_agent_radius: f32,
     /// Event Component 状态
     event_enabled: bool,
-    event_server_enabled: bool,
-    event_client_enabled: bool,
     event_entries: Vec<(String, String)>,  // (trigger, response)
 }
 
@@ -62,8 +60,6 @@ impl InspectorPanel {
             navmesh_enabled: false,
             navmesh_agent_radius: 0.5,
             event_enabled: false,
-            event_server_enabled: true,
-            event_client_enabled: true,
             event_entries: Vec::new(),
         }
     }
@@ -109,11 +105,7 @@ impl InspectorPanel {
                 response: response.clone(),
             })
             .collect();
-        let component = event::EventComponentDef {
-            server_enabled: self.event_server_enabled,
-            client_enabled: self.event_client_enabled,
-            entries,
-        };
+        let component = event::EventComponentDef { entries };
         state.pending_actions.push(EditorAction::SetEventComponent {
             node_id: entity_id.to_string(),
             component: Some(component),
@@ -219,8 +211,6 @@ impl EditorPanel for InspectorPanel {
                 self.event_enabled = state.event_component_cache.contains_key(entity_id);
                 if self.event_enabled {
                     if let Some(comp) = state.event_component_cache.get(entity_id) {
-                        self.event_server_enabled = comp.server_enabled;
-                        self.event_client_enabled = comp.client_enabled;
                         self.event_entries = comp.entries
                             .iter()
                             .map(|e| (e.trigger.clone(), e.response.clone()))
@@ -447,8 +437,6 @@ impl EditorPanel for InspectorPanel {
                                 self.event_enabled = !self.event_enabled;
                                 if self.event_enabled {
                                     let component = event::EventComponentDef {
-                                        server_enabled: self.event_server_enabled,
-                                        client_enabled: self.event_client_enabled,
                                         entries: Vec::new(),
                                     };
                                     state.pending_actions.push(EditorAction::SetEventComponent {
@@ -465,17 +453,6 @@ impl EditorPanel for InspectorPanel {
                         });
                         if self.event_enabled {
                             ui.add_space(4.0);
-                            // Server/Client 开关
-                            let mut srv = self.event_server_enabled;
-                            if ui.checkbox(&mut srv, "Server Events").changed() {
-                                self.event_server_enabled = srv;
-                                self.push_event_update(&eid_ev2, state);
-                            }
-                            let mut cli = self.event_client_enabled;
-                            if ui.checkbox(&mut cli, "Client Events").changed() {
-                                self.event_client_enabled = cli;
-                                self.push_event_update(&eid_ev2, state);
-                            }
                             ui.separator();
                             // Event Entries 列表
                             ui.label("Event Entries:");
