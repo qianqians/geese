@@ -3,6 +3,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use camera::frustum::Frustum;
 use cgmath::InnerSpace;
 use cgmath::{Matrix, SquareMatrix, Vector3};
+#[cfg(feature = "navmesh")]
+use navmesh::NavMesh;
 use math::AABB;
 use render::MaterialLibrary;
 use render::{RenderQueue, SceneRenderer};
@@ -67,6 +69,9 @@ pub struct Scene {
     pub character_physics: Vec<CharacterPhysics>,
     /// 物理开关；关闭时跳过物理步进和动画混合
     pub physics_enabled: bool,
+    /// 运行时导航网格（由 build_navmesh() 构建）
+    #[cfg(feature = "navmesh")]
+    pub navmesh: Option<NavMesh>,
     /// 角色动画蓝图列表（Phase 4 动画混合），带实体绑定。
     pub character_anim_graphs: Vec<EntityAnimationGraph>,
     /// 本帧触发的动画标记事件，由外部消费者 drain。
@@ -121,6 +126,8 @@ impl Scene {
             #[cfg(feature = "physics")]
             character_physics: Vec::new(),
             physics_enabled: true,
+            #[cfg(feature = "navmesh")]
+            navmesh: None,
             character_anim_graphs: Vec::new(),
             marker_events: Vec::new(),
             animation_events: Vec::new(),
@@ -602,6 +609,18 @@ impl Scene {
             let obj = &self.objects[id];
             self.octree.insert(id, obj.aabb, obj.center);
         }
+    }
+
+    /// 从场景中标记了 NavMesh 组件的对象构建统一的导航网格。
+    ///
+    /// 当前为桩实现：仅重置 navmesh 为 None。
+    /// 未来版本将从对象三角形数据自动构建 NavMesh。
+    #[cfg(feature = "navmesh")]
+    pub fn build_navmesh(&mut self) {
+        // TODO: 遍历 self.objects 中所有标记了 navmesh 组件的对象，
+        // 提取其 mesh 三角形数据构建统一的 NavMesh 实例。
+        // 初期版本可通过外部调用者传入三角形数据构建。
+        self.navmesh = None;
     }
 
     /// 递归深度上限，防止因节点树循环引用导致栈溢出。

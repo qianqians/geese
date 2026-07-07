@@ -32,6 +32,8 @@ pub struct SceneNodeData {
     pub prefab_ref_uuid: Option<String>,
     /// 物理组件定义（None 表示无物理组件）
     pub physics: Option<scene::manifest::PhysicsComponentDef>,
+    /// NavMesh 组件定义（None 表示不参与导航网格构建）
+    pub navmesh: Option<scene::manifest::NavMeshComponentDef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -184,6 +186,7 @@ impl HierarchyPanel {
             asset_source_uuid: None,
             prefab_ref_uuid: None,
             physics: None,
+            navmesh: None,
         });
         tree.add_node(SceneNodeData {
             id: "room".into(),
@@ -196,6 +199,7 @@ impl HierarchyPanel {
             asset_source_uuid: None,
             prefab_ref_uuid: None,
             physics: None,
+            navmesh: None,
         });
         tree.add_node(SceneNodeData {
             id: "floor".into(),
@@ -208,6 +212,7 @@ impl HierarchyPanel {
             asset_source_uuid: None,
             prefab_ref_uuid: None,
             physics: None,
+            navmesh: None,
         });
         tree.add_node(SceneNodeData {
             id: "walls".into(),
@@ -220,6 +225,7 @@ impl HierarchyPanel {
             asset_source_uuid: None,
             prefab_ref_uuid: None,
             physics: None,
+            navmesh: None,
         });
         tree.add_node(SceneNodeData {
             id: "light_main".into(),
@@ -232,6 +238,7 @@ impl HierarchyPanel {
             asset_source_uuid: None,
             prefab_ref_uuid: None,
             physics: None,
+            navmesh: None,
         });
         tree.add_node(SceneNodeData {
             id: "outdoor".into(),
@@ -244,6 +251,7 @@ impl HierarchyPanel {
             asset_source_uuid: None,
             prefab_ref_uuid: None,
             physics: None,
+            navmesh: None,
         });
         tree.add_node(SceneNodeData {
             id: "player_spawn".into(),
@@ -256,6 +264,7 @@ impl HierarchyPanel {
             asset_source_uuid: None,
             prefab_ref_uuid: None,
             physics: None,
+            navmesh: None,
         });
 
         Self {
@@ -422,6 +431,7 @@ impl EditorPanel for HierarchyPanel {
                         asset_source_uuid: None,
                         prefab_ref_uuid: None,
                         physics: None,
+                        navmesh: None,
                     });
                 }
             });

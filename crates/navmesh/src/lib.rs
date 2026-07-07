@@ -9,11 +9,14 @@
 //! 不做几何裁剪 / Recast 体素生成，留待接入 `oxidized_navigation` 时实现。
 
 use std::collections::{BinaryHeap, HashMap};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 pub type TriId = u32;
 
 /// XZ 平面 2D 点（NavMesh 通常在 XZ 平面）。
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Vec2 { pub x: f32, pub z: f32 }
 
 impl Vec2 {
@@ -28,6 +31,7 @@ impl Vec2 {
 
 /// 一个三角形面片：顶点 id 三元组 + 区域 cost。
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct NavTri {
     pub verts: [u32; 3],
     /// 区域 cost 系数（>=0），路径累计代价 = 边长 × cost。
@@ -42,11 +46,14 @@ impl NavTri {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct NavMesh {
     pub vertices: Vec<Vec2>,
     pub triangles: Vec<NavTri>,
     /// 每个三角形的邻接：与共享边相邻的三角形 id（最多 3 个）。
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub adjacency: Vec<[Option<TriId>; 3]>,
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub centers: Vec<Vec2>,
 }
 

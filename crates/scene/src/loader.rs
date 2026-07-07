@@ -552,6 +552,7 @@ mod tests {
             rotation_euler: None,
             tag: None,
             physics: None,
+            navmesh: None,
             _body_kind: None,
         });
         manifest.objects.push(SceneObjectDef {
@@ -562,6 +563,7 @@ mod tests {
             rotation_euler: Some([0.0, 45.0, 0.0]),
             tag: None,
             physics: None,
+            navmesh: None,
             _body_kind: None,
         });
 

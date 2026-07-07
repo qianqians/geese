@@ -60,6 +60,9 @@ pub struct ModelRef {
     /// 物理组件定义。None 表示无物理。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub physics: Option<PhysicsComponentDef>,
+    /// NavMesh 组件定义。None 表示不参与导航网格构建。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub navmesh: Option<NavMeshComponentDef>,
     // ── 以下为旧格式兼容字段（仅反序列化，不序列化输出）──
     /// [deprecated] 旧格式 collision_enabled —— 自动迁移到 physics.collision_enabled
     #[serde(default, skip_serializing, alias = "collision_enabled")]
@@ -152,6 +155,39 @@ impl Default for PhysicsComponentDef {
     }
 }
 
+// ---------------------------------------------------------------------------
+// NavMesh Component
+// ---------------------------------------------------------------------------
+
+/// 实体 NavMesh 组件定义。
+/// `None` 表示该实体不参与导航网格构建，`Some` 表示实体提供导航数据。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NavMeshComponentDef {
+    /// 服务器是否启用导航网格
+    #[serde(default = "default_true")]
+    pub server_enabled: bool,
+    /// 客户端是否启用导航网格
+    #[serde(default = "default_true")]
+    pub client_enabled: bool,
+    /// 导航代理半径（用于寻路时的碰撞检测）
+    #[serde(default = "default_agent_radius")]
+    pub agent_radius: f32,
+}
+
+fn default_agent_radius() -> f32 {
+    0.5
+}
+
+impl Default for NavMeshComponentDef {
+    fn default() -> Self {
+        Self {
+            server_enabled: true,
+            client_enabled: true,
+            agent_radius: 0.5,
+        }
+    }
+}
+
 /// 程序化内联对象定义（不依赖外部 glTF 文件）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SceneObjectDef {
@@ -174,6 +210,9 @@ pub struct SceneObjectDef {
     /// 物理组件定义。None 表示无物理。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub physics: Option<PhysicsComponentDef>,
+    /// NavMesh 组件定义。None 表示不参与导航网格构建。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub navmesh: Option<NavMeshComponentDef>,
     // ── 旧格式兼容字段（仅反序列化）──
     /// [deprecated] 旧格式 body_kind —— 自动迁移到 physics.body_kind
     #[serde(default, skip_serializing, alias = "body_kind")]

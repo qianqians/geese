@@ -175,6 +175,7 @@ impl GltfImportDialog {
                 } else {
                     None
                 },
+                navmesh: None,
                 _collision_enabled: None,
                 _body_kind: None,
             }],

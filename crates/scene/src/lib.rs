@@ -22,6 +22,8 @@ pub use scene_object::SceneObject;
 pub use scene_object::DirtyFlags;
 #[cfg(feature = "physics")]
 pub use gameplay_physics::{CapsuleController, CharacterControllerType, CharacterPhysics, JointTypeStrategy, RagdollBuilder, RagdollConfig, RagdollInstance};
+#[cfg(feature = "navmesh")]
+pub use navmesh;
 pub use character_animation::{CharacterAnimationGraph, SpeedThresholds};
 
 use asset::load;

@@ -31,6 +31,9 @@ pub struct InspectorPanel {
     physics_server_enabled: bool,
     physics_client_enabled: bool,
     physics_body_kind_idx: usize,
+    /// NavMesh Component 状态
+    navmesh_enabled: bool,
+    navmesh_agent_radius: f32,
 }
 
 impl InspectorPanel {
@@ -51,6 +54,8 @@ impl InspectorPanel {
             physics_server_enabled: true,
             physics_client_enabled: true,
             physics_body_kind_idx: 0,
+            navmesh_enabled: false,
+            navmesh_agent_radius: 0.5,
         }
     }
 
@@ -68,6 +73,19 @@ impl InspectorPanel {
             body_kind,
         };
         state.pending_actions.push(EditorAction::SetPhysicsComponent {
+            node_id: entity_id.to_string(),
+            component: Some(component),
+        });
+    }
+
+    /// 推送 NavMesh 组件更新到 pending_actions。
+    fn push_navmesh_update(&self, entity_id: &str, state: &mut EditorState) {
+        let component = scene::manifest::NavMeshComponentDef {
+            server_enabled: true,
+            client_enabled: true,
+            agent_radius: self.navmesh_agent_radius,
+        };
+        state.pending_actions.push(EditorAction::SetNavMeshComponent {
             node_id: entity_id.to_string(),
             component: Some(component),
         });
@@ -159,6 +177,13 @@ impl EditorPanel for InspectorPanel {
                             scene::manifest::BodyKindDef::Dynamic => 1,
                             _ => 0,
                         };
+                    }
+                }
+                // 同步 NavMesh Component
+                self.navmesh_enabled = state.navmesh_component_cache.contains_key(entity_id);
+                if self.navmesh_enabled {
+                    if let Some(comp) = state.navmesh_component_cache.get(entity_id) {
+                        self.navmesh_agent_radius = comp.agent_radius;
                     }
                 }
             }
@@ -301,6 +326,42 @@ impl EditorPanel for InspectorPanel {
                     });
                 ui.add_space(4.0);
 
+                // ═══ NavMesh Component ═══
+                let eid_nm = eid.clone();
+                egui::CollapsingHeader::new("▼ NavMesh Component")
+                    .default_open(false)
+                    .show(ui, |ui| {
+                        let eid_nm2 = eid_nm.clone();
+                        ui.horizontal(|ui| {
+                            let label = if self.navmesh_enabled { "Remove" } else { "Add Component" };
+                            if ui.button(label).clicked() {
+                                self.navmesh_enabled = !self.navmesh_enabled;
+                                let component = if self.navmesh_enabled {
+                                    Some(scene::manifest::NavMeshComponentDef {
+                                        server_enabled: true,
+                                        client_enabled: true,
+                                        agent_radius: self.navmesh_agent_radius,
+                                    })
+                                } else {
+                                    None
+                                };
+                                state.pending_actions.push(EditorAction::SetNavMeshComponent {
+                                    node_id: eid_nm2.clone(),
+                                    component,
+                                });
+                            }
+                        });
+                        if self.navmesh_enabled {
+                            ui.add_space(4.0);
+                            let mut radius = self.navmesh_agent_radius;
+                            if ui.add(egui::Slider::new(&mut radius, 0.1..=2.0).text("Agent Radius")).changed() {
+                                self.navmesh_agent_radius = radius;
+                                self.push_navmesh_update(&eid_nm2, state);
+                            }
+                        }
+                    });
+                ui.add_space(4.0);
+
                 // ═══ Character Controller ═══
                 egui::CollapsingHeader::new("▼ Character Controller")
                     .default_open(false)
@@ -339,6 +400,7 @@ impl EditorPanel for InspectorPanel {
                         ui.label("• Transform");
                         if has_mesh { ui.label("• Mesh Renderer"); }
                         if self.physics_enabled { ui.label("• Physics Component"); }
+                        if self.navmesh_enabled { ui.label("• NavMesh Component"); }
                         ui.horizontal(|ui| {
                             if ui.button("+ Add Component").clicked() {}
                         });
