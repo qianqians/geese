@@ -600,10 +600,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "gameplay_physics"
+version = "0.1.0"
+dependencies = [
+ "avatar",
+ "cgmath",
+ "log",
+ "physics",
+]
+
+[[package]]
 name = "geese_client"
 version = "0.1.0"
 dependencies = [
  "client",
+ "gameplay_physics",
+ "navmesh",
+ "physics",
  "pyo3",
  "serde",
  "serde_json",
@@ -1447,6 +1460,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "navmesh"
+version = "0.1.0"
+
+[[package]]
 name = "ndk-sys"
 version = "0.5.0+25.2.9519653"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2065,6 +2082,7 @@ dependencies = [
  "bitflags 2.11.1",
  "camera",
  "cgmath",
+ "gameplay_physics",
  "gltf",
  "log",
  "math",

@@ -16,7 +16,7 @@ pub struct PhysicsDebugRenderer {
     /// 是否启用。
     pub enabled: bool,
     /// 上次获取的碰撞体快照（id → position, rotation）。
-    bodies: Vec<physics_client::BodySnapshot>,
+    bodies: Vec<physics_manager::BodySnapshot>,
 }
 
 impl PhysicsDebugRenderer {
@@ -28,12 +28,12 @@ impl PhysicsDebugRenderer {
     }
 
     /// 更新碰撞体快照。
-    pub fn update(&mut self, bodies: Vec<physics_client::BodySnapshot>) {
+    pub fn update(&mut self, bodies: Vec<physics_manager::BodySnapshot>) {
         self.bodies = bodies;
     }
 
     /// 获取碰撞体快照列表。
-    pub fn bodies(&self) -> &[physics_client::BodySnapshot] {
+    pub fn bodies(&self) -> &[physics_manager::BodySnapshot] {
         &self.bodies
     }
 

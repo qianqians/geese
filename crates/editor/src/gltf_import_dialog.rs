@@ -8,7 +8,7 @@
 use crate::panels::{EditorPanel, EditorState};
 use asset::database::AssetDatabase;
 use scene::avatar_manifest::AvatarManifest;
-use scene::manifest::{BodyKindDef, ModelRef, SceneManifest, TransformDef};
+use scene::manifest::{BodyKindDef, ModelRef, PhysicsComponentDef, SceneManifest, TransformDef};
 
 /// 资源类型选择。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -166,8 +166,17 @@ impl GltfImportDialog {
                 id: name.to_string(),
                 path: gltf_relative_path.to_string(),
                 transform: TransformDef::default(),
-                collision_enabled: self.collision_enabled,
-                body_kind: BodyKindDef::Fixed,
+                physics: if self.collision_enabled {
+                    Some(PhysicsComponentDef {
+                        collision_enabled: true,
+                        body_kind: BodyKindDef::Fixed,
+                        ..Default::default()
+                    })
+                } else {
+                    None
+                },
+                _collision_enabled: None,
+                _body_kind: None,
             }],
             environment: Default::default(),
             spawn_points: vec![],

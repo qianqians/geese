@@ -8,7 +8,7 @@
 
 use crate::editor_mode::EditorMode;
 use crate::panel_layer::{PanelLayer, PanelLayerManager};
-use physics_client::BodySnapshot;
+use physics_manager::BodySnapshot;
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
@@ -44,10 +44,10 @@ pub enum EditorAction {
         name: String,
         remove: bool,
     },
-    /// 切换实体的物理刚体类型
-    SetBodyKind {
+    /// 设置/移除物理组件
+    SetPhysicsComponent {
         node_id: String,
-        body_kind: scene::manifest::BodyKindDef,
+        component: Option<scene::manifest::PhysicsComponentDef>,
     },
     /// 重命名实体
     RenameEntity {
@@ -117,8 +117,8 @@ pub struct EditorState {
     pub physics_debug_bodies: Vec<BodySnapshot>,
     /// 实体变换缓存（selection 时填入上次确认值，用于 undo）
     pub transform_cache: HashMap<String, ([f32; 3], [f32; 3], [f32; 3])>,
-    /// 实体物理类型缓存 (entity_id → body_kind)
-    pub body_kind_cache: HashMap<String, scene::manifest::BodyKindDef>,
+    /// 实体物理组件缓存 (entity_id → PhysicsComponentDef)
+    pub physics_component_cache: HashMap<String, scene::manifest::PhysicsComponentDef>,
     /// 实体名称缓存 (entity_id → name)，用于 Inspector 即时编辑
     pub name_cache: HashMap<String, String>,
     /// Inspector 写回的待提交变换变更
@@ -153,7 +153,7 @@ impl EditorState {
             panel_layer: PanelLayerManager::default(),
             physics_debug_bodies: Vec::new(),
             transform_cache: HashMap::new(),
-            body_kind_cache: HashMap::new(),
+            physics_component_cache: HashMap::new(),
             name_cache: HashMap::new(),
             pending_transform: None,
             pending_actions: Vec::new(),

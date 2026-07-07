@@ -26,8 +26,11 @@ pub struct InspectorPanel {
     cc_half_height: f32,
     cc_radius: f32,
     cc_enabled: bool,
-    /// Physics Body 类型索引
-    body_kind_idx: usize,
+    /// Physics Component 状态
+    physics_enabled: bool,
+    physics_server_enabled: bool,
+    physics_client_enabled: bool,
+    physics_body_kind_idx: usize,
 }
 
 impl InspectorPanel {
@@ -44,8 +47,30 @@ impl InspectorPanel {
             cc_half_height: 1.0,
             cc_radius: 0.5,
             cc_enabled: false,
-            body_kind_idx: 0,
+            physics_enabled: false,
+            physics_server_enabled: true,
+            physics_client_enabled: true,
+            physics_body_kind_idx: 0,
         }
+    }
+
+    /// 推送物理组件更新到 pending_actions。
+    fn push_physics_update(&self, entity_id: &str, state: &mut EditorState) {
+        let body_kind = if self.physics_body_kind_idx == 1 {
+            scene::manifest::BodyKindDef::Dynamic
+        } else {
+            scene::manifest::BodyKindDef::Fixed
+        };
+        let component = scene::manifest::PhysicsComponentDef {
+            server_enabled: self.physics_server_enabled,
+            client_enabled: self.physics_client_enabled,
+            collision_enabled: true,
+            body_kind,
+        };
+        state.pending_actions.push(EditorAction::SetPhysicsComponent {
+            node_id: entity_id.to_string(),
+            component: Some(component),
+        });
     }
 
     /// 更新 Transform 值以匹配选中实体（从场景数据同步）。
@@ -124,16 +149,24 @@ impl EditorPanel for InspectorPanel {
                     self.rotation = defaults.1;
                     self.scale = defaults.2;
                 }
-                // 同步 Physics Body
-                self.body_kind_idx = match state.body_kind_cache.get(entity_id).copied() {
-                    Some(scene::manifest::BodyKindDef::Dynamic) => 1,
-                    _ => 0,
-                };
+                // 同步 Physics Component
+                self.physics_enabled = state.physics_component_cache.contains_key(entity_id);
+                if self.physics_enabled {
+                    if let Some(comp) = state.physics_component_cache.get(entity_id) {
+                        self.physics_server_enabled = comp.server_enabled;
+                        self.physics_client_enabled = comp.client_enabled;
+                        self.physics_body_kind_idx = match comp.body_kind {
+                            scene::manifest::BodyKindDef::Dynamic => 1,
+                            _ => 0,
+                        };
+                    }
+                }
             }
         }
 
         match &state.selected_entity {
             Some(entity_id) => {
+                let eid = entity_id.clone(); // 克隆以避免借用冲突
                 ui.add_space(4.0);
 
                 // ═══ Entity Name ═══
@@ -143,9 +176,9 @@ impl EditorPanel for InspectorPanel {
                     let resp = ui.text_edit_singleline(&mut name);
                     if resp.changed() {
                         self.entity_name = name.clone();
-                        state.name_cache.insert(entity_id.clone(), name.clone());
+                        state.name_cache.insert(eid.clone(), name.clone());
                         state.pending_actions.push(EditorAction::RenameEntity {
-                            node_id: entity_id.clone(),
+                            node_id: eid.clone(),
                             new_name: name,
                         });
                     }
@@ -158,7 +191,7 @@ impl EditorPanel for InspectorPanel {
                 ui.horizontal(|ui| {
                     if ui.button("📦 Save as Prefab").clicked() {
                         state.pending_actions.push(EditorAction::SaveAsPrefab {
-                            node_id: entity_id.clone(),
+                            node_id: eid.clone(),
                         });
                     }
                 });
@@ -213,39 +246,60 @@ impl EditorPanel for InspectorPanel {
                     ui.add_space(4.0);
                 }
 
-                // ═══ Physics Body ═══
-                if state.body_kind_cache.contains_key(entity_id) {
-                    egui::CollapsingHeader::new("▼ Physics Body")
-                        .default_open(false)
-                        .show(ui, |ui| {
-                            if let Some(kind) = state.body_kind_cache.get(entity_id).copied() {
-                                let mut idx = match kind {
-                                    scene::manifest::BodyKindDef::Fixed => 0,
-                                    scene::manifest::BodyKindDef::Dynamic => 1,
+                // ═══ Physics Component ═══
+                let eid2 = eid.clone();
+                egui::CollapsingHeader::new("▼ Physics Component")
+                    .default_open(false)
+                    .show(ui, |ui| {
+                        let eid3 = eid2.clone();
+                        ui.horizontal(|ui| {
+                            let label = if self.physics_enabled { "Remove" } else { "Add Component" };
+                            if ui.button(label).clicked() {
+                                self.physics_enabled = !self.physics_enabled;
+                                let component = if self.physics_enabled {
+                                    Some(scene::manifest::PhysicsComponentDef {
+                                        server_enabled: true,
+                                        client_enabled: true,
+                                        collision_enabled: true,
+                                        body_kind: scene::manifest::BodyKindDef::Fixed,
+                                    })
+                                } else {
+                                    None
                                 };
-                                let old_idx = idx;
-                                ui.horizontal(|ui| {
-                                    ui.label("Type:");
-                                    ui.selectable_value(&mut idx, 0, "Static");
-                                    ui.selectable_value(&mut idx, 1, "Dynamic");
+                                state.pending_actions.push(EditorAction::SetPhysicsComponent {
+                                    node_id: eid3.clone(),
+                                    component,
                                 });
-                                if idx != old_idx {
-                                    let new_kind = if idx == 0 {
-                                        scene::manifest::BodyKindDef::Fixed
-                                    } else {
-                                        scene::manifest::BodyKindDef::Dynamic
-                                    };
-                                    state.body_kind_cache.insert(entity_id.clone(), new_kind);
-                                    state.pending_actions.push(EditorAction::SetBodyKind {
-                                        node_id: entity_id.clone(),
-                                        body_kind: new_kind,
-                                    });
-                                    self.body_kind_idx = idx;
-                                }
                             }
                         });
-                    ui.add_space(4.0);
-                }
+                        if self.physics_enabled {
+                            ui.add_space(4.0);
+                            let mut srv = self.physics_server_enabled;
+                            if ui.checkbox(&mut srv, "Server Physics").changed() {
+                                self.physics_server_enabled = srv;
+                                self.push_physics_update(&eid3, state);
+                            }
+                            let mut cli = self.physics_client_enabled;
+                            if ui.checkbox(&mut cli, "Client Physics").changed() {
+                                self.physics_client_enabled = cli;
+                                self.push_physics_update(&eid3, state);
+                            }
+                            ui.separator();
+                            // Body Type
+                            let mut idx = self.physics_body_kind_idx;
+                            let old_idx = idx;
+                            ui.horizontal(|ui| {
+                                ui.label("Type:");
+                                ui.selectable_value(&mut idx, 0, "Static");
+                                ui.selectable_value(&mut idx, 1, "Dynamic");
+                            });
+                            if idx != old_idx {
+                                self.physics_body_kind_idx = idx;
+                                self.push_physics_update(&eid3, state);
+                            }
+                        }
+                    });
+                ui.add_space(4.0);
 
                 // ═══ Character Controller ═══
                 egui::CollapsingHeader::new("▼ Character Controller")
@@ -256,7 +310,7 @@ impl EditorPanel for InspectorPanel {
                             if ui.button(label).clicked() {
                                 self.cc_enabled = !self.cc_enabled;
                                 state.pending_actions.push(EditorAction::ToggleCharacterController {
-                                    node_id: entity_id.clone(),
+                                    node_id: eid.clone(),
                                     enabled: self.cc_enabled,
                                     move_speed: self.cc_move_speed,
                                     jump_impulse: self.cc_jump_impulse,
@@ -284,7 +338,7 @@ impl EditorPanel for InspectorPanel {
                     .show(ui, |ui| {
                         ui.label("• Transform");
                         if has_mesh { ui.label("• Mesh Renderer"); }
-                        if state.body_kind_cache.contains_key(entity_id) { ui.label("• Physics Body"); }
+                        if self.physics_enabled { ui.label("• Physics Component"); }
                         ui.horizontal(|ui| {
                             if ui.button("+ Add Component").clicked() {}
                         });

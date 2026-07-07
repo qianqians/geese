@@ -26,7 +26,8 @@ pollster = "0.3"
 render = { path = "../render" }
 scene = { path = "../scene", features = ["physics"] }
 camera = { path = "../camera" }
-physics_manager = { path = "../physics_manager" }
+physics = { path = "../physics", features = ["scene-builder"] }
+gameplay_physics = { path = "../gameplay_physics" }
 input = { path = "../input" }
 asset = { path = "../asset" }
 math = { path = "../math" }

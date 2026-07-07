@@ -57,12 +57,36 @@ pub struct ModelRef {
     /// 应用到模型根节点的变换
     #[serde(default)]
     pub transform: TransformDef,
-    /// 是否为模型生成碰撞体
-    #[serde(default)]
-    pub collision_enabled: bool,
-    /// 物理刚体类型："fixed"（静止）或 "dynamic"（受重力影响）
-    #[serde(default = "default_body_kind")]
-    pub body_kind: BodyKindDef,
+    /// 物理组件定义。None 表示无物理。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub physics: Option<PhysicsComponentDef>,
+    // ── 以下为旧格式兼容字段（仅反序列化，不序列化输出）──
+    /// [deprecated] 旧格式 collision_enabled —— 自动迁移到 physics.collision_enabled
+    #[serde(default, skip_serializing, alias = "collision_enabled")]
+    pub _collision_enabled: Option<bool>,
+    /// [deprecated]
+    #[serde(default, skip_serializing, alias = "body_kind")]
+    pub _body_kind: Option<BodyKindDef>,
+}
+
+impl ModelRef {
+    /// 获取有效的物理组件定义（兼容旧格式自动迁移）。
+    pub fn effective_physics(&self) -> Option<PhysicsComponentDef> {
+        self.physics.clone().or_else(|| {
+            // 从旧格式字段构造
+            let collision = self._collision_enabled.unwrap_or(false);
+            let body_kind = self._body_kind.unwrap_or_else(default_body_kind);
+            if collision || self._body_kind.is_some() {
+                Some(PhysicsComponentDef {
+                    collision_enabled: collision,
+                    body_kind,
+                    ..Default::default()
+                })
+            } else {
+                None
+            }
+        })
+    }
 }
 
 /// 3D 变换定义。
@@ -93,6 +117,41 @@ impl Default for TransformDef {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Physics Component
+// ---------------------------------------------------------------------------
+
+/// 实体物理组件定义。
+/// `None` 表示该实体没有物理组件，`Some` 表示实体参与物理模拟。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PhysicsComponentDef {
+    /// 服务器是否运行物理模拟
+    #[serde(default = "default_true")]
+    pub server_enabled: bool,
+    /// 客户端是否运行物理模拟
+    #[serde(default = "default_true")]
+    pub client_enabled: bool,
+    /// 碰撞体开关
+    #[serde(default = "default_true")]
+    pub collision_enabled: bool,
+    /// 物理刚体类型
+    #[serde(default = "default_body_kind")]
+    pub body_kind: BodyKindDef,
+}
+
+fn default_true() -> bool { true }
+
+impl Default for PhysicsComponentDef {
+    fn default() -> Self {
+        Self {
+            server_enabled: true,
+            client_enabled: true,
+            collision_enabled: true,
+            body_kind: BodyKindDef::Fixed,
+        }
+    }
+}
+
 /// 程序化内联对象定义（不依赖外部 glTF 文件）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SceneObjectDef {
@@ -112,9 +171,25 @@ pub struct SceneObjectDef {
     /// 网格类型标识（用于特殊标识，如 "player_spawn"、"directional_light"）
     #[serde(default)]
     pub tag: Option<String>,
-    /// 物理刚体类型："fixed"（静止）或 "dynamic"（受重力影响）
-    #[serde(default = "default_body_kind")]
-    pub body_kind: BodyKindDef,
+    /// 物理组件定义。None 表示无物理。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub physics: Option<PhysicsComponentDef>,
+    // ── 旧格式兼容字段（仅反序列化）──
+    /// [deprecated] 旧格式 body_kind —— 自动迁移到 physics.body_kind
+    #[serde(default, skip_serializing, alias = "body_kind")]
+    pub _body_kind: Option<BodyKindDef>,
+}
+
+impl SceneObjectDef {
+    /// 获取有效的物理组件定义（兼容旧格式自动迁移）。
+    pub fn effective_physics(&self) -> Option<PhysicsComponentDef> {
+        self.physics.clone().or_else(|| {
+            self._body_kind.map(|body_kind| PhysicsComponentDef {
+                body_kind,
+                ..Default::default()
+            })
+        })
+    }
 }
 
 /// 场景清单中的物理刚体类型定义。
@@ -241,8 +316,7 @@ mod tests {
                     "id": "house",
                     "path": "assets/models/house.gltf",
                     "transform": { "translation": [10,0,5], "rotation": [0,45,0], "scale": [1,1,1] },
-                    "collision_enabled": true,
-                    "body_kind": "fixed"
+                    "physics": { "body_kind": "fixed", "collision_enabled": true }
                 }
             ],
             "environment": {
@@ -255,7 +329,7 @@ mod tests {
                 { "name": "player_start", "position": [0,1,0], "rotation": [0,0,0] }
             ],
             "objects": [
-                { "object_type": "plane", "position": [0,0,0], "scale": [20,1,20], "color": [0.4,0.4,0.4], "body_kind": "fixed" }
+                { "object_type": "plane", "position": [0,0,0], "scale": [20,1,20], "color": [0.4,0.4,0.4], "physics": { "body_kind": "fixed" } }
             ]
         }"#;
         let manifest: SceneManifest = serde_json::from_str(json).unwrap();
@@ -281,7 +355,30 @@ mod tests {
         assert_eq!(obj.color, [0.5, 0.5, 0.5]);
         assert!(obj.rotation_euler.is_none());
         assert!(obj.tag.is_none());
-        assert_eq!(obj.body_kind, BodyKindDef::Fixed);
+        // 新格式：无 physics 字段表示无物理组件
+        assert!(obj.effective_physics().is_none());
+    }
+
+    #[test]
+    fn backward_compat_old_body_kind() {
+        // 旧格式 JSON（body_kind 作为扁平字段）应自动迁移
+        let json = r#"{"object_type":"cube","position":[0,0,0],"body_kind":"dynamic"}"#;
+        let obj: SceneObjectDef = serde_json::from_str(json).unwrap();
+        let phys = obj.effective_physics().unwrap();
+        assert_eq!(phys.body_kind, BodyKindDef::Dynamic);
+        assert!(phys.server_enabled);
+        assert!(phys.client_enabled);
+        assert!(phys.collision_enabled);
+    }
+
+    #[test]
+    fn backward_compat_old_collision() {
+        // 旧格式 JSON（collision_enabled + body_kind 作为扁平字段）
+        let json = r#"{"id":"test","path":"a.gltf","collision_enabled":true,"body_kind":"fixed"}"#;
+        let model: ModelRef = serde_json::from_str(json).unwrap();
+        let phys = model.effective_physics().unwrap();
+        assert_eq!(phys.body_kind, BodyKindDef::Fixed);
+        assert!(phys.collision_enabled);
     }
 
     #[test]

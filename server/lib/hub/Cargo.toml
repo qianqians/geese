@@ -32,3 +32,5 @@ health = { path = "../../../crates/health", version = "0.1.0" }
 consul = { path = "../../../crates/consul", version = "0.1.0" }
 physics = { path = "../../../crates/physics", version = "0.1.0", features = ["pyo3"] }
 aoi = { path = "../../../crates/aoi", version = "0.1.0" }
+navmesh = { path = "../../../crates/navmesh", version = "0.1.0" }
+gameplay_physics = { path = "../../../crates/gameplay_physics", version = "0.1.0" }

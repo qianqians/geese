@@ -15,7 +15,7 @@ use avatar::{
 use avatar::AnimationStateMachine;
 use crate::character_animation::CharacterAnimationGraph;
 #[cfg(feature = "physics")]
-use crate::character_physics::CharacterPhysics;
+use gameplay_physics::CharacterPhysics;
 use crate::{Octree, SceneObject};
 use crate::scene_object::DirtyFlags;
 #[cfg(feature = "physics")]

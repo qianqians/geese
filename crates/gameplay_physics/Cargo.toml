@@ -1,0 +1,10 @@
+[package]
+name = "gameplay_physics"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cgmath = "0.18"
+log = "0.4"
+physics = { path = "../physics" }
+avatar = { path = "../avatar" }

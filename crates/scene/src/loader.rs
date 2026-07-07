@@ -530,7 +530,7 @@ pub(crate) fn create_pbr_material(name: &str, color: [f32; 3]) -> Material {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::manifest::{BodyKindDef, SceneManifest, SceneObjectDef};
+    use crate::manifest::{SceneManifest, SceneObjectDef};
 
     #[test]
     fn load_empty_manifest() {
@@ -551,7 +551,8 @@ mod tests {
             color: [0.5, 0.5, 0.5],
             rotation_euler: None,
             tag: None,
-            body_kind: BodyKindDef::Fixed,
+            physics: None,
+            _body_kind: None,
         });
         manifest.objects.push(SceneObjectDef {
             object_type: "cube".into(),
@@ -560,7 +561,8 @@ mod tests {
             color: [0.8, 0.3, 0.3],
             rotation_euler: Some([0.0, 45.0, 0.0]),
             tag: None,
-            body_kind: BodyKindDef::Fixed,
+            physics: None,
+            _body_kind: None,
         });
 
         let scene = load_scene_from_manifest(&manifest, ".", 100, 4, None);

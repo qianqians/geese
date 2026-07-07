@@ -13,7 +13,8 @@ use render::{
     WgpuSceneRenderer, WgpuSceneRendererDescriptor,
 };
 use scene::Scene;
-use physics_manager::{PhysicsManager, PhysicsSource};
+use physics::{PhysicsWorld, SceneId};
+use physics::math::Vec3 as PhyVec3;
 use winit::{
     event::{DeviceEvent, ElementState, Event, KeyEvent, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -78,7 +79,8 @@ pub struct GameState {
     pub renderer: WgpuSceneRenderer,
     pub scene_renderer: SceneRenderer,
     pub scene: Scene,
-    pub physics: PhysicsManager,
+    pub physics: PhysicsWorld,
+    pub physics_scene_id: SceneId,
     pub camera: GameCamera,
     pub materials: MaterialLibrary,
     pub depth_texture: wgpu::Texture,
@@ -187,12 +189,8 @@ impl GameState {
         let materials = MaterialLibrary::default();
 
         // ── 物理 ──
-        let mut physics = PhysicsManager::new(
-            PhysicsSource::Client,
-            [0.0, -9.81, 0.0],
-        );
-        let manifest_path = Path::new(project_dir).join(".scene.json");
-        physics.load_scene(&manifest_path.to_string_lossy());
+        let mut physics = PhysicsWorld::new();
+        let physics_scene_id = physics.create_scene(PhyVec3::new(0.0, -9.81, 0.0));
 
         // ── 摄像机 ──
         let camera = GameCamera::new(size.width as f32 / size.height.max(1) as f32);
@@ -207,6 +205,7 @@ impl GameState {
             scene_renderer,
             scene,
             physics,
+            physics_scene_id,
             camera,
             materials,
             depth_texture,
@@ -247,7 +246,9 @@ impl GameState {
     }
 
     pub fn update(&mut self, dt: f32) {
-        self.physics.step(dt);
+        if let Some(scene) = self.physics.scene_mut(self.physics_scene_id) {
+            scene.step(dt);
+        }
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {

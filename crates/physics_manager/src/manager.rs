@@ -1,96 +1,60 @@
-//! [`PhysicsManager`] — unified physics backend with configurable source.
+//! [`PhysicsManager`] — local physics manager.
 
 use std::path::Path;
-use std::sync::Arc;
-use std::process::{Child, Command};
-use std::thread;
-use std::time::Duration;
 
 use physics::{PhysicsWorld, SceneId};
 use physics::handles::BodyHandle;
 use physics::math::{Vec3, Quat};
 use physics::world::{BodyDesc, BodyKind};
 use physics::shapes::ShapeDesc;
-use physics_client::{BodySnapshot, PhysicsClient};
 
-/// Where physics simulation runs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PhysicsSource {
-    /// Local in-process physics only (using `PhysicsWorld`).
-    Client,
-    /// Remote physics server only (Python process via TCP).
-    Server,
-    /// Both local and remote physics.
-    ClientAndServer,
+/// Collider transform snapshot for debug rendering.
+#[derive(Debug, Clone)]
+pub struct BodySnapshot {
+    pub id: String,
+    pub position: Position3,
+    pub rotation: Quat4,
 }
 
-impl PhysicsSource {
-    pub fn runs_local(&self) -> bool {
-        matches!(self, Self::Client | Self::ClientAndServer)
-    }
+/// 3D position (f64 for compatibility).
+#[derive(Debug, Clone, Copy)]
+pub struct Position3 {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+}
 
-    pub fn runs_remote(&self) -> bool {
-        matches!(self, Self::Server | Self::ClientAndServer)
-    }
+/// Quaternion rotation (f64 for compatibility).
+#[derive(Debug, Clone, Copy)]
+pub struct Quat4 {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    pub w: f64,
 }
 
 // ---------------------------------------------------------------------------
 // PhysicsManager
 // ---------------------------------------------------------------------------
 
-/// Manages physics simulation using a configurable source.
-///
-/// ## Local Physics
-/// Always wraps a [`PhysicsWorld`] with a single scene.
-///
-/// ## Remote Physics
-/// Connects to a Python physics server process via TCP + msgpack.
+/// Manages local physics simulation using a [`PhysicsWorld`] with a single scene.
 pub struct PhysicsManager {
-    source: PhysicsSource,
-    /// Local physics world (used when `source.runs_local()`).
     world: PhysicsWorld,
     scene_id: SceneId,
-    /// Remote physics client (used when `source.runs_remote()`).
-    remote: Option<RemoteState>,
-}
-
-struct RemoteState {
-    client: Arc<PhysicsClient>,
-    process: Option<Child>,
-    #[allow(dead_code)]
-    port: u16,
 }
 
 impl PhysicsManager {
-    /// Create a new manager with the given source and gravity.
+    /// Create a new manager with the given gravity.
     ///
     /// `gravity`: `[gx, gy, gz]` in m/s^2.
-    pub fn new(source: PhysicsSource, gravity: [f32; 3]) -> Self {
+    pub fn new(gravity: [f32; 3]) -> Self {
         let mut world = PhysicsWorld::new();
         let scene_id = world.create_scene(Vec3::new(gravity[0], gravity[1], gravity[2]));
         Self {
-            source,
             world,
             scene_id,
-            remote: None,
         }
     }
-
-    /// Change physics source at runtime.
-    pub fn set_source(&mut self, source: PhysicsSource) {
-        if source != self.source {
-            if !source.runs_remote() {
-                self.disconnect_remote();
-            }
-            self.source = source;
-        }
-    }
-
-    /// Current physics source.
-    pub fn source(&self) -> PhysicsSource {
-        self.source
-    }
-
 
     // -------------------------------------------------------------------
     // Scene loading
@@ -112,7 +76,13 @@ impl PhysicsManager {
         // 1. GLTF model collision
         if let Some(models) = manifest["models"].as_array() {
             for model in models {
-                if !model["collision_enabled"].as_bool().unwrap_or(false) {
+                // 读取物理组件定义（优先新格式 physics 字段，回退旧格式）
+                let physics = model.get("physics");
+                let collision_enabled = physics
+                    .and_then(|p| p.get("collision_enabled"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or_else(|| model["collision_enabled"].as_bool().unwrap_or(false));
+                if !collision_enabled {
                     continue;
                 }
                 let Some(gltf_rel) = model["path"].as_str() else { continue };
@@ -141,14 +111,16 @@ impl PhysicsManager {
                 ) {
                     Ok(meshes) => {
                         if let Some(scene) = self.world.scene_mut(self.scene_id) {
-                            let body_kind = match model["body_kind"].as_str().unwrap_or("fixed") {
+                            let body_kind = match physics
+                                .and_then(|p| p.get("body_kind"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or_else(|| model["body_kind"].as_str().unwrap_or("fixed"))
+                            {
                                 "dynamic" => BodyKind::Dynamic,
                                 _ => BodyKind::Fixed,
                             };
 
                             if body_kind == BodyKind::Dynamic {
-                                // Dynamic + trimesh 在 Rapier 中不支持。
-                                // 改用从顶点计算出的包围盒 (AABB) 作为凸碰撞体。
                                 let bbox = compute_aabb_from_trimeshes(&meshes);
                                 let half = Vec3::new(
                                     (bbox.max_x - bbox.min_x) * 0.5,
@@ -180,6 +152,8 @@ impl PhysicsManager {
         // 2. Procedural objects (cube / plane)
         if let Some(objects) = manifest["objects"].as_array() {
             for obj in objects {
+                // 读取物理组件定义（优先新格式 physics 字段）
+                let physics = obj.get("physics");
                 let obj_type = obj["object_type"].as_str().unwrap_or("");
                 let pos = [
                     obj["position"][0].as_f64().unwrap_or(0.0) as f32,
@@ -212,7 +186,11 @@ impl PhysicsManager {
                 };
 
                 let desc = BodyDesc {
-                    kind: match obj["body_kind"].as_str().unwrap_or("fixed") {
+                    kind: match physics
+                        .and_then(|p| p.get("body_kind"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_else(|| obj["body_kind"].as_str().unwrap_or("fixed"))
+                    {
                         "dynamic" => BodyKind::Dynamic,
                         _ => BodyKind::Fixed,
                     },
@@ -226,43 +204,15 @@ impl PhysicsManager {
         }
     }
 
-    /// Load scene into remote physics server (if connected).
-    pub async fn load_scene_remote(&self, manifest_path: &str) -> Result<(), String> {
-        if let Some(remote) = &self.remote {
-            remote.client.load_scene(manifest_path).await?;
-        }
-        Ok(())
-    }
-
-    /// Initialize remote physics world.
-    pub async fn init_physics_remote(&self, gravity: [f32; 3]) -> Result<(), String> {
-        if let Some(remote) = &self.remote {
-            remote.client.init_physics(gravity).await?;
-        }
-        Ok(())
-    }
-
     // -------------------------------------------------------------------
     // Simulation stepping
     // -------------------------------------------------------------------
 
     /// Step the physics simulation.
-    ///
-    /// Advances local physics and/or remote physics depending on `source`.
     pub fn step(&mut self, dt: f32) {
-        if self.source.runs_local() {
-            if let Some(scene) = self.world.scene_mut(self.scene_id) {
-                scene.step(dt);
-            }
+        if let Some(scene) = self.world.scene_mut(self.scene_id) {
+            scene.step(dt);
         }
-    }
-
-    /// Step remote physics asynchronously.
-    pub async fn step_remote(&self, dt: f64) -> Result<(), String> {
-        if let Some(remote) = &self.remote {
-            remote.client.step(dt).await?;
-        }
-        Ok(())
     }
 
     // -------------------------------------------------------------------
@@ -270,7 +220,7 @@ impl PhysicsManager {
     // -------------------------------------------------------------------
 
     /// Get snapshots of all bodies from local physics.
-    pub fn get_local_body_snapshots(&self) -> Vec<BodySnapshot> {
+    pub fn get_body_snapshots(&self) -> Vec<BodySnapshot> {
         let mut snapshots = Vec::new();
         if let Some(scene) = self.world.scene(self.scene_id) {
             for handle in scene.body_handles() {
@@ -278,12 +228,12 @@ impl PhysicsManager {
                     let (idx, _gen) = handle.raw().into_raw_parts();
                     snapshots.push(BodySnapshot {
                         id: format!("local_{}", idx),
-                        position: physics_client::Vec3 {
+                        position: Position3 {
                             x: iso.translation.x as f64,
                             y: iso.translation.y as f64,
                             z: iso.translation.z as f64,
                         },
-                        rotation: physics_client::Quat {
+                        rotation: Quat4 {
                             x: iso.rotation.x as f64,
                             y: iso.rotation.y as f64,
                             z: iso.rotation.z as f64,
@@ -296,9 +246,7 @@ impl PhysicsManager {
         snapshots
     }
 
-    /// 按句柄列表读取刚体的世界变换 (translation, rotation)。
-    ///
-    /// 本地模式直接从 PhysicsWorld 读取；远程模式当前回退到本地。
+    /// Read world transforms for a list of body handles.
     pub fn get_body_transforms(&self, handles: &[BodyHandle]) -> Vec<(Vec3, Quat)> {
         let mut transforms = Vec::with_capacity(handles.len());
         if let Some(scene) = self.world.scene(self.scene_id) {
@@ -311,21 +259,12 @@ impl PhysicsManager {
         transforms
     }
 
-    /// 返回本地物理场景中的刚体数量，用于调试。
+    /// Return the number of bodies in the local physics scene (for debugging).
     pub fn body_count(&self) -> usize {
         if let Some(scene) = self.world.scene(self.scene_id) {
             scene.body_handles().count()
         } else {
             0
-        }
-    }
-
-    /// Get snapshots from remote physics.
-    pub async fn get_remote_body_snapshots(&self) -> Result<Vec<BodySnapshot>, String> {
-        if let Some(remote) = &self.remote {
-            remote.client.get_bodies().await
-        } else {
-            Ok(Vec::new())
         }
     }
 
@@ -335,75 +274,6 @@ impl PhysicsManager {
             scene.drain_collision_events()
         } else {
             Vec::new()
-        }
-    }
-
-    // -------------------------------------------------------------------
-    // Remote server management
-    // -------------------------------------------------------------------
-
-    /// Connect to a remote physics server.
-    ///
-    /// Spawns a Python process serving at a free port, then connects.
-    pub fn connect_remote(
-        &mut self,
-        python_path: &str,
-        server_script: &str,
-        rt: &tokio::runtime::Runtime,
-    ) -> Result<(), String> {
-        // Kill any existing remote connection
-        self.disconnect_remote();
-
-        let port = find_free_port(9000)?;
-        let child = Command::new(python_path)
-            .arg(server_script)
-            .arg("--port")
-            .arg(port.to_string())
-            .spawn()
-            .map_err(|e| format!("failed to spawn python server: {e}"))?;
-
-        wait_for_server(port, Duration::from_secs(5))?;
-
-        let addr = format!("127.0.0.1:{}", port);
-        let client = rt.block_on(PhysicsClient::connect(&addr))?;
-
-        self.remote = Some(RemoteState {
-            client: Arc::new(client),
-            process: Some(child),
-            port,
-        });
-
-
-        Ok(())
-    }
-
-    /// Whether remote physics is connected.
-    pub fn is_remote_connected(&self) -> bool {
-        self.remote.is_some()
-    }
-
-    /// Access the remote client (for advanced operations).
-    pub fn remote_client(&self) -> Option<Arc<PhysicsClient>> {
-        self.remote.as_ref().map(|r| r.client.clone())
-    }
-
-    /// Disconnect and kill remote process.
-    pub fn disconnect_remote(&mut self) {
-        if let Some(remote) = self.remote.take() {
-            drop(remote.client); // drops TCP connection
-            if let Some(mut child) = remote.process {
-                let _ = child.kill();
-                let _ = child.wait();
-            }
-        }
-    }
-
-    /// Reset remote physics world.
-    pub async fn reset_remote(&self) -> Result<(), String> {
-        if let Some(remote) = &self.remote {
-            remote.client.reset().await
-        } else {
-            Ok(())
         }
     }
 
@@ -420,12 +290,6 @@ impl PhysicsManager {
     /// Access the local physics world.
     pub fn world(&self) -> &PhysicsWorld {
         &self.world
-    }
-}
-
-impl Drop for PhysicsManager {
-    fn drop(&mut self) {
-        self.disconnect_remote();
     }
 }
 
@@ -452,28 +316,7 @@ fn iso_from_parts(t: [f32; 3], rot: (f32, f32, f32, f32)) -> physics::math::Iso3
     physics::math::iso_from_parts((t[0], t[1], t[2]), rot)
 }
 
-fn find_free_port(start_port: u16) -> Result<u16, String> {
-    for port in start_port..start_port + 100 {
-        if std::net::TcpListener::bind(format!("127.0.0.1:{}", port)).is_ok() {
-            return Ok(port);
-        }
-    }
-    Err("no free port found in range 9000-9099".to_string())
-}
-
-fn wait_for_server(port: u16, timeout: Duration) -> Result<(), String> {
-    let start = std::time::Instant::now();
-    while start.elapsed() < timeout {
-        if let Ok(stream) = std::net::TcpStream::connect(format!("127.0.0.1:{}", port)) {
-            let _ = stream.shutdown(std::net::Shutdown::Both);
-            return Ok(());
-        }
-        thread::sleep(Duration::from_millis(100));
-    }
-    Err(format!("server startup timeout after {}s", timeout.as_secs()))
-}
-
-/// 轴对齐包围盒。
+/// Axis-aligned bounding box.
 struct Aabb {
     min_x: f32,
     min_y: f32,
@@ -483,7 +326,7 @@ struct Aabb {
     max_z: f32,
 }
 
-/// 从三角网格顶点集合计算轴对齐包围盒。
+/// Compute AABB from triangle mesh vertices.
 fn compute_aabb_from_trimeshes(meshes: &[physics::scene_builder::TrimeshData]) -> Aabb {
     let mut min_x = f32::MAX;
     let mut min_y = f32::MAX;

@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::manifest::{BodyKindDef, TransformDef, default_body_kind};
+use crate::manifest::{BodyKindDef, PhysicsComponentDef, TransformDef};
 
 /// Prefab 清单——`.prefab.json` 文件的顶级结构。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,9 +64,25 @@ pub struct PrefabNodeDef {
     /// 对嵌套 Prefab 实例的变换覆写
     #[serde(skip_serializing_if = "Option::is_none")]
     pub overrides: Option<PrefabOverrides>,
-    /// 物理刚体类型："fixed"（静止）或 "dynamic"（受重力影响）
-    #[serde(default = "default_body_kind")]
-    pub body_kind: BodyKindDef,
+    /// 物理组件定义。None 表示无物理。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub physics: Option<PhysicsComponentDef>,
+    // ── 旧格式兼容字段（仅反序列化）──
+    /// [deprecated] 旧格式 body_kind —— 自动迁移到 physics.body_kind
+    #[serde(default, skip_serializing, alias = "body_kind")]
+    pub _body_kind: Option<BodyKindDef>,
+}
+
+impl PrefabNodeDef {
+    /// 获取有效的物理组件定义（兼容旧格式自动迁移）。
+    pub fn effective_physics(&self) -> Option<PhysicsComponentDef> {
+        self.physics.clone().or_else(|| {
+            self._body_kind.map(|body_kind| PhysicsComponentDef {
+                body_kind,
+                ..Default::default()
+            })
+        })
+    }
 }
 
 /// 网格定义——支持 GLTF 模型引用和程序化网格。
@@ -217,7 +233,8 @@ mod tests {
             }),
             prefab_ref: None,
             overrides: None,
-            body_kind: BodyKindDef::Fixed,
+            physics: None,
+            _body_kind: None,
         });
         manifest.root_nodes.push(0);
 

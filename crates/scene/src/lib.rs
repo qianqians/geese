@@ -2,14 +2,8 @@ mod material;
 pub mod octree;
 mod scene;
 pub mod scene_object;
-#[cfg(feature = "physics")]
-pub mod capsule_controller;
 pub mod character_animation;
-#[cfg(feature = "physics")]
-pub mod character_physics;
 pub mod manifest;
-#[cfg(feature = "physics")]
-pub mod ragdoll;
 pub mod prefab_manifest;
 pub mod prefab_loader;
 pub mod avatar_manifest;
@@ -27,11 +21,7 @@ pub use scene::{MarkerEvent, SceneAnimationEvent, EntityAnimationGraph};
 pub use scene_object::SceneObject;
 pub use scene_object::DirtyFlags;
 #[cfg(feature = "physics")]
-pub use capsule_controller::CapsuleController;
-#[cfg(feature = "physics")]
-pub use character_physics::{CharacterControllerType, CharacterPhysics};
-#[cfg(feature = "physics")]
-pub use ragdoll::{RagdollBuilder, RagdollConfig, RagdollInstance, JointTypeStrategy};
+pub use gameplay_physics::{CapsuleController, CharacterControllerType, CharacterPhysics, JointTypeStrategy, RagdollBuilder, RagdollConfig, RagdollInstance};
 pub use character_animation::{CharacterAnimationGraph, SpeedThresholds};
 
 use asset::load;

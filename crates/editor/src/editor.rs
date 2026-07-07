@@ -28,8 +28,7 @@ use std::process::Command;
 use asset::database::AssetDatabase;
 use asset::meta;
 use avatar::AnimationMarker;
-use physics_client::BodySnapshot;
-use physics_manager::{PhysicsManager, PhysicsSource};
+use physics_manager::PhysicsManager;
 use scene::prefab_manifest::{PrefabManifest, PrefabNodeDef, PrefabMeshDef};
 use scene::manifest::TransformDef;
 use scene::Scene;
@@ -70,11 +69,11 @@ pub struct Editor {
     build_panel: BuildPanel,
     /// Build 面板是否可见（独立字段，避免 egui::Window::open() 借用冲突）
     build_panel_visible: bool,
-    /// 统一物理管理器（支持本地/远程/二者同时）
+    /// 统一物理管理器（仅本地）
     physics: PhysicsManager,
     /// 物理碰撞体调试渲染器
     physics_debug: PhysicsDebugRenderer,
-    /// tokio 异步 Runtime（驱动物理通信）
+    /// tokio 异步 Runtime
     rt: tokio::runtime::Runtime,
     /// 上次帧更新时间（用于 dt 计算）
     last_update: Option<std::time::Instant>,
@@ -84,13 +83,8 @@ pub struct Editor {
     last_transform_entity: Option<String>,
     /// 上一条变换命令的 old 值（合并时保持不变）
     last_transform_old: Option<(Point3<f32>, Vector3<f32>, Vector3<f32>)>,
-    /// 等待中的远程物理步进结果（避免 block_on 阻塞 UI）
-    pending_physics:
-        Option<tokio::sync::oneshot::Receiver<Result<Vec<BodySnapshot>, String>>>,
     /// 物理模拟开关（编辑器全局控制）
     physics_enabled: bool,
-    /// Play 模式初始化异步任务结果（避免 block_on 阻塞 UI）
-    pending_play_init: Option<tokio::sync::oneshot::Receiver<Result<(), String>>>,
     /// 动画面板
     animation_panel: AnimationPanel,
     /// 可选场景引用（供动画预览等使用）
@@ -108,7 +102,7 @@ impl Editor {
         .expect("Failed to create tokio runtime");
 
         // 创建本地物理世界并加载场景碰撞体
-        let mut physics = PhysicsManager::new(PhysicsSource::Client, [0.0, -9.81, 0.0]);
+        let mut physics = PhysicsManager::new([0.0, -9.81, 0.0]);
         let manifest_path = format!("{}/.scene.json", project_path);
         physics.load_scene(&manifest_path);
 
@@ -147,9 +141,7 @@ impl Editor {
             apply_queue: Rc::new(RefCell::new(Vec::new())),
             last_transform_entity: None,
             last_transform_old: None,
-            pending_physics: None,
             physics_enabled: true,
-            pending_play_init: None,
             animation_panel: AnimationPanel::new(),
             scene: None,
         }
@@ -165,75 +157,13 @@ impl Editor {
             .unwrap_or(0.016);
         self.last_update = Some(now);
 
-        // 物理步进
-        // 本地物理步进
-        if self.physics_enabled && self.physics.source().runs_local() && self.state.mode.is_editing() {
+        // 物理步进（本地物理）
+        if self.physics_enabled && self.state.mode.is_editing() {
             self.physics.step(dt);
             if self.physics_debug.enabled {
-                let bodies = self.physics.get_local_body_snapshots();
+                let bodies = self.physics.get_body_snapshots();
                 self.state.physics_debug_bodies = bodies.clone();
                 self.physics_debug.update(bodies);
-            }
-        }
-
-        // Play 模式初始化结果（非阻塞）
-        if let Some(rx) = &mut self.pending_play_init {
-            match rx.try_recv() {
-                Ok(result) => {
-                    self.pending_play_init = None;
-                    if let Err(e) = result {
-                        eprintln!("[Editor] Play mode physics init failed: {e}");
-                    }
-                }
-                Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
-                    self.pending_play_init = None;
-                    eprintln!("[Editor] Play mode init task closed");
-                }
-                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
-            }
-        }
-
-        // 远程物理异步步进
-        if self.physics.source().runs_remote() && self.state.mode.is_playing() && self.physics.is_remote_connected() {
-            if let Some(rx) = &mut self.pending_physics {
-                match rx.try_recv() {
-                    Ok(result) => {
-                        self.pending_physics = None;
-                        match result {
-                            Ok(bodies) => {
-                                self.state.physics_debug_bodies = bodies.clone();
-                                self.physics_debug.update(bodies);
-                            }
-                            Err(e) => eprintln!("[Editor] physics step error: {e}"),
-                        }
-                    }
-                    Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
-                        self.pending_physics = None;
-                        eprintln!("[Editor] physics task closed");
-                    }
-                    Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
-                }
-            }
-
-            if self.pending_physics.is_none() {
-                if let Some(client) = self.physics.remote_client() {
-                    let debug_enabled = self.physics_debug.enabled;
-                    let (tx, rx) = tokio::sync::oneshot::channel();
-                    let dt_f64 = dt as f64;
-                    self.rt.spawn(async move {
-                        let result = async {
-                            client.step(dt_f64).await?;
-                            if debug_enabled {
-                                client.get_bodies().await
-                            } else {
-                                Ok(Vec::new())
-                            }
-                        }
-                        .await;
-                        let _ = tx.send(result);
-                    });
-                    self.pending_physics = Some(rx);
-                }
             }
         }
         // 1. 快捷键始终生效
@@ -391,10 +321,10 @@ impl Editor {
                 parent_id: Option<String>,
                 hierarchy: &mut HierarchyPanel,
                 tx_cache: &mut std::collections::HashMap<String, ([f32;3],[f32;3],[f32;3])>,
-                body_kind_cache: &mut std::collections::HashMap<String, scene::manifest::BodyKindDef>,
+                phys_cache: &mut std::collections::HashMap<String, scene::manifest::PhysicsComponentDef>,
                 name_cache: &mut std::collections::HashMap<String, String>,
                 model_uuid: Option<String>,
-                body_kind: scene::manifest::BodyKindDef,
+                physics: Option<scene::manifest::PhysicsComponentDef>,
             ) {
                 let eid = format!("node_{}", node.index());
                 let nname = node.name().unwrap_or("Node").to_string();
@@ -402,7 +332,7 @@ impl Editor {
 
                 let cids: Vec<String> = node.children().map(|c| {
                     let cid = format!("node_{}", c.index());
-                    walk_gltf_node(&c, Some(eid.clone()), hierarchy, tx_cache, body_kind_cache, name_cache, model_uuid.clone(), body_kind);
+                    walk_gltf_node(&c, Some(eid.clone()), hierarchy, tx_cache, phys_cache, name_cache, model_uuid.clone(), physics.clone());
                     cid
                 }).collect();
 
@@ -423,7 +353,7 @@ impl Editor {
                     node_type: ntype,
                     asset_source_uuid: asset_uuid,
                     prefab_ref_uuid: None,
-                    body_kind,
+                    physics: physics.clone(),
                 });
 
                 tx_cache.entry(eid.clone()).or_insert((
@@ -431,13 +361,15 @@ impl Editor {
                     [0.0, 0.0, 0.0],
                     [1.0, 1.0, 1.0],
                 ));
-                body_kind_cache.entry(eid.clone()).or_insert(body_kind);
+                if let Some(ref phys) = physics {
+                    phys_cache.entry(eid.clone()).or_insert_with(|| phys.clone());
+                }
                 name_cache.entry(eid.clone()).or_insert_with(|| nname.clone());
             }
 
             for gltf_scene in document.scenes() {
                 for node in gltf_scene.nodes() {
-                    walk_gltf_node(&node, None, &mut self.hierarchy, &mut self.state.transform_cache, &mut self.state.body_kind_cache, &mut self.state.name_cache, model_uuid.clone(), model.body_kind);
+                    walk_gltf_node(&node, None, &mut self.hierarchy, &mut self.state.transform_cache, &mut self.state.physics_component_cache, &mut self.state.name_cache, model_uuid.clone(), model.effective_physics());
                 }
             }
             eprintln!("[Editor] Loaded '{}' into hierarchy", model.id);
@@ -514,19 +446,6 @@ impl Editor {
                 let (label, color) = self.play_mode.button_ui();
                 if ui.add_sized([54.0, 22.0], egui::Button::new(egui::RichText::new(label).color(color))).clicked() {
                     self.toggle_play_mode();
-                }
-
-                ui.separator();
-
-                // Physics Source
-                let mut phy_src = self.physics.source();
-                let src_old = phy_src;
-                ui.label("Phys:");
-                ui.selectable_value(&mut phy_src, physics_manager::PhysicsSource::Client, "Local");
-                ui.selectable_value(&mut phy_src, physics_manager::PhysicsSource::Server, "Remote");
-                ui.selectable_value(&mut phy_src, physics_manager::PhysicsSource::ClientAndServer, "Both");
-                if !self.state.mode.is_playing() && phy_src != src_old {
-                    self.physics.set_source(phy_src);
                 }
 
                 ui.separator();
@@ -863,9 +782,16 @@ impl Editor {
                 EditorAction::ModifyAnimationMarker { clip_index, time, name, remove } => {
                     self.handle_modify_animation_marker(clip_index, time, name, remove);
                 }
-                EditorAction::SetBodyKind { node_id, body_kind } => {
-                    self.state.body_kind_cache.insert(node_id.clone(), body_kind);
-                    eprintln!("[Editor] SetBodyKind: node={node_id}, body_kind={body_kind:?}");
+                EditorAction::SetPhysicsComponent { node_id, component } => {
+                    match component {
+                        Some(ref comp) => {
+                            self.state.physics_component_cache.insert(node_id.clone(), comp.clone());
+                        }
+                        None => {
+                            self.state.physics_component_cache.remove(&node_id);
+                        }
+                    }
+                    eprintln!("[Editor] SetPhysicsComponent: node={node_id}, enabled={}", component.is_some());
                 }
                 EditorAction::RenameEntity { node_id, new_name } => {
                     self.state.name_cache.insert(node_id.clone(), new_name.clone());
@@ -1067,7 +993,8 @@ impl Editor {
                 mesh,
                 prefab_ref,
                 overrides,
-                body_kind: scene::manifest::BodyKindDef::Fixed,
+                physics: None,
+                _body_kind: None,
             });
         }
 
@@ -1202,7 +1129,7 @@ impl Editor {
                 node_type: ntype,
                 asset_source_uuid: asset_uuid,
                 prefab_ref_uuid,
-                body_kind: node_def.body_kind,
+                physics: node_def.effective_physics(),
             });
 
             // 变换：根节点使用世界位置，子节点使用 manifest 中的变换
@@ -1264,20 +1191,17 @@ impl Editor {
                 self.viewport.camera.set_distance(snapshot.camera_distance);
                 self.state.selected_entity = snapshot.selected_entity.take();
             }
-            // 停止远程物理服务器，切换到本地物理
-            self.physics.disconnect_remote();
-            self.physics = PhysicsManager::new(PhysicsSource::Client, [0.0, -9.81, 0.0]);
-            // 重新加载场景碰撞体
+            // 重新创建本地物理世界并加载场景碰撞体
+            self.physics = PhysicsManager::new([0.0, -9.81, 0.0]);
             {
                 let manifest_path = format!("{}/.scene.json", self.state.project_path);
                 self.physics.load_scene(&manifest_path);
             }
             self.physics_debug.enabled = false;
-            self.pending_play_init = None;
             self.state.mode = EditorMode::Edit;
             self.state.panel_layer.set_edit_alpha();
         } else {
-            // Play: 进入播放模式
+            // Play: 进入播放模式（使用本地物理）
             self.play_mode.play(
                 &self.state,
                 self.viewport.camera.yaw(),
@@ -1285,31 +1209,10 @@ impl Editor {
                 self.viewport.camera.distance(),
             );
 
-            // 切换到远程物理服务器
-            let python_path = if cfg!(windows) { "python" } else { "python3" };
-            let server_script = concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/scripts/physics_editor_server.py"
-            );
-            self.physics = PhysicsManager::new(PhysicsSource::ClientAndServer, [0.0, -9.81, 0.0]);
-            if let Err(e) = self.physics.connect_remote(python_path, server_script, &self.rt) {
-                eprintln!("[Editor] Failed to start physics server: {e}");
-            } else {
-                // 非阻塞初始化：spawn 异步任务，结果在 update() 中通过 try_recv 消费
-                let (tx, rx) = tokio::sync::oneshot::channel();
-                let physics = self.physics.remote_client().unwrap().clone();
-                let manifest_path = format!("{}/.scene.json", self.state.project_path);
-                let manifest_path_async = manifest_path.clone();
-                self.rt.spawn(async move {
-                    let result = async {
-                        physics.init_physics([0.0, -9.81, 0.0]).await?;
-                        physics.load_scene(&manifest_path_async).await.map(|_| ())
-                    }.await;
-                    let _ = tx.send(result);
-                });
-                self.pending_play_init = Some(rx);
-                self.physics.load_scene(&manifest_path);
-            }
+            // 创建本地物理世界并加载场景碰撞体
+            self.physics = PhysicsManager::new([0.0, -9.81, 0.0]);
+            let manifest_path = format!("{}/.scene.json", self.state.project_path);
+            self.physics.load_scene(&manifest_path);
 
             self.state.mode = EditorMode::Play;
             self.state.selected_entity = None;
