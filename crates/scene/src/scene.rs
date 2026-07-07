@@ -76,6 +76,8 @@ pub struct Scene {
     pub character_anim_graphs: Vec<EntityAnimationGraph>,
     /// 本帧触发的动画标记事件，由外部消费者 drain。
     pub marker_events: Vec<MarkerEvent>,
+    /// 本帧触发的自定义事件列表（entity_id, response_name），由外部消费者 drain。
+    pub triggered_events: Vec<(String, String)>,
     /// 本帧触发的动画系统事件，由外部消费者 drain。
     animation_events: Vec<SceneAnimationEvent>,
     /// 动画图每个剪辑的上次时间（用于标记跨越检测）
@@ -130,6 +132,7 @@ impl Scene {
             navmesh: None,
             character_anim_graphs: Vec::new(),
             marker_events: Vec::new(),
+            triggered_events: Vec::new(),
             animation_events: Vec::new(),
             graph_prev_times: HashMap::new(),
             object_index: HashMap::new(),
@@ -825,6 +828,19 @@ impl Scene {
         std::mem::take(&mut self.animation_events)
     }
 
+    /// 消费本帧所有触发的自定义事件。
+    pub fn drain_triggered_events(&mut self) -> Vec<(String, String)> {
+        std::mem::take(&mut self.triggered_events)
+    }
+
+    /// 评估所有实体的事件组件，将触发的 response 推入 triggered_events。
+    ///
+    /// 当前为桩实现。未来版本将遍历所有标记了 event 组件的实体，
+    /// 调用其 trigger 函数检查是否触发，将触发的 (entity_id, response_name) 推入队列。
+    pub fn evaluate_event_components(&mut self) {
+        // TODO: 遍历实体的事件组件，评估 trigger 函数，填充 triggered_events
+    }
+
     /// 统一帧更新：驱动动画、更新变换、生成事件。
     ///
     /// 综合调用 `update_animation_graph`、`update_character_animation` 和
@@ -847,6 +863,9 @@ impl Scene {
         if !has_graph {
             self.update_world_transforms();
         }
+
+        // 3. 评估事件组件
+        self.evaluate_event_components();
     }
 
     // -----------------------------------------------------------------------

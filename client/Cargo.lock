@@ -463,6 +463,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "event"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1462,6 +1469,9 @@ dependencies = [
 [[package]]
 name = "navmesh"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "ndk-sys"
@@ -2082,10 +2092,12 @@ dependencies = [
  "bitflags 2.11.1",
  "camera",
  "cgmath",
+ "event",
  "gameplay_physics",
  "gltf",
  "log",
  "math",
+ "navmesh",
  "physics",
  "render",
  "rmp-serde",

@@ -9,6 +9,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::manifest::{BodyKindDef, NavMeshComponentDef, PhysicsComponentDef, TransformDef};
+#[cfg(feature = "event")]
+use event::EventComponentDef;
 
 /// Prefab 清单——`.prefab.json` 文件的顶级结构。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,6 +72,10 @@ pub struct PrefabNodeDef {
     /// NavMesh 组件定义。None 表示不参与导航网格构建。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub navmesh: Option<NavMeshComponentDef>,
+    /// Event 组件定义。None 表示无事件组件。
+    #[cfg(feature = "event")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event: Option<EventComponentDef>,
     // ── 旧格式兼容字段（仅反序列化）──
     /// [deprecated] 旧格式 body_kind —— 自动迁移到 physics.body_kind
     #[serde(default, skip_serializing, alias = "body_kind")]
@@ -238,6 +244,7 @@ mod tests {
             overrides: None,
             physics: None,
             navmesh: None,
+            event: None,
             _body_kind: None,
         });
         manifest.root_nodes.push(0);

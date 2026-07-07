@@ -7,6 +7,8 @@
 //! - 玩家出生点
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "event")]
+use event::EventComponentDef;
 
 /// 场景清单——`.scene.json` 文件的顶级结构。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +65,10 @@ pub struct ModelRef {
     /// NavMesh 组件定义。None 表示不参与导航网格构建。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub navmesh: Option<NavMeshComponentDef>,
+    /// Event 组件定义。None 表示无事件组件。
+    #[cfg(feature = "event")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event: Option<EventComponentDef>,
     // ── 以下为旧格式兼容字段（仅反序列化，不序列化输出）──
     /// [deprecated] 旧格式 collision_enabled —— 自动迁移到 physics.collision_enabled
     #[serde(default, skip_serializing, alias = "collision_enabled")]
@@ -213,6 +219,10 @@ pub struct SceneObjectDef {
     /// NavMesh 组件定义。None 表示不参与导航网格构建。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub navmesh: Option<NavMeshComponentDef>,
+    /// Event 组件定义。None 表示无事件组件。
+    #[cfg(feature = "event")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event: Option<EventComponentDef>,
     // ── 旧格式兼容字段（仅反序列化）──
     /// [deprecated] 旧格式 body_kind —— 自动迁移到 physics.body_kind
     #[serde(default, skip_serializing, alias = "body_kind")]

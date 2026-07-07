@@ -19,9 +19,11 @@ avatar = { path = "../avatar", version = "0.1.0" }
 physics = { path = "../physics", version = "0.1.0", optional = true }
 gameplay_physics = { path = "../gameplay_physics", version = "0.1.0", optional = true }
 navmesh = { path = "../navmesh", version = "0.1.0", optional = true }
+event = { path = "../event", version = "0.1.0", optional = true }
 bitflags = "2"
 
 [features]
-default = ["physics", "navmesh"]
+default = ["physics", "navmesh", "event"]
 physics = ["dep:physics", "dep:gameplay_physics"]
 navmesh = ["dep:navmesh"]
+event = ["dep:event"]

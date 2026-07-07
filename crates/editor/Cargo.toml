@@ -26,3 +26,4 @@ physics_client = { path = "../physics_client", version = "0.1.0" }
 physics_manager = { path = "../physics_manager", version = "0.1.0" }
 input = { path = "../input", version = "0.1.0" }
 navmesh = { path = "../navmesh", version = "0.1.0" }
+event = { path = "../event", version = "0.1.0" }

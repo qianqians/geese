@@ -54,6 +54,11 @@ pub enum EditorAction {
         node_id: String,
         component: Option<scene::manifest::NavMeshComponentDef>,
     },
+    /// 设置/移除 Event 组件
+    SetEventComponent {
+        node_id: String,
+        component: Option<event::EventComponentDef>,
+    },
     /// 重命名实体
     RenameEntity {
         node_id: String,
@@ -126,6 +131,8 @@ pub struct EditorState {
     pub physics_component_cache: HashMap<String, scene::manifest::PhysicsComponentDef>,
     /// 实体 NavMesh 组件缓存 (entity_id → NavMeshComponentDef)
     pub navmesh_component_cache: HashMap<String, scene::manifest::NavMeshComponentDef>,
+    /// 实体 Event 组件缓存 (entity_id → EventComponentDef)
+    pub event_component_cache: HashMap<String, event::EventComponentDef>,
     /// 实体名称缓存 (entity_id → name)，用于 Inspector 即时编辑
     pub name_cache: HashMap<String, String>,
     /// Inspector 写回的待提交变换变更
@@ -162,6 +169,7 @@ impl EditorState {
             transform_cache: HashMap::new(),
             physics_component_cache: HashMap::new(),
             navmesh_component_cache: HashMap::new(),
+            event_component_cache: HashMap::new(),
             name_cache: HashMap::new(),
             pending_transform: None,
             pending_actions: Vec::new(),
