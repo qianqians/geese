@@ -128,6 +128,20 @@ impl SceneNodeTree {
         self.root_ids.retain(|rid| rid != id);
     }
 
+    /// 收集以 `id` 为根的子树中所有节点 ID（包括 `id` 自身）。
+    pub fn collect_subtree_ids(&self, id: &str) -> Vec<String> {
+        let mut result = vec![id.to_string()];
+        let children_ids: Vec<String> = self.nodes
+            .values()
+            .filter(|n| n.parent.as_deref() == Some(id))
+            .map(|n| n.id.clone())
+            .collect();
+        for child_id in children_ids {
+            result.extend(self.collect_subtree_ids(&child_id));
+        }
+        result
+    }
+
     pub fn find(&self, name_filter: &str) -> Vec<String> {
         if name_filter.is_empty() {
             return self.nodes.keys().cloned().collect();
@@ -386,7 +400,17 @@ impl HierarchyPanel {
                 ui.separator();
                 if ui.button("🗑 Delete").clicked() {
                     ui.close_menu();
+                    // 先收集所有将被删除的节点 ID（包括子树）
+                    let deleted_ids = self.tree.collect_subtree_ids(node_id);
                     self.tree.remove(node_id);
+                    // 清理所有缓存
+                    for id in &deleted_ids {
+                        state.transform_cache.remove(id);
+                        state.physics_component_cache.remove(id);
+                        state.navmesh_component_cache.remove(id);
+                        state.name_cache.remove(id);
+                        state.mesh_entities.remove(id);
+                    }
                     if state.selected_entity.as_deref() == Some(node_id) {
                         state.selected_entity = None;
                     }

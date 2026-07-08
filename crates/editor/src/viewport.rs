@@ -239,28 +239,45 @@ impl OrbitCamera {
 
 /// 射线与 AABB 的相交测试（slab 方法）。
 /// 返回最近交点到射线原点的距离 t，若不相交返回 None。
+/// 显式处理射线方向分量为 0 的退化情况，避免 ±inf / NaN。
 pub fn ray_aabb_intersection(
     ray_origin: Point3<f32>,
     ray_dir: Vector3<f32>,
     aabb: &AABB,
 ) -> Option<f32> {
-    let inv_dir = Vector3::new(
-        1.0 / ray_dir.x,
-        1.0 / ray_dir.y,
-        1.0 / ray_dir.z,
-    );
+    let mut tmin = f32::NEG_INFINITY;
+    let mut tmax = f32::INFINITY;
 
-    let t1 = (aabb.min.x - ray_origin.x) * inv_dir.x;
-    let t2 = (aabb.max.x - ray_origin.x) * inv_dir.x;
-    let t3 = (aabb.min.y - ray_origin.y) * inv_dir.y;
-    let t4 = (aabb.max.y - ray_origin.y) * inv_dir.y;
-    let t5 = (aabb.min.z - ray_origin.z) * inv_dir.z;
-    let t6 = (aabb.max.z - ray_origin.z) * inv_dir.z;
+    // 对每个轴分别处理：平行时检查原点是否在该 slab 内
+    for axis in 0..3 {
+        let (o, d, bmin, bmax) = match axis {
+            0 => (ray_origin.x, ray_dir.x, aabb.min.x, aabb.max.x),
+            1 => (ray_origin.y, ray_dir.y, aabb.min.y, aabb.max.y),
+            _ => (ray_origin.z, ray_dir.z, aabb.min.z, aabb.max.z),
+        };
 
-    let tmin = t1.min(t2).max(t3.min(t4)).max(t5.min(t6));
-    let tmax = t1.max(t2).min(t3.max(t4)).min(t5.max(t6));
+        if d.abs() < 1e-10 {
+            // 射线平行于该轴，原点在 slab 外则不相交
+            if o < bmin || o > bmax {
+                return None;
+            }
+            // 平行且在 slab 内：该轴不约束 t 范围
+        } else {
+            let inv_d = 1.0 / d;
+            let mut t1 = (bmin - o) * inv_d;
+            let mut t2 = (bmax - o) * inv_d;
+            if t1 > t2 {
+                std::mem::swap(&mut t1, &mut t2);
+            }
+            tmin = tmin.max(t1);
+            tmax = tmax.min(t2);
+            if tmin > tmax {
+                return None;
+            }
+        }
+    }
 
-    if tmax < 0.0 || tmin > tmax {
+    if tmax < 0.0 {
         None
     } else {
         Some(if tmin >= 0.0 { tmin } else { tmax })

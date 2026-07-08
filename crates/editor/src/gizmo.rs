@@ -262,10 +262,10 @@ impl GizmoInteraction {
                     }
                 }
                 GizmoMode::Rotate => {
-                    // 屏幕拖拽 → 绕轴旋转角度
+                    // 屏幕拖拽 → 绕轴旋转角度（累积帧增量）
                     let sensitivity = ROTATE_SENSITIVITY;
                     let angle = (dx + dy) * sensitivity;
-                    drag.delta = match drag_axis {
+                    drag.delta += match drag_axis {
                         Axis::X => Vector3::new(angle, 0.0, 0.0),
                         Axis::Y => Vector3::new(0.0, angle, 0.0),
                         Axis::Z => Vector3::new(0.0, 0.0, angle),
@@ -273,10 +273,11 @@ impl GizmoInteraction {
                     };
                 }
                 GizmoMode::Scale => {
+                    // 屏幕拖拽 → 缩放因子增量（累积帧增量）
                     let sensitivity = SCALE_SENSITIVITY;
                     let scale_factor = 1.0 + (dx + dy) * sensitivity;
                     let scale_delta = scale_factor - 1.0;
-                    drag.delta = match drag_axis {
+                    drag.delta += match drag_axis {
                         Axis::X => Vector3::new(scale_delta, 0.0, 0.0),
                         Axis::Y => Vector3::new(0.0, scale_delta, 0.0),
                         Axis::Z => Vector3::new(0.0, 0.0, scale_delta),

@@ -259,7 +259,7 @@ impl EditorPanel for InspectorPanel {
                 ui.add_space(4.0);
 
                 // ═══ Mesh Renderer ═══
-                let has_mesh = state.name_cache.contains_key(entity_id);
+                let has_mesh = state.mesh_entities.contains(entity_id);
                 if has_mesh {
                     egui::CollapsingHeader::new("▼ Mesh Renderer")
                         .default_open(false)

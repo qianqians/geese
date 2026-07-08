@@ -88,6 +88,18 @@ impl Launcher {
     /// 每帧调用，渲染 Launcher UI。
     /// 项目打开请求通过 [`take_open_request`] 取出。
     pub fn show(&mut self, ctx: &egui::Context) {
+        // 全局视觉风格
+        let mut style = (*ctx.style()).clone();
+        style.visuals.panel_fill = egui::Color32::from_rgb(20, 22, 30);
+        style.visuals.window_fill = egui::Color32::from_rgb(20, 22, 30);
+        style.visuals.faint_bg_color = egui::Color32::from_rgb(28, 30, 40);
+        style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(38, 42, 55);
+        style.visuals.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(32, 36, 48);
+        style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(50, 55, 70);
+        style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(40, 90, 170);
+        style.visuals.selection.bg_fill = egui::Color32::from_rgb(60, 130, 220);
+        ctx.set_style(style);
+
         egui::CentralPanel::default().show(ctx, |ui| {
             match self.page {
                 LauncherPage::Home => self.show_home(ui),
@@ -100,16 +112,26 @@ impl Launcher {
 
         // 底部状态栏
         if let Some(ref msg) = self.status_message {
-            egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    if self.is_error {
-                        ui.colored_label(egui::Color32::RED, "✗");
-                    } else {
-                        ui.colored_label(egui::Color32::GREEN, "✓");
-                    }
-                    ui.label(msg);
+            egui::TopBottomPanel::bottom("status_bar")
+                .min_height(28.0)
+                .show_separator_line(true)
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.add_space(12.0);
+                        let (icon, color) = if self.is_error {
+                            ("✗", egui::Color32::from_rgb(255, 80, 80))
+                        } else {
+                            ("✓", egui::Color32::from_rgb(80, 200, 120))
+                        };
+                        ui.colored_label(color, icon);
+                        ui.add_space(6.0);
+                        ui.label(
+                            egui::RichText::new(msg)
+                                .size(12.0)
+                                .color(egui::Color32::from_rgb(180, 188, 200)),
+                        );
+                    });
                 });
-            });
         }
     }
 
@@ -119,63 +141,59 @@ impl Launcher {
 
     fn show_home(&mut self, ui: &mut egui::Ui) {
         ui.vertical_centered(|ui| {
-            ui.add_space(24.0);
+            ui.add_space(30.0);
 
             // Logo / 标题
             ui.heading(
-                egui::RichText::new("🪿 Geese Engine Launcher")
-                    .size(22.0)
-                    .color(egui::Color32::from_rgb(100, 180, 255)),
+                egui::RichText::new("🪿 Geese Engine")
+                    .size(28.0)
+                    .color(egui::Color32::from_rgb(110, 180, 255)),
             );
             ui.add_space(2.0);
             ui.label(
                 egui::RichText::new("选择游戏模板，快速开始你的项目")
-                    .size(12.0)
-                    .color(egui::Color32::GRAY),
+                    .size(13.0)
+                    .color(egui::Color32::from_rgb(140, 148, 168)),
             );
-            ui.add_space(16.0);
+            ui.add_space(20.0);
 
-            // 左右分栏：左侧模板卡片，右侧历史项目
+            // 左右分栏
             let total_width = ui.available_width();
-            let left_width = 420.0; // 模板卡片固定宽度
-            let right_width = 200.0; // 历史项目固定宽度
-            let side_gap = 80.0; // 左右两侧固定留白
-            let middle_gap = total_width - left_width - right_width - side_gap * 2.0; // 中间留白
+            let left_width = 440.0;
+            let right_width = 210.0;
+            let side_gap = (total_width - left_width - right_width - 40.0) * 0.5;
 
             ui.horizontal(|ui| {
-                // 左侧留白
                 ui.add_space(side_gap);
 
                 // 左侧：模板卡片
                 ui.allocate_ui(egui::vec2(left_width, ui.available_height()), |ui| {
                     ui.vertical_centered(|ui| {
-                        ui.heading(
+                        ui.label(
                             egui::RichText::new("🎮 选择模板")
-                                .size(15.0)
-                                .color(egui::Color32::from_rgb(150, 180, 220)),
+                                .size(14.0)
+                                .color(egui::Color32::from_rgb(160, 180, 215)),
                         );
-                        ui.add_space(6.0);
-                        let template_count = self.templates.len();
-                        for i in 0..template_count {
+                        ui.add_space(8.0);
+                        for i in 0..self.templates.len() {
                             self.show_template_card(ui, i);
-                            ui.add_space(6.0);
+                            ui.add_space(8.0);
                         }
                     });
                 });
 
-                // 中间留白
-                ui.add_space(middle_gap);
+                ui.add_space(40.0);
 
                 // 右侧：历史项目
                 ui.allocate_ui(egui::vec2(right_width, ui.available_height()), |ui| {
                     ui.vertical_centered(|ui| {
                         if !self.project_history.projects.is_empty() {
-                            ui.heading(
+                            ui.label(
                                 egui::RichText::new("📂 最近项目")
-                                    .size(15.0)
-                                    .color(egui::Color32::from_rgb(150, 180, 220)),
+                                    .size(14.0)
+                                    .color(egui::Color32::from_rgb(160, 180, 215)),
                             );
-                            ui.add_space(6.0);
+                            ui.add_space(8.0);
                             egui::ScrollArea::vertical()
                                 .max_height(320.0)
                                 .show(ui, |ui| {
@@ -187,7 +205,6 @@ impl Launcher {
                     });
                 });
 
-                // 右侧留白
                 ui.add_space(side_gap);
             });
         });
@@ -197,49 +214,79 @@ impl Launcher {
     fn show_template_card(&mut self, ui: &mut egui::Ui, index: usize) {
         let template = &self.templates[index];
 
-        let fill = egui::Color32::from_rgb(30, 30, 40);
-        let stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(60, 60, 80));
+        let fill = egui::Color32::from_rgb(36, 40, 52);
+        let stroke_color = if ui.rect_contains_pointer(ui.available_rect_before_wrap()) {
+            egui::Color32::from_rgb(90, 160, 255)
+        } else {
+            egui::Color32::from_rgb(50, 54, 68)
+        };
+        let stroke = egui::Stroke::new(1.5, stroke_color);
 
-        let response = egui::Frame::none()
+        let card_rect = egui::Frame::none()
             .fill(fill)
             .stroke(stroke)
-            .rounding(egui::Rounding::same(8.0))
-            .inner_margin(egui::Margin::symmetric(20.0, 14.0))
+            .rounding(egui::Rounding::same(10.0))
+            .inner_margin(egui::Margin::symmetric(22.0, 16.0))
             .outer_margin(egui::Margin::same(0.0))
             .show(ui, |ui| {
-                ui.set_min_width(420.0);
-                ui.set_max_width(420.0);
+                ui.set_min_width(440.0);
+                ui.set_max_width(440.0);
                 ui.horizontal(|ui| {
-                    let icon_text = match template.id.as_str() {
-                        "empty" => "📦",
-                        "fps" => "🔫",
-                        "third_person" => "🎮",
-                        "topdown" => "🛰",
-                        _ => "📄",
+                    // 图标圆形背景
+                    let icon_bg = egui::Color32::from_rgb(48, 54, 72);
+                    let (icon, tag_label, tag_color) = match template.id.as_str() {
+                        "empty" => ("📦", "自由", egui::Color32::from_rgb(140, 160, 190)),
+                        "fps" => ("🔫", "FPS", egui::Color32::from_rgb(230, 120, 80)),
+                        "third_person" => ("🎮", "第三人称", egui::Color32::from_rgb(100, 190, 140)),
+                        "topdown" => ("🛰", "俯视角", egui::Color32::from_rgb(180, 150, 80)),
+                        _ => ("📄", "", egui::Color32::WHITE),
                     };
-                    ui.label(egui::RichText::new(icon_text).size(32.0));
+                    // 图标区域
+                    egui::Frame::none()
+                        .fill(icon_bg)
+                        .rounding(egui::Rounding::same(8.0))
+                        .inner_margin(egui::Margin::symmetric(10.0, 8.0))
+                        .show(ui, |ui| {
+                            ui.label(egui::RichText::new(icon).size(28.0));
+                        });
                     ui.add_space(14.0);
 
                     ui.vertical(|ui| {
-                        ui.label(
-                            egui::RichText::new(&template.name)
-                                .size(16.0)
-                                .strong(),
-                        );
-                        ui.add_space(2.0);
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(&template.name)
+                                    .size(16.0)
+                                    .strong()
+                                    .color(egui::Color32::from_rgb(220, 226, 240)),
+                            );
+                            ui.add_space(8.0);
+                            if !tag_label.is_empty() {
+                                egui::Frame::none()
+                                    .fill(tag_color.gamma_multiply(0.15))
+                                    .rounding(egui::Rounding::same(4.0))
+                                    .inner_margin(egui::Margin::symmetric(6.0, 1.0))
+                                    .show(ui, |ui| {
+                                        ui.label(
+                                            egui::RichText::new(tag_label)
+                                                .size(10.0)
+                                                .color(tag_color),
+                                        );
+                                    });
+                            }
+                        });
+                        ui.add_space(3.0);
                         ui.label(
                             egui::RichText::new(&template.description)
                                 .size(12.0)
-                                .color(egui::Color32::from_rgb(160, 160, 175)),
+                                .color(egui::Color32::from_rgb(140, 148, 168)),
                         );
                     });
                 });
             });
 
-        // 让卡片可交互（响应悬停和点击）
-        let response = ui.interact(response.response.rect, ui.next_auto_id(), egui::Sense::click());
+        // 让卡片可交互
+        let response = ui.interact(card_rect.response.rect, ui.next_auto_id(), egui::Sense::click());
         if response.hovered() {
-            // 悬停高亮
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
         if response.clicked() {
@@ -264,51 +311,62 @@ impl Launcher {
         let object_count = self.templates[self.selected_index.unwrap()].objects.len();
 
         ui.vertical_centered(|ui| {
-            ui.add_space(30.0);
+            ui.add_space(36.0);
             ui.heading(
                 egui::RichText::new(format!("配置项目 - {}", template_name))
-                    .size(22.0),
+                    .size(24.0)
+                    .color(egui::Color32::from_rgb(210, 220, 240)),
             );
-            ui.add_space(20.0);
+            ui.add_space(24.0);
         });
 
         // 居中表单
         ui.vertical_centered(|ui| {
             egui::Frame::none()
-                .fill(egui::Color32::from_rgb(25, 25, 35))
-                .rounding(egui::Rounding::same(8.0))
-                .inner_margin(egui::Margin::symmetric(30.0, 20.0))
+                .fill(egui::Color32::from_rgb(30, 34, 48))
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(50, 54, 68)))
+                .rounding(egui::Rounding::same(10.0))
+                .inner_margin(egui::Margin::symmetric(32.0, 24.0))
                 .show(ui, |ui| {
-                    ui.set_width(400.0);
+                    ui.set_width(420.0);
 
                     // 项目名称
                     ui.label(
-                        egui::RichText::new("项目名称").size(14.0).strong(),
+                        egui::RichText::new("项目名称")
+                            .size(13.0)
+                            .strong()
+                            .color(egui::Color32::from_rgb(190, 198, 215)),
                     );
-                    ui.add_space(4.0);
+                    ui.add_space(6.0);
                     ui.add(
                         egui::TextEdit::singleline(&mut self.project_name)
                             .hint_text("输入项目名称...")
-                            .desired_width(340.0),
+                            .desired_width(f32::INFINITY),
                     );
-                    ui.add_space(16.0);
+                    ui.add_space(18.0);
 
                     // 项目路径
                     ui.label(
-                        egui::RichText::new("保存路径").size(14.0).strong(),
+                        egui::RichText::new("保存路径")
+                            .size(13.0)
+                            .strong()
+                            .color(egui::Color32::from_rgb(190, 198, 215)),
                     );
-                    ui.add_space(4.0);
+                    ui.add_space(6.0);
                     ui.horizontal(|ui| {
                         ui.add(
                             egui::TextEdit::singleline(&mut self.project_path)
                                 .hint_text("./projects")
-                                .desired_width(280.0),
+                                .desired_width(f32::INFINITY),
                         );
-                        if ui.button("浏览...").clicked() {
+                        if ui
+                            .add_sized([60.0, 20.0], egui::Button::new("浏览..."))
+                            .clicked()
+                        {
                             // TODO: 后续接入 native file dialog
                         }
                     });
-                    ui.add_space(8.0);
+                    ui.add_space(6.0);
                     ui.label(
                         egui::RichText::new(format!(
                             "项目将创建在: {}/{}",
@@ -316,48 +374,49 @@ impl Launcher {
                             self.project_name
                         ))
                         .size(11.0)
-                        .color(egui::Color32::GRAY),
+                        .color(egui::Color32::from_rgb(130, 138, 158)),
                     );
 
-                    ui.add_space(20.0);
+                    ui.add_space(22.0);
 
                     // 模板信息摘要
                     ui.separator();
-                    ui.add_space(8.0);
+                    ui.add_space(10.0);
                     ui.label(
-                        egui::RichText::new("模板配置摘要")
+                        egui::RichText::new("📋 模板配置摘要")
                             .size(13.0)
-                            .strong(),
+                            .strong()
+                            .color(egui::Color32::from_rgb(190, 198, 215)),
                     );
-                    ui.add_space(4.0);
-                    let cam_type = match camera_type {
-                        crate::templates::CameraType::Empty => "自由模式",
-                        crate::templates::CameraType::FirstPerson => "第一人称 (FPS)",
-                        crate::templates::CameraType::ThirdPerson => "第三人称 (轨道)",
-                        crate::templates::CameraType::TopDown => "俯视角 (Top-Down)",
+                    ui.add_space(8.0);
+                    let (cam_icon, cam_type) = match camera_type {
+                        crate::templates::CameraType::Empty => ("🎯", "自由模式"),
+                        crate::templates::CameraType::FirstPerson => ("🔫", "第一人称 (FPS)"),
+                        crate::templates::CameraType::ThirdPerson => ("🎮", "第三人称 (轨道)"),
+                        crate::templates::CameraType::TopDown => ("🛰", "俯视角 (Top-Down)"),
                     };
-                    ui.label(format!("摄像机类型: {}", cam_type));
-                    ui.label(format!("FOV: {}°", fov));
-                    ui.label(format!(
-                        "移动速度: {} m/s",
-                        move_speed
-                    ));
-                    ui.label(format!("场景物体数: {}", object_count));
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{} 摄像机: {}", cam_icon, cam_type));
+                    });
+                    ui.add_space(3.0);
+                    ui.label(format!("   FOV: {}°  |  移动速度: {} m/s  |  物体数: {}", fov, move_speed, object_count));
                 });
 
-            ui.add_space(20.0);
+            ui.add_space(24.0);
 
             // 按钮行
             ui.horizontal(|ui| {
                 if ui
-                    .add_sized([140.0, 36.0], egui::Button::new("← 返回"))
+                    .add_sized([120.0, 34.0], egui::Button::new(
+                        egui::RichText::new("← 返回").size(14.0),
+                    ))
                     .clicked()
                 {
                     self.page = LauncherPage::Home;
                     self.status_message = None;
                 }
 
-                ui.add_space(40.0);
+                ui.add_space(60.0);
 
                 let can_create = !self.project_name.trim().is_empty()
                     && !self.project_path.trim().is_empty();
@@ -365,7 +424,7 @@ impl Launcher {
                 let create_btn = egui::Button::new(
                     egui::RichText::new("🚀 创建工程").size(15.0),
                 )
-                .fill(egui::Color32::from_rgb(40, 120, 40))
+                .fill(egui::Color32::from_rgb(50, 150, 80))
                 .min_size(egui::vec2(180.0, 36.0));
 
                 if ui
@@ -385,31 +444,50 @@ impl Launcher {
     fn show_success(&mut self, ui: &mut egui::Ui) {
         ui.vertical_centered(|ui| {
             ui.add_space(60.0);
-            ui.label(egui::RichText::new("✅").size(48.0));
-            ui.add_space(16.0);
+
+            // 成功图标
+            egui::Frame::none()
+                .fill(egui::Color32::from_rgb(50, 150, 80).gamma_multiply(0.12))
+                .rounding(egui::Rounding::same(40.0))
+                .inner_margin(egui::Margin::symmetric(24.0, 18.0))
+                .show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new("✅").size(40.0),
+                    );
+                });
+            ui.add_space(18.0);
+
             ui.heading(
-                egui::RichText::new("工程创建成功！").size(24.0),
+                egui::RichText::new("工程创建成功！")
+                    .size(24.0)
+                    .color(egui::Color32::from_rgb(220, 226, 240)),
             );
-            ui.add_space(8.0);
+            ui.add_space(10.0);
 
             let full_path = format!(
                 "{}/{}",
                 self.project_path.trim_end_matches('/'),
                 self.project_name
             );
-            ui.label(format!("📁 {}", full_path));
-            ui.add_space(12.0);
+            ui.label(
+                egui::RichText::new(format!("📁 {}", full_path))
+                    .size(13.0)
+                    .color(egui::Color32::from_rgb(150, 160, 180)),
+            );
+            ui.add_space(8.0);
             ui.label(
                 egui::RichText::new("项目已生成，包含场景、摄像机、角色控制器和物理配置。")
-                    .size(13.0)
-                    .color(egui::Color32::GRAY),
+                    .size(12.0)
+                    .color(egui::Color32::from_rgb(120, 128, 148)),
             );
 
-            ui.add_space(30.0);
+            ui.add_space(36.0);
 
             ui.horizontal(|ui| {
                 if ui
-                    .add_sized([180.0, 40.0], egui::Button::new("← 返回首页"))
+                    .add_sized([160.0, 38.0], egui::Button::new(
+                        egui::RichText::new("← 返回首页").size(14.0),
+                    ))
                     .clicked()
                 {
                     self.page = LauncherPage::Home;
@@ -417,15 +495,15 @@ impl Launcher {
                     self.status_message = None;
                 }
 
-                ui.add_space(20.0);
+                ui.add_space(24.0);
 
                 if ui
                     .add_sized(
-                        [200.0, 40.0],
+                        [200.0, 38.0],
                         egui::Button::new(
-                            egui::RichText::new("打开编辑器 →").size(16.0),
+                            egui::RichText::new("🎮 打开编辑器 →").size(15.0),
                         )
-                        .fill(egui::Color32::from_rgb(40, 100, 180)),
+                        .fill(egui::Color32::from_rgb(50, 120, 210)),
                     )
                     .clicked()
                 {
@@ -564,32 +642,39 @@ impl Launcher {
     /// 渲染单个历史项目条目
     fn show_history_entry(&mut self, ui: &mut egui::Ui, entry: &crate::history::RecentProject) {
         egui::Frame::none()
-            .fill(egui::Color32::from_rgb(35, 35, 45))
-            .rounding(egui::Rounding::same(4.0))
-            .inner_margin(egui::Margin::symmetric(8.0, 4.0))
+            .fill(egui::Color32::from_rgb(38, 42, 55))
+            .rounding(egui::Rounding::same(6.0))
+            .inner_margin(egui::Margin::symmetric(10.0, 6.0))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
                         ui.label(
                             egui::RichText::new(&entry.name)
-                                .size(12.0)
-                                .strong(),
+                                .size(13.0)
+                                .strong()
+                                .color(egui::Color32::from_rgb(210, 216, 230)),
                         );
                         ui.label(
                             egui::RichText::new(&entry.path)
-                                .size(10.0)
-                                .color(egui::Color32::GRAY),
+                                .size(11.0)
+                                .color(egui::Color32::from_rgb(130, 138, 158)),
                         );
                     });
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.small_button("打开").clicked() {
+                        let open_btn = egui::Button::new(
+                            egui::RichText::new("打开").size(11.0),
+                        )
+                        .fill(egui::Color32::from_rgb(50, 120, 210))
+                        .min_size(egui::vec2(48.0, 22.0))
+                        .rounding(egui::Rounding::same(4.0));
+                        if ui.add(open_btn).clicked() {
                             self.open_requested = Some(entry.path.clone());
                         }
                     });
                 });
             });
-        ui.add_space(2.0);
+        ui.add_space(3.0);
     }
 }
 

@@ -238,7 +238,10 @@ impl GltfImportDialog {
         let mut close = false;
         let mut do_import = false;
 
+        // 使用 .open() 确保窗口可以被关闭
+        let mut open = true;
         egui::Window::new("Import GLTF Resource")
+            .open(&mut open)
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
@@ -336,6 +339,11 @@ impl GltfImportDialog {
                     }
                 });
             });
+
+        // 处理窗口关闭事件（点击X按钮）
+        if !open {
+            close = true;
+        }
 
         if do_import {
             self.do_import(&state.project_path, asset_database);

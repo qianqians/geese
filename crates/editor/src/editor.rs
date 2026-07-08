@@ -89,6 +89,8 @@ pub struct Editor {
     animation_panel: AnimationPanel,
     /// 可选场景引用（供动画预览等使用）
     scene: Option<Scene>,
+    /// 编辑器是否请求关闭（供 DesktopApp 检查）
+    pub close_requested: bool,
 }
 
 impl Editor {
@@ -144,11 +146,17 @@ impl Editor {
             physics_enabled: true,
             animation_panel: AnimationPanel::new(),
             scene: None,
+            close_requested: false,
         }
     }
 
     /// 每帧调用，渲染完整的编辑器 UI。
     pub fn update(&mut self, ctx: &egui::Context) {
+        // 检查视口关闭请求（系统 X 按钮）
+        if ctx.input(|i| i.viewport().close_requested()) {
+            self.close_requested = true;
+        }
+
         // 计算每帧时间增量
         let now = std::time::Instant::now();
         let dt = self
@@ -243,7 +251,7 @@ impl Editor {
             let mut open = true;
             egui::Window::new("Animation")
                 .open(&mut open)
-                .default_pos([400.0, 500.0])
+                .default_pos([100.0, 600.0])  // 调整到底部左侧
                 .default_size([700.0, 280.0])
                 .show(ctx, |ui| {
                     self.animation_panel.show(ui, &mut self.state);
@@ -324,17 +332,19 @@ impl Editor {
                 phys_cache: &mut std::collections::HashMap<String, scene::manifest::PhysicsComponentDef>,
                 navmesh_cache: &mut std::collections::HashMap<String, scene::manifest::NavMeshComponentDef>,
                 name_cache: &mut std::collections::HashMap<String, String>,
+                mesh_entities: &mut std::collections::HashSet<String>,
                 model_uuid: Option<String>,
                 physics: Option<scene::manifest::PhysicsComponentDef>,
                 navmesh: Option<scene::manifest::NavMeshComponentDef>,
             ) {
                 let eid = format!("node_{}", node.index());
                 let nname = node.name().unwrap_or("Node").to_string();
-                let ntype = if node.mesh().is_some() { NodeType::Mesh } else { NodeType::Empty };
+                let has_mesh = node.mesh().is_some();
+                let ntype = if has_mesh { NodeType::Mesh } else { NodeType::Empty };
 
                 let cids: Vec<String> = node.children().map(|c| {
                     let cid = format!("node_{}", c.index());
-                    walk_gltf_node(&c, Some(eid.clone()), hierarchy, tx_cache, phys_cache, navmesh_cache, name_cache, model_uuid.clone(), physics.clone(), navmesh.clone());
+                    walk_gltf_node(&c, Some(eid.clone()), hierarchy, tx_cache, phys_cache, navmesh_cache, name_cache, mesh_entities, model_uuid.clone(), physics.clone(), navmesh.clone());
                     cid
                 }).collect();
 
@@ -371,11 +381,14 @@ impl Editor {
                     navmesh_cache.entry(eid.clone()).or_insert_with(|| nm.clone());
                 }
                 name_cache.entry(eid.clone()).or_insert_with(|| nname.clone());
+                if has_mesh {
+                    mesh_entities.insert(eid.clone());
+                }
             }
 
             for gltf_scene in document.scenes() {
                 for node in gltf_scene.nodes() {
-                    walk_gltf_node(&node, None, &mut self.hierarchy, &mut self.state.transform_cache, &mut self.state.physics_component_cache, &mut self.state.navmesh_component_cache, &mut self.state.name_cache, model_uuid.clone(), model.effective_physics(), model.navmesh.clone());
+                    walk_gltf_node(&node, None, &mut self.hierarchy, &mut self.state.transform_cache, &mut self.state.physics_component_cache, &mut self.state.navmesh_component_cache, &mut self.state.name_cache, &mut self.state.mesh_entities, model_uuid.clone(), model.effective_physics(), model.navmesh.clone());
                 }
             }
             eprintln!("[Editor] Loaded '{}' into hierarchy", model.id);
@@ -402,7 +415,10 @@ impl Editor {
                     if ui.button("Open Scene...").clicked() { ui.close_menu(); }
                     if ui.button("Save Scene").clicked() { let _ = self.save_scene(); ui.close_menu(); }
                     ui.separator();
-                    if ui.button("Exit").clicked() { ui.close_menu(); }
+                    if ui.button("Exit").clicked() {
+                        self.close_requested = true;
+                        ui.close_menu();
+                    }
                 });
                 ui.menu_button("Edit", |ui| {
                     let can_undo = self.command_history.can_undo();
@@ -536,6 +552,10 @@ impl Editor {
             // Save
             if input.modifiers.ctrl && input.key_pressed(egui::Key::S) {
                 save = true;
+            }
+            // Close window: Ctrl+W or Alt+F4
+            if input.modifiers.ctrl && input.key_pressed(egui::Key::W) {
+                self.close_requested = true;
             }
         });
 
@@ -1108,7 +1128,8 @@ impl Editor {
 
         for (idx, node_def) in manifest.nodes.iter().enumerate() {
             let eid = idx_to_eid[idx].clone();
-            let ntype = if node_def.mesh.is_some() {
+            let has_mesh = node_def.mesh.is_some();
+            let ntype = if has_mesh {
                 NodeType::Mesh
             } else {
                 NodeType::Empty
@@ -1162,9 +1183,12 @@ impl Editor {
                 node_def.transform.translation
             };
             self.state.transform_cache.insert(
-                eid,
+                eid.clone(),
                 (node_pos, node_def.transform.rotation, node_def.transform.scale),
             );
+            if has_mesh {
+                self.state.mesh_entities.insert(eid);
+            }
         }
 
         // 第二遍：将所有节点添加到层级树

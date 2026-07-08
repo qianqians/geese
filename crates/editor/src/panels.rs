@@ -9,7 +9,7 @@
 use crate::editor_mode::EditorMode;
 use crate::panel_layer::{PanelLayer, PanelLayerManager};
 use physics_manager::BodySnapshot;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 // ---------------------------------------------------------------------------
 // EditorAction - 面板请求的编辑器操作
@@ -128,6 +128,8 @@ pub struct EditorState {
     pub navmesh_component_cache: HashMap<String, scene::manifest::NavMeshComponentDef>,
     /// 实体名称缓存 (entity_id → name)，用于 Inspector 即时编辑
     pub name_cache: HashMap<String, String>,
+    /// 拥有 Mesh 组件的实体集合，用于 Inspector 判断是否显示 Mesh Renderer
+    pub mesh_entities: HashSet<String>,
     /// Inspector 写回的待提交变换变更
     pub pending_transform: Option<PendingTransform>,
     /// 面板请求的待处理操作队列
@@ -163,6 +165,7 @@ impl EditorState {
             physics_component_cache: HashMap::new(),
             navmesh_component_cache: HashMap::new(),
             name_cache: HashMap::new(),
+            mesh_entities: HashSet::new(),
             pending_transform: None,
             pending_actions: Vec::new(),
             dragged_asset_uuid: None,

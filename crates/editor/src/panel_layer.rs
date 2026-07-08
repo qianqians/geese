@@ -43,7 +43,7 @@ impl Default for PanelLayerManager {
         visibility.insert(PanelLayer::Hierarchy, true);
         visibility.insert(PanelLayer::Inspector, true);
         visibility.insert(PanelLayer::Toolbar, true);
-        visibility.insert(PanelLayer::Animation, true);
+        visibility.insert(PanelLayer::Animation, false);  // 默认隐藏动画面板
 
         Self {
             visibility,

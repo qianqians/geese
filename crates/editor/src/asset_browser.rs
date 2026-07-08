@@ -349,59 +349,53 @@ impl EditorPanel for AssetBrowser {
                         let available = ui.available_width();
                         let cols = (available / (card_width + 8.0)).max(1.0) as usize;
 
-                        let mut col = 0;
-                        for (i, entry) in filtered.iter().enumerate() {
-                            if col == 0 {
-                                ui.horizontal(|_ui| {
-                                    // 占位
-                                });
-                            }
+                        // 按行分组渲染
+                        for row_start in (0..filtered.len()).step_by(cols) {
+                            let row_end = (row_start + cols).min(filtered.len());
+                            ui.horizontal(|ui| {
+                                for idx in row_start..row_end {
+                                    let entry = &filtered[idx];
+                                    let is_selected = self.selected_index == Some(idx);
+                                    let (fill, stroke) = if is_selected {
+                                        (
+                                            egui::Color32::from_rgb(40, 60, 100),
+                                            egui::Stroke::new(2.0, egui::Color32::from_rgb(100, 160, 255)),
+                                        )
+                                    } else {
+                                        (
+                                            egui::Color32::TRANSPARENT,
+                                            egui::Stroke::new(1.0, egui::Color32::from_rgb(60, 60, 80)),
+                                        )
+                                    };
 
-                            let is_selected = self.selected_index == Some(i);
-                            let (fill, stroke) = if is_selected {
-                                (
-                                    egui::Color32::from_rgb(40, 60, 100),
-                                    egui::Stroke::new(2.0, egui::Color32::from_rgb(100, 160, 255)),
-                                )
-                            } else {
-                                (
-                                    egui::Color32::TRANSPARENT,
-                                    egui::Stroke::new(1.0, egui::Color32::from_rgb(60, 60, 80)),
-                                )
-                            };
+                                    let resp = egui::Frame::none()
+                                        .fill(fill)
+                                        .stroke(stroke)
+                                        .rounding(egui::Rounding::same(4.0))
+                                        .inner_margin(egui::Margin::same(4.0))
+                                        .show(ui, |ui| {
+                                            ui.set_width(card_width);
+                                            ui.vertical_centered(|ui| {
+                                                ui.label(egui::RichText::new(entry.asset_type.icon()).size(24.0));
+                                                ui.label(egui::RichText::new(&entry.name).size(10.0));
+                                            });
+                                        });
 
-                            let resp = egui::Frame::none()
-                                .fill(fill)
-                                .stroke(stroke)
-                                .rounding(egui::Rounding::same(4.0))
-                                .inner_margin(egui::Margin::same(4.0))
-                                .show(ui, |ui| {
-                                    ui.set_width(card_width);
-                                    ui.vertical_centered(|ui| {
-                                        ui.label(egui::RichText::new(entry.asset_type.icon()).size(24.0));
-                                        ui.label(egui::RichText::new(&entry.name).size(10.0));
-                                    });
-                                });
-
-                            if resp.response.clicked() {
-                                self.selected_index = Some(i);
-                            }
-                            // 拖拽启动：仅 Model/Prefab 可拖拽
-                            if resp.response.drag_started()
-                                && entry.asset_type.is_draggable()
-                                && !entry.uuid.is_empty()
-                            {
-                                state.dragged_asset_uuid = Some(entry.uuid.clone());
-                                state.dragged_asset_type = Some(entry.asset_type);
-                                state.dragged_asset_name = Some(entry.name.clone());
-                                state.drag_source = Some("AssetBrowser".to_string());
-                            }
-
-                            col += 1;
-                            if col >= cols {
-                                col = 0;
-                                ui.end_row();
-                            }
+                                    if resp.response.clicked() {
+                                        self.selected_index = Some(idx);
+                                    }
+                                    // 拖拽启动：仅 Model/Prefab 可拖拽
+                                    if resp.response.drag_started()
+                                        && entry.asset_type.is_draggable()
+                                        && !entry.uuid.is_empty()
+                                    {
+                                        state.dragged_asset_uuid = Some(entry.uuid.clone());
+                                        state.dragged_asset_type = Some(entry.asset_type);
+                                        state.dragged_asset_name = Some(entry.name.clone());
+                                        state.drag_source = Some("AssetBrowser".to_string());
+                                    }
+                                }
+                            });
                         }
                     }
                 }
