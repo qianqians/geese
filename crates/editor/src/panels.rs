@@ -150,10 +150,13 @@ pub struct EditorState {
     pub animation_markers: Vec<Vec<(f32, String)>>,
     /// 状态栏消息
     pub status_message: Option<String>,
+    /// 引擎根目录（运行时确定，用于定位 crates/game_runtime 等）
+    pub engine_root: String,
 }
 
 impl EditorState {
     pub fn new(project_path: String) -> Self {
+        let engine_root = Self::detect_engine_root();
         Self {
             project_path,
             selected_entity: None,
@@ -176,7 +179,33 @@ impl EditorState {
             animation_clips: Vec::new(),
             animation_markers: Vec::new(),
             status_message: None,
+            engine_root,
         }
+    }
+
+    /// 运行时确定引擎根目录。
+    /// 优先读取 `GEESE_ROOT` 环境变量，然后尝试从可执行文件路径推断，
+    /// 最后尝试从项目路径回退。
+    fn detect_engine_root() -> String {
+        if let Ok(val) = std::env::var("GEESE_ROOT") {
+            return val;
+        }
+        if let Ok(exe) = std::env::current_exe() {
+            let mut dir = match exe.parent() {
+                Some(p) => p.to_path_buf(),
+                None => return String::new(),
+            };
+            for _ in 0..6 {
+                if dir.join("crates").join("game_runtime").join("Cargo.toml").exists() {
+                    return dir.to_string_lossy().to_string();
+                }
+                match dir.parent() {
+                    Some(p) => dir = p.to_path_buf(),
+                    None => break,
+                }
+            }
+        }
+        String::new()
     }
 }
 

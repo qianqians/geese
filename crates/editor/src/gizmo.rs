@@ -335,19 +335,38 @@ impl GizmoInteraction {
 
         let mouse = screen_pos;
 
+        // 点到三角形（含内部）的检测
+        let point_in_triangle = |p: (f32, f32), a: (f32, f32), b: (f32, f32), c: (f32, f32)| -> bool {
+            let sign = |p1: (f32, f32), p2: (f32, f32), p3: (f32, f32)| -> f32 {
+                (p1.0 - p3.0) * (p2.1 - p3.1) - (p2.0 - p3.0) * (p1.1 - p3.1)
+            };
+            let d1 = sign(p, a, b);
+            let d2 = sign(p, b, c);
+            let d3 = sign(p, c, a);
+            let has_neg = (d1 < 0.0) || (d2 < 0.0) || (d3 < 0.0);
+            let has_pos = (d1 > 0.0) || (d2 > 0.0) || (d3 > 0.0);
+            !(has_neg && has_pos)
+        };
+
         match self.mode {
-            GizmoMode::Translate => {
+            GizmoMode::Translate | GizmoMode::Scale => {
                 if dist_to_seg(mouse, origin, x_tip) < hit_r {
                     Some(Axis::X)
                 } else if dist_to_seg(mouse, origin, y_tip) < hit_r {
                     Some(Axis::Y)
                 } else if dist_to_seg(mouse, origin, z_tip) < hit_r {
                     Some(Axis::Z)
+                } else if point_in_triangle(mouse, origin, x_tip, y_tip) {
+                    Some(Axis::Plane(AxisPlane::XY))
+                } else if point_in_triangle(mouse, origin, x_tip, z_tip) {
+                    Some(Axis::Plane(AxisPlane::XZ))
+                } else if point_in_triangle(mouse, origin, y_tip, z_tip) {
+                    Some(Axis::Plane(AxisPlane::YZ))
                 } else {
                     None
                 }
             }
-            GizmoMode::Rotate | GizmoMode::Scale => {
+            GizmoMode::Rotate => {
                 if dist_to_seg(mouse, origin, x_tip) < hit_r {
                     Some(Axis::X)
                 } else if dist_to_seg(mouse, origin, y_tip) < hit_r {

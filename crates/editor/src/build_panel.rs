@@ -99,7 +99,7 @@ impl BuildPanel {
     }
 
     /// 渲染面板 UI。
-    pub fn show_panel(&mut self, ui: &mut egui::Ui, project_path: &str) {
+    pub fn show_panel(&mut self, ui: &mut egui::Ui, project_path: &str, engine_root: &str) {
         ui.horizontal(|ui| {
             ui.strong("Build Game");
         });
@@ -146,7 +146,7 @@ impl BuildPanel {
                     BuildTarget::Android => "Build for Android",
                 };
                 if ui.button(build_label).clicked() {
-                    self.start_build(project_path.to_string());
+                    self.start_build(project_path.to_string(), engine_root.to_string());
                 }
             }
         });
@@ -239,7 +239,7 @@ impl BuildPanel {
     }
 
     /// 启动异步构建。
-    fn start_build(&mut self, project_path: String) {
+    fn start_build(&mut self, project_path: String, engine_root: String) {
         let target = self.selected_target;
         let (tx, rx) = mpsc::channel::<BuildEvent>();
         self.event_rx = Some(rx);
@@ -254,15 +254,13 @@ impl BuildPanel {
             )));
 
             // 定位 game_runtime Cargo.toml
-            let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-                .parent()
-                .and_then(|p| p.parent());
-            let Some(root) = root else {
+            let root = Path::new(&engine_root);
+            if !root.exists() {
                 let _ = tx.send(BuildEvent::Finished(Err(
-                    "Cannot determine project root from CARGO_MANIFEST_DIR".into(),
+                    "Cannot determine engine root (set GEESE_ROOT env var).".into(),
                 )));
                 return;
-            };
+            }
             let manifest_path = root.join("crates").join("game_runtime").join("Cargo.toml");
             let game_target = root.join("crates").join("game_runtime").join("target");
 

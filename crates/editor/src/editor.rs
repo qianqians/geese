@@ -177,9 +177,6 @@ impl Editor {
         // 1. 快捷键始终生效
         self.handle_shortcuts(ctx);
 
-        // 1.1 同步动画数据到 EditorState（供 AnimationPanel 使用）
-        self.sync_animation_data();
-
         // 1.2 动画面板预览驱动
         self.update_animation_preview(dt);
 
@@ -241,7 +238,7 @@ impl Editor {
                 .default_width(420.0)
                 .default_height(360.0)
                 .show(ctx, |ui| {
-                    self.build_panel.show_panel(ui, &self.state.project_path);
+                    self.build_panel.show_panel(ui, &self.state.project_path, &self.state.engine_root);
                 });
             self.build_panel_visible = build_visible;
         }
@@ -576,13 +573,11 @@ impl Editor {
             self.command_history.undo();
             self.last_transform_entity = None;
             self.last_transform_old = None;
-            self.process_apply_queue();
         }
         if redo {
             self.command_history.redo();
             self.last_transform_entity = None;
             self.last_transform_old = None;
-            self.process_apply_queue();
         }
         if save {
             let _ = self.save_scene();
@@ -768,21 +763,23 @@ impl Editor {
         name: String,
         remove: bool,
     ) {
-        let Some(ref mut scene) = self.scene else { return };
-        let Some(clip) = scene.animations.get_mut(clip_index) else {
-            return;
-        };
-        if remove {
-            clip.markers.retain(|m| m.time != time || m.name != name);
-        } else {
-            // 避免重复
-            if !clip.markers.iter().any(|m| m.time == time && m.name == name) {
+        let modified = self.scene.as_mut().map(|scene| {
+            let Some(clip) = scene.animations.get_mut(clip_index) else {
+                return false;
+            };
+            if remove {
+                clip.markers.retain(|m| m.time != time || m.name != name);
+                true
+            } else if !clip.markers.iter().any(|m| m.time == time && m.name == name) {
                 clip.markers.push(AnimationMarker { time, name });
-                // 保持按时间排序
-                clip
-                    .markers
-                    .sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
+                clip.markers.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
+                true
+            } else {
+                false
             }
+        }).unwrap_or(false);
+        if modified {
+            self.sync_animation_data();
         }
     }
 
@@ -867,16 +864,12 @@ impl Editor {
 
         self.state.status_message = Some("Building game_runtime (release)...".into());
 
-        // 定位项目根目录
-        let root_path = match std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(|p| p.parent())
-        {
-            Some(p) => p.to_path_buf(),
-            None => {
-                self.state.status_message = Some("Cannot determine project root.".into());
-                return;
-            }
+        // 定位引擎根目录
+        let root_path = if self.state.engine_root.is_empty() {
+            self.state.status_message = Some("Cannot determine engine root (set GEESE_ROOT env var).".into());
+            return;
+        } else {
+            std::path::PathBuf::from(&self.state.engine_root)
         };
         let manifest = root_path.join("crates").join("game_runtime").join("Cargo.toml");
 
@@ -1056,17 +1049,21 @@ impl Editor {
             self.state.project_path, sanitized_name
         );
 
-        // 文件覆盖保护：如果文件已存在，添加后缀避免覆盖
+        // 文件覆盖保护：如果文件已存在，递增后缀直到找到不存在的文件名
         let prefab_path = if std::path::Path::new(&prefab_path).exists() {
-            let base = format!(
-                "{}/assets/{}_copy",
-                self.state.project_path, sanitized_name
-            );
-            eprintln!(
-                "[Editor] Prefab file already exists at '{}', saving as '{}_copy.prefab.json' instead",
-                prefab_path, base
-            );
-            format!("{}.prefab.json", base)
+            let dir = format!("{}/assets", self.state.project_path);
+            let mut counter = 1;
+            loop {
+                let candidate = format!("{}/{}_{}.prefab.json", dir, sanitized_name, counter);
+                if !std::path::Path::new(&candidate).exists() {
+                    eprintln!(
+                        "[Editor] Prefab file already exists at '{}', saving as '{}' instead",
+                        prefab_path, candidate
+                    );
+                    break candidate;
+                }
+                counter += 1;
+            }
         } else {
             prefab_path
         };

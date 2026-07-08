@@ -109,18 +109,21 @@ impl SceneNodeTree {
 
     pub fn children_of(&self, id: &str) -> Vec<&SceneNodeData> {
         self.nodes
-            .values()
-            .filter(|n| n.parent.as_deref() == Some(id))
-            .collect()
+            .get(id)
+            .map(|node| {
+                node.children
+                    .iter()
+                    .filter_map(|child_id| self.nodes.get(child_id))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     pub fn remove(&mut self, id: &str) {
-        // 递归删除子节点
         let children_ids: Vec<String> = self.nodes
-            .values()
-            .filter(|n| n.parent.as_deref() == Some(id))
-            .map(|n| n.id.clone())
-            .collect();
+            .get(id)
+            .map(|node| node.children.clone())
+            .unwrap_or_default();
         for child_id in children_ids {
             self.remove(&child_id);
         }
@@ -132,10 +135,9 @@ impl SceneNodeTree {
     pub fn collect_subtree_ids(&self, id: &str) -> Vec<String> {
         let mut result = vec![id.to_string()];
         let children_ids: Vec<String> = self.nodes
-            .values()
-            .filter(|n| n.parent.as_deref() == Some(id))
-            .map(|n| n.id.clone())
-            .collect();
+            .get(id)
+            .map(|node| node.children.clone())
+            .unwrap_or_default();
         for child_id in children_ids {
             result.extend(self.collect_subtree_ids(&child_id));
         }
@@ -296,13 +298,18 @@ impl HierarchyPanel {
         state: &mut EditorState,
         depth: usize,
     ) {
-        let node = match self.tree.get(node_id) {
-            Some(n) => n.clone(),
+        let (visible, locked, icon, name, child_ids, is_selected) = match self.tree.get(node_id) {
+            Some(n) => (
+                n.visible,
+                n.locked,
+                n.node_type.icon().to_string(),
+                n.name.clone(),
+                n.children.clone(),
+                state.selected_entity.as_deref() == Some(node_id),
+            ),
             None => return,
         };
-
-        let is_selected = state.selected_entity.as_deref() == Some(node_id);
-        let has_children = !node.children.is_empty();
+        let has_children = !child_ids.is_empty();
 
         let indent = depth * 16;
         ui.horizontal(|ui| {
@@ -328,7 +335,7 @@ impl HierarchyPanel {
             }
 
             // 可见性 toggle
-            let eye = if node.visible { "👁" } else { "—" };
+            let eye = if visible { "👁" } else { "—" };
             if ui
                 .add_sized([16.0, 16.0], egui::Button::new(eye).fill(egui::Color32::TRANSPARENT))
                 .clicked()
@@ -339,7 +346,7 @@ impl HierarchyPanel {
             }
 
             // 锁定 toggle
-            let lock = if node.locked { "🔒" } else { "🔓" };
+            let lock = if locked { "🔒" } else { "🔓" };
             if ui
                 .add_sized([16.0, 16.0], egui::Button::new(lock).fill(egui::Color32::TRANSPARENT))
                 .clicked()
@@ -350,7 +357,7 @@ impl HierarchyPanel {
             }
 
             // 节点标签
-            let label = format!("{} {}", node.node_type.icon(), node.name);
+            let label = format!("{} {}", icon, name);
             let response = ui.selectable_label(is_selected, label);
 
             // 左键选择
@@ -420,13 +427,8 @@ impl HierarchyPanel {
 
         // 渲染子节点
         if self.expanded.contains(node_id) && has_children {
-            let child_ids: Vec<String> = self.tree
-                .children_of(node_id)
-                .iter()
-                .map(|n| n.id.clone())
-                .collect();
-            for child_id in child_ids {
-                self.render_node(ui, &child_id, state, depth + 1);
+            for child_id in &child_ids {
+                self.render_node(ui, child_id, state, depth + 1);
             }
         }
     }
