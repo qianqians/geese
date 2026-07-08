@@ -34,9 +34,6 @@ pub struct InspectorPanel {
     /// NavMesh Component 状态
     navmesh_enabled: bool,
     navmesh_agent_radius: f32,
-    /// Event Component 状态
-    event_enabled: bool,
-    event_entries: Vec<(String, String)>,  // (trigger, response)
 }
 
 impl InspectorPanel {
@@ -59,8 +56,6 @@ impl InspectorPanel {
             physics_body_kind_idx: 0,
             navmesh_enabled: false,
             navmesh_agent_radius: 0.5,
-            event_enabled: false,
-            event_entries: Vec::new(),
         }
     }
 
@@ -91,22 +86,6 @@ impl InspectorPanel {
             agent_radius: self.navmesh_agent_radius,
         };
         state.pending_actions.push(EditorAction::SetNavMeshComponent {
-            node_id: entity_id.to_string(),
-            component: Some(component),
-        });
-    }
-
-    /// 推送 Event 组件更新到 pending_actions。
-    fn push_event_update(&self, entity_id: &str, state: &mut EditorState) {
-        let entries: Vec<event::EventEntryDef> = self.event_entries
-            .iter()
-            .map(|(trigger, response)| event::EventEntryDef {
-                trigger: trigger.clone(),
-                response: response.clone(),
-            })
-            .collect();
-        let component = event::EventComponentDef { entries };
-        state.pending_actions.push(EditorAction::SetEventComponent {
             node_id: entity_id.to_string(),
             component: Some(component),
         });
@@ -205,16 +184,6 @@ impl EditorPanel for InspectorPanel {
                 if self.navmesh_enabled {
                     if let Some(comp) = state.navmesh_component_cache.get(entity_id) {
                         self.navmesh_agent_radius = comp.agent_radius;
-                    }
-                }
-                // 同步 Event Component
-                self.event_enabled = state.event_component_cache.contains_key(entity_id);
-                if self.event_enabled {
-                    if let Some(comp) = state.event_component_cache.get(entity_id) {
-                        self.event_entries = comp.entries
-                            .iter()
-                            .map(|e| (e.trigger.clone(), e.response.clone()))
-                            .collect();
                     }
                 }
             }
@@ -424,71 +393,6 @@ impl EditorPanel for InspectorPanel {
 
                 ui.add_space(4.0);
 
-                // ═══ Event Component ═══
-                let eid_ev = eid.clone();
-                egui::CollapsingHeader::new("▼ Event Component")
-                    .default_open(false)
-                    .show(ui, |ui| {
-                        let eid_ev2 = eid_ev.clone();
-                        // Add/Remove Component 按钮
-                        ui.horizontal(|ui| {
-                            let label = if self.event_enabled { "Remove" } else { "Add Component" };
-                            if ui.button(label).clicked() {
-                                self.event_enabled = !self.event_enabled;
-                                if self.event_enabled {
-                                    let component = event::EventComponentDef {
-                                        entries: Vec::new(),
-                                    };
-                                    state.pending_actions.push(EditorAction::SetEventComponent {
-                                        node_id: eid_ev2.clone(),
-                                        component: Some(component),
-                                    });
-                                } else {
-                                    state.pending_actions.push(EditorAction::SetEventComponent {
-                                        node_id: eid_ev2.clone(),
-                                        component: None,
-                                    });
-                                }
-                            }
-                        });
-                        if self.event_enabled {
-                            ui.add_space(4.0);
-                            ui.separator();
-                            // Event Entries 列表
-                            ui.label("Event Entries:");
-                            let mut remove_idx: Option<usize> = None;
-                            for (i, (trigger, response)) in self.event_entries.iter().enumerate() {
-                                ui.horizontal(|ui| {
-                                    ui.label(format!("{} → {}", trigger, response));
-                                    if ui.button("✖").clicked() {
-                                        remove_idx = Some(i);
-                                    }
-                                });
-                            }
-                            if let Some(i) = remove_idx {
-                                self.event_entries.remove(i);
-                                self.push_event_update(&eid_ev2, state);
-                            }
-                            // 新增条目
-                            ui.horizontal(|ui| {
-                                ui.label("Trigger:");
-                                let mut trigger_name = String::new();
-                                ui.text_edit_singleline(&mut trigger_name);
-                                ui.label("Response:");
-                                let mut response_name = String::new();
-                                ui.text_edit_singleline(&mut response_name);
-                                if ui.button("➕ Add").clicked()
-                                    && !trigger_name.is_empty()
-                                    && !response_name.is_empty()
-                                {
-                                    self.event_entries.push((trigger_name, response_name));
-                                    self.push_event_update(&eid_ev2, state);
-                                }
-                            });
-                        }
-                    });
-                ui.add_space(4.0);
-
                 // ═══ Component Overview ═══
                 egui::CollapsingHeader::new("▼ All Components")
                     .default_open(false)
@@ -497,7 +401,6 @@ impl EditorPanel for InspectorPanel {
                         if has_mesh { ui.label("• Mesh Renderer"); }
                         if self.physics_enabled { ui.label("• Physics Component"); }
                         if self.navmesh_enabled { ui.label("• NavMesh Component"); }
-                        if self.event_enabled { ui.label("• Event Component"); }
                         ui.horizontal(|ui| {
                             if ui.button("+ Add Component").clicked() {}
                         });

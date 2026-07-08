@@ -553,7 +553,6 @@ mod tests {
             tag: None,
             physics: None,
             navmesh: None,
-            event: None,
             _body_kind: None,
         });
         manifest.objects.push(SceneObjectDef {
@@ -565,7 +564,6 @@ mod tests {
             tag: None,
             physics: None,
             navmesh: None,
-            event: None,
             _body_kind: None,
         });
 

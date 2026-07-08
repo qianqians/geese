@@ -34,8 +34,6 @@ pub struct SceneNodeData {
     pub physics: Option<scene::manifest::PhysicsComponentDef>,
     /// NavMesh 组件定义（None 表示不参与导航网格构建）
     pub navmesh: Option<scene::manifest::NavMeshComponentDef>,
-    /// Event 组件定义（None 表示无事件组件）
-    pub event: Option<event::EventComponentDef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -189,7 +187,6 @@ impl HierarchyPanel {
             prefab_ref_uuid: None,
             physics: None,
             navmesh: None,
-            event: None,
         });
         tree.add_node(SceneNodeData {
             id: "room".into(),
@@ -203,7 +200,6 @@ impl HierarchyPanel {
             prefab_ref_uuid: None,
             physics: None,
             navmesh: None,
-            event: None,
         });
         tree.add_node(SceneNodeData {
             id: "floor".into(),
@@ -217,7 +213,6 @@ impl HierarchyPanel {
             prefab_ref_uuid: None,
             physics: None,
             navmesh: None,
-            event: None,
         });
         tree.add_node(SceneNodeData {
             id: "walls".into(),
@@ -231,7 +226,6 @@ impl HierarchyPanel {
             prefab_ref_uuid: None,
             physics: None,
             navmesh: None,
-            event: None,
         });
         tree.add_node(SceneNodeData {
             id: "light_main".into(),
@@ -245,7 +239,6 @@ impl HierarchyPanel {
             prefab_ref_uuid: None,
             physics: None,
             navmesh: None,
-            event: None,
         });
         tree.add_node(SceneNodeData {
             id: "outdoor".into(),
@@ -259,7 +252,6 @@ impl HierarchyPanel {
             prefab_ref_uuid: None,
             physics: None,
             navmesh: None,
-            event: None,
         });
         tree.add_node(SceneNodeData {
             id: "player_spawn".into(),
@@ -273,7 +265,6 @@ impl HierarchyPanel {
             prefab_ref_uuid: None,
             physics: None,
             navmesh: None,
-            event: None,
         });
 
         Self {
@@ -441,7 +432,6 @@ impl EditorPanel for HierarchyPanel {
                         prefab_ref_uuid: None,
                         physics: None,
                         navmesh: None,
-                        event: None,
                     });
                 }
             });

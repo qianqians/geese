@@ -323,12 +323,10 @@ impl Editor {
                 tx_cache: &mut std::collections::HashMap<String, ([f32;3],[f32;3],[f32;3])>,
                 phys_cache: &mut std::collections::HashMap<String, scene::manifest::PhysicsComponentDef>,
                 navmesh_cache: &mut std::collections::HashMap<String, scene::manifest::NavMeshComponentDef>,
-                event_cache: &mut std::collections::HashMap<String, event::EventComponentDef>,
                 name_cache: &mut std::collections::HashMap<String, String>,
                 model_uuid: Option<String>,
                 physics: Option<scene::manifest::PhysicsComponentDef>,
                 navmesh: Option<scene::manifest::NavMeshComponentDef>,
-                event: Option<event::EventComponentDef>,
             ) {
                 let eid = format!("node_{}", node.index());
                 let nname = node.name().unwrap_or("Node").to_string();
@@ -336,7 +334,7 @@ impl Editor {
 
                 let cids: Vec<String> = node.children().map(|c| {
                     let cid = format!("node_{}", c.index());
-                    walk_gltf_node(&c, Some(eid.clone()), hierarchy, tx_cache, phys_cache, navmesh_cache, event_cache, name_cache, model_uuid.clone(), physics.clone(), navmesh.clone(), event.clone());
+                    walk_gltf_node(&c, Some(eid.clone()), hierarchy, tx_cache, phys_cache, navmesh_cache, name_cache, model_uuid.clone(), physics.clone(), navmesh.clone());
                     cid
                 }).collect();
 
@@ -359,7 +357,6 @@ impl Editor {
                     prefab_ref_uuid: None,
                     physics: physics.clone(),
                     navmesh: navmesh.clone(),
-                    event: event.clone(),
                 });
 
                 tx_cache.entry(eid.clone()).or_insert((
@@ -373,15 +370,12 @@ impl Editor {
                 if let Some(ref nm) = navmesh {
                     navmesh_cache.entry(eid.clone()).or_insert_with(|| nm.clone());
                 }
-                if let Some(ref ev) = event {
-                    event_cache.entry(eid.clone()).or_insert_with(|| ev.clone());
-                }
                 name_cache.entry(eid.clone()).or_insert_with(|| nname.clone());
             }
 
             for gltf_scene in document.scenes() {
                 for node in gltf_scene.nodes() {
-                    walk_gltf_node(&node, None, &mut self.hierarchy, &mut self.state.transform_cache, &mut self.state.physics_component_cache, &mut self.state.navmesh_component_cache, &mut self.state.event_component_cache, &mut self.state.name_cache, model_uuid.clone(), model.effective_physics(), model.navmesh.clone(), model.event.clone());
+                    walk_gltf_node(&node, None, &mut self.hierarchy, &mut self.state.transform_cache, &mut self.state.physics_component_cache, &mut self.state.navmesh_component_cache, &mut self.state.name_cache, model_uuid.clone(), model.effective_physics(), model.navmesh.clone());
                 }
             }
             eprintln!("[Editor] Loaded '{}' into hierarchy", model.id);
@@ -816,17 +810,6 @@ impl Editor {
                     }
                     eprintln!("[Editor] SetNavMeshComponent: node={node_id}, enabled={}", component.is_some());
                 }
-                EditorAction::SetEventComponent { node_id, component } => {
-                    match component {
-                        Some(ref comp) => {
-                            self.state.event_component_cache.insert(node_id.clone(), comp.clone());
-                        }
-                        None => {
-                            self.state.event_component_cache.remove(&node_id);
-                        }
-                    }
-                    eprintln!("[Editor] SetEventComponent: node={node_id}, enabled={}", component.is_some());
-                }
                 EditorAction::RenameEntity { node_id, new_name } => {
                     self.state.name_cache.insert(node_id.clone(), new_name.clone());
                     if let Some(node) = self.hierarchy.tree_mut().get_mut(&node_id) {
@@ -1020,10 +1003,9 @@ impl Editor {
                 (mesh, None, None)
             };
 
-            // 获取物理、NavMesh 和 Event 组件
+            // 获取物理组件和 NavMesh 组件
             let physics = self.state.physics_component_cache.get(nid).cloned();
             let navmesh = self.state.navmesh_component_cache.get(nid).cloned();
-            let event = self.state.event_component_cache.get(nid).cloned();
 
             prefab_nodes.push(PrefabNodeDef {
                 name: n.name.clone(),
@@ -1034,7 +1016,6 @@ impl Editor {
                 overrides,
                 physics,
                 navmesh,
-                event,
                 _body_kind: None,
             });
         }
@@ -1172,7 +1153,6 @@ impl Editor {
                 prefab_ref_uuid,
                 physics: node_def.effective_physics(),
                 navmesh: node_def.navmesh.clone(),
-                event: node_def.event.clone(),
             });
 
             // 变换：根节点使用世界位置，子节点使用 manifest 中的变换
