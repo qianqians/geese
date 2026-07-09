@@ -169,6 +169,8 @@ pub struct HierarchyPanel {
     search_text: String,
     /// 展开的节点集合
     expanded: std::collections::HashSet<String>,
+    /// 正在重命名的节点 (node_id, 当前编辑名称)
+    renaming_node: Option<(String, String)>,
 }
 
 impl HierarchyPanel {
@@ -287,6 +289,7 @@ impl HierarchyPanel {
             tree,
             search_text: String::new(),
             expanded: std::collections::HashSet::new(),
+            renaming_node: None,
         }
     }
 
@@ -356,73 +359,155 @@ impl HierarchyPanel {
                 }
             }
 
-            // 节点标签
-            let label = format!("{} {}", icon, name);
-            let response = ui.selectable_label(is_selected, label);
-
-            // 左键选择
-            if response.clicked() {
-                state.selected_entity = Some(node_id.to_string());
-            }
-
-            // 双击聚焦（占位：后续实现摄像机聚焦）
-            if response.double_clicked() {
-                state.selected_entity = Some(node_id.to_string());
-            }
-
-            // 拖放悬停检测：拖拽资产到节点上时，标记为潜在父节点
-            let drag_active = state.dragged_asset_uuid.is_some()
-                && state.drag_source.as_deref() == Some("AssetBrowser");
-            if drag_active && response.hovered() {
-                state.drop_target_hint = Some(DropTargetHint::Hierarchy {
-                    target_node_id: Some(node_id.to_string()),
-                });
-                // 高亮当前悬停节点
-                let rect = response.rect;
-                ui.painter().rect_filled(
-                    rect,
-                    0.0,
-                    egui::Color32::from_rgba_premultiplied(60, 100, 255, 60),
-                );
-            }
-
-            // 右键菜单
-            response.context_menu(|ui| {
-                if ui.button("✏ Rename").clicked() {
-                    ui.close_menu();
+            // 节点标签（或重命名输入框）
+            let is_renaming = self.renaming_node.as_ref().map(|(id, _)| id.as_str()) == Some(node_id);
+            if is_renaming {
+                let rename_name = &mut self.renaming_node.as_mut().unwrap().1;
+                let text_edit = egui::TextEdit::singleline(rename_name)
+                    .desired_width(120.0)
+                    .lock_focus(true);
+                let response = ui.add(text_edit);
+                response.request_focus();
+                // Enter 确认，Escape 取消
+                if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    if let Some((nid, new_name)) = self.renaming_node.take() {
+                        if !new_name.is_empty() {
+                            state.name_cache.insert(nid.clone(), new_name.clone());
+                            state.pending_actions.push(EditorAction::RenameEntity {
+                                node_id: nid,
+                                new_name,
+                            });
+                        }
+                    }
                 }
-                if ui.button("📋 Duplicate").clicked() {
-                    ui.close_menu();
+                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    self.renaming_node = None;
                 }
-                if ui.button("➕ Create Empty Child").clicked() {
-                    ui.close_menu();
+            } else {
+                let label = format!("{} {}", icon, name);
+                let response = ui.selectable_label(is_selected, label);
+
+                // 左键选择
+                if response.clicked() {
+                    state.selected_entity = Some(node_id.to_string());
                 }
-                ui.separator();
-                if ui.button("📦 Save as Prefab").clicked() {
-                    ui.close_menu();
-                    state.pending_actions.push(EditorAction::SaveAsPrefab {
-                        node_id: node_id.to_string(),
+
+                // 双击聚焦（占位：后续实现摄像机聚焦）
+                if response.double_clicked() {
+                    state.selected_entity = Some(node_id.to_string());
+                }
+
+                // 拖放悬停检测：拖拽资产到节点上时，标记为潜在父节点
+                let drag_active = state.dragged_asset_uuid.is_some()
+                    && state.drag_source.as_deref() == Some("AssetBrowser");
+                if drag_active && response.hovered() {
+                    state.drop_target_hint = Some(DropTargetHint::Hierarchy {
+                        target_node_id: Some(node_id.to_string()),
                     });
+                    // 高亮当前悬停节点
+                    let rect = response.rect;
+                    ui.painter().rect_filled(
+                        rect,
+                        0.0,
+                        egui::Color32::from_rgba_premultiplied(60, 100, 255, 60),
+                    );
                 }
-                ui.separator();
-                if ui.button("🗑 Delete").clicked() {
-                    ui.close_menu();
-                    // 先收集所有将被删除的节点 ID（包括子树）
-                    let deleted_ids = self.tree.collect_subtree_ids(node_id);
-                    self.tree.remove(node_id);
-                    // 清理所有缓存
-                    for id in &deleted_ids {
-                        state.transform_cache.remove(id);
-                        state.physics_component_cache.remove(id);
-                        state.navmesh_component_cache.remove(id);
-                        state.name_cache.remove(id);
-                        state.mesh_entities.remove(id);
+
+                // 右键菜单
+                response.context_menu(|ui| {
+                    if ui.button("✏ Rename").clicked() {
+                        ui.close_menu();
+                        // 进入重命名模式
+                        let current_name = state.name_cache.get(node_id).cloned().unwrap_or_else(|| name.clone());
+                        self.renaming_node = Some((node_id.to_string(), current_name));
                     }
-                    if state.selected_entity.as_deref() == Some(node_id) {
-                        state.selected_entity = None;
+                    if ui.button("📋 Duplicate").clicked() {
+                        ui.close_menu();
+                        // 复制节点：生成新 ID，克隆数据
+                        let new_id = format!("node_{}", uuid::Uuid::new_v4());
+                        let parent_id = self.tree.get(node_id).and_then(|n| n.parent.clone());
+                        if let Some(source_node) = self.tree.get(node_id) {
+                            let new_node = SceneNodeData {
+                                id: new_id.clone(),
+                                name: format!("{}_copy", source_node.name),
+                                children: vec![],
+                                parent: parent_id.clone(),
+                                visible: source_node.visible,
+                                locked: source_node.locked,
+                                node_type: source_node.node_type.clone(),
+                                asset_source_uuid: source_node.asset_source_uuid.clone(),
+                                prefab_ref_uuid: source_node.prefab_ref_uuid.clone(),
+                                physics: source_node.physics.clone(),
+                                navmesh: source_node.navmesh.clone(),
+                            };
+                            self.tree.add_node(new_node);
+                            // 复制缓存
+                            if let Some(tx) = state.transform_cache.get(node_id) {
+                                state.transform_cache.insert(new_id.clone(), *tx);
+                            }
+                            if let Some(nm) = state.name_cache.get(node_id) {
+                                state.name_cache.insert(new_id.clone(), format!("{}_copy", nm));
+                            }
+                            if state.mesh_entities.contains(node_id) {
+                                state.mesh_entities.insert(new_id.clone());
+                            }
+                            if let Some(phys) = state.physics_component_cache.get(node_id) {
+                                state.physics_component_cache.insert(new_id.clone(), phys.clone());
+                            }
+                            if let Some(nav) = state.navmesh_component_cache.get(node_id) {
+                                state.navmesh_component_cache.insert(new_id.clone(), nav.clone());
+                            }
+                        }
                     }
-                }
-            });
+                    if ui.button("➕ Create Empty Child").clicked() {
+                        ui.close_menu();
+                        let new_id = format!("node_{}", uuid::Uuid::new_v4());
+                        self.tree.add_node(SceneNodeData {
+                            id: new_id.clone(),
+                            name: "GameObject".into(),
+                            children: vec![],
+                            parent: Some(node_id.to_string()),
+                            visible: true,
+                            locked: false,
+                            node_type: NodeType::Empty,
+                            asset_source_uuid: None,
+                            prefab_ref_uuid: None,
+                            physics: None,
+                            navmesh: None,
+                        });
+                        // 填充缓存
+                        state.transform_cache.insert(new_id.clone(), ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]));
+                        state.name_cache.insert(new_id, "GameObject".into());
+                        // 展开父节点
+                        self.expanded.insert(node_id.to_string());
+                    }
+                    ui.separator();
+                    if ui.button("📦 Save as Prefab").clicked() {
+                        ui.close_menu();
+                        state.pending_actions.push(EditorAction::SaveAsPrefab {
+                            node_id: node_id.to_string(),
+                        });
+                    }
+                    ui.separator();
+                    if ui.button("🗑 Delete").clicked() {
+                        ui.close_menu();
+                        // 先收集所有将被删除的节点 ID（包括子树）
+                        let deleted_ids = self.tree.collect_subtree_ids(node_id);
+                        self.tree.remove(node_id);
+                        // 清理所有缓存
+                        for id in &deleted_ids {
+                            state.transform_cache.remove(id);
+                            state.physics_component_cache.remove(id);
+                            state.navmesh_component_cache.remove(id);
+                            state.name_cache.remove(id);
+                            state.mesh_entities.remove(id);
+                        }
+                        if state.selected_entity.as_deref() == Some(node_id) {
+                            state.selected_entity = None;
+                        }
+                    }
+                });
+            }
         });
 
         // 渲染子节点
@@ -446,11 +531,12 @@ impl EditorPanel for HierarchyPanel {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("➕").on_hover_text("Create Empty").clicked() {
                     let new_id = format!("node_{}", uuid::Uuid::new_v4());
+                    let parent = state.selected_entity.clone();
                     self.tree.add_node(SceneNodeData {
-                        id: new_id,
+                        id: new_id.clone(),
                         name: "GameObject".into(),
                         children: vec![],
-                        parent: state.selected_entity.clone(),
+                        parent: parent.clone(),
                         visible: true,
                         locked: false,
                         node_type: NodeType::Empty,
@@ -459,6 +545,15 @@ impl EditorPanel for HierarchyPanel {
                         physics: None,
                         navmesh: None,
                     });
+                    // 填充缓存
+                    state.transform_cache.insert(new_id.clone(), ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]));
+                    state.name_cache.insert(new_id.clone(), "GameObject".into());
+                    // 展开父节点
+                    if let Some(ref parent_id) = parent {
+                        self.expanded.insert(parent_id.clone());
+                    }
+                    // 选中新节点
+                    state.selected_entity = Some(new_id);
                 }
             });
         });

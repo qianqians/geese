@@ -46,7 +46,8 @@ fn open_editor(project_path: String) -> PyResult<()> {
     let options = eframe::NativeOptions {
         renderer: eframe::Renderer::Wgpu,
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1280.0, 720.0])
+            .with_inner_size([1920.0, 1080.0])
+            .with_resizable(true)
             .with_title(format!("Geese Editor - {}", project_path)),
         ..Default::default()
     };

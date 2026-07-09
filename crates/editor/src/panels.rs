@@ -240,35 +240,39 @@ impl EditorLayout {
         inspector: &mut dyn EditorPanel,
         asset_browser: &mut dyn EditorPanel,
     ) {
-        // 底部面板必须先于侧边面板声明（egui 布局要求）
-        if state.panel_layer.is_visible(&PanelLayer::AssetBrowser) {
-            egui::TopBottomPanel::bottom("editor_bottom")
-                .resizable(true)
-                .default_height(200.0)
-                .show(ctx, |ui| {
+        // 底部面板必须先于侧边面板声明（egui 布局要求）。
+        // 始终提交面板到 egui 布局以保留尺寸记忆，仅在可见时渲染内容。
+        egui::TopBottomPanel::bottom("editor_bottom")
+            .resizable(true)
+            .default_height(300.0)
+            .height_range(100.0..=f32::INFINITY)
+            .show(ctx, |ui| {
+                if state.panel_layer.is_visible(&PanelLayer::AssetBrowser) {
                     asset_browser.show(ui, state);
-                });
-        }
+                }
+            });
 
         // 左侧面板
-        if state.panel_layer.is_visible(&PanelLayer::Hierarchy) {
-            egui::SidePanel::left("editor_left")
-                .resizable(true)
-                .default_width(250.0)
-                .show(ctx, |ui| {
+        egui::SidePanel::left("editor_left")
+            .resizable(true)
+            .default_width(250.0)
+            .width_range(100.0..=f32::INFINITY)
+            .show(ctx, |ui| {
+                if state.panel_layer.is_visible(&PanelLayer::Hierarchy) {
                     hierarchy.show(ui, state);
-                });
-        }
+                }
+            });
 
         // 右侧面板
-        if state.panel_layer.is_visible(&PanelLayer::Inspector) {
-            egui::SidePanel::right("editor_right")
-                .resizable(true)
-                .default_width(300.0)
-                .show(ctx, |ui| {
+        egui::SidePanel::right("editor_right")
+            .resizable(true)
+            .default_width(300.0)
+            .width_range(100.0..=f32::INFINITY)
+            .show(ctx, |ui| {
+                if state.panel_layer.is_visible(&PanelLayer::Inspector) {
                     inspector.show(ui, state);
-                });
-        }
+                }
+            });
 
         // 中央视口（最后创建，占据剩余空间）
         egui::CentralPanel::default().show(ctx, |ui| {

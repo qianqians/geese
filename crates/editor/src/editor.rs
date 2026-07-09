@@ -436,7 +436,7 @@ impl Editor {
                     let mut iv = self.state.panel_layer.is_visible(&PanelLayer::Inspector);
                     if ui.checkbox(&mut iv, "Inspector").clicked() { self.state.panel_layer.set_visible(PanelLayer::Inspector, iv); ui.close_menu(); }
                     let mut av = self.state.panel_layer.is_visible(&PanelLayer::AssetBrowser);
-                    if ui.checkbox(&mut av, "Asset Browser").clicked() { self.state.panel_layer.set_visible(PanelLayer::AssetBrowser, av); ui.close_menu(); }
+                    if ui.checkbox(&mut av, "Project").clicked() { self.state.panel_layer.set_visible(PanelLayer::AssetBrowser, av); ui.close_menu(); }
                     ui.separator();
                     let mut anim_vis = self.state.panel_layer.is_visible(&PanelLayer::Animation);
                     if ui.checkbox(&mut anim_vis, "Animation").clicked() { self.state.panel_layer.set_visible(PanelLayer::Animation, anim_vis); ui.close_menu(); }

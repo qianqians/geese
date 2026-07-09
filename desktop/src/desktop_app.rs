@@ -160,5 +160,9 @@ impl EditorApp {
 impl eframe::App for EditorApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.editor.update(ctx);
+        // File > Exit 或 Ctrl+W 触发后，发送关闭命令给原生窗口
+        if self.editor.close_requested {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
     }
 }
