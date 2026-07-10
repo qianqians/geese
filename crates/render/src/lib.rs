@@ -2,16 +2,22 @@ pub mod cluster;
 pub mod common;
 pub mod deferred_plus;
 pub mod forward_plus;
+pub mod graph;
 pub mod grid;
+pub mod hiz;
 pub mod ibl;
 pub mod light;
 pub mod lines;
+pub mod lod;
 pub mod material;
 pub mod mesh;
+pub mod particle;
 pub mod pipeline;
 pub mod post;
 pub mod post_pipeline;
+pub mod profiler;
 pub mod scene;
+pub mod shader_graph;
 pub mod shadow;
 pub mod shadow_pass;
 pub mod skinning;
@@ -28,14 +34,17 @@ pub use common::{
 };
 pub use deferred_plus::DeferredPlusPipeline;
 pub use forward_plus::ForwardPlusPipeline;
+pub use hiz::{HiZPyramid, ObjectAabb};
 pub use ibl::{IblBaker, IblConfig, IblResources, IblUniform, SkyboxKind, StubIblBaker};
 pub use wgpu_ibl_baker::{WgpuIblBaker, BakedIblTextures, IblBakeError};
 pub use light::{encode_light, GpuLight, Light, LightStorage, MAX_LIGHTS};
+pub use lod::{camera_distance, extract_translation, select_lod};
 pub use material::{
     AlphaMode, FilterMode, Material, MaterialHandle, MaterialLibrary, Sampler, Texture,
     TextureFormat, TextureHandle, WrapMode,
 };
-pub use mesh::{MeshFlags, ModelMesh, SkinHandle, Vertex};
+pub use mesh::{LodLevel, MeshFlags, ModelMesh, SkinHandle, Vertex};
+pub use particle::{GpuParticle, ParticleEmitter, ParticleSimUniform};
 pub use pipeline::{
     PreparedFrameKind, RenderingPath, ScenePipeline, ScenePipelineDescriptor,
 };

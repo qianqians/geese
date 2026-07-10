@@ -12,14 +12,16 @@
 //! open_editor("/path/to/project")
 //! ```
 
+#[cfg(feature = "python-scripting")]
 use pyo3::prelude::*;
 
-mod desktop_app;
+pub mod desktop_app;
 
 /// 启动 Geese Launcher（主窗口）。
 ///
 /// 阻塞直到用户关闭 Launcher 窗口。
 /// Launcher 通过子进程启动 Editor 窗口。
+#[cfg(feature = "python-scripting")]
 #[pyfunction]
 fn run() -> PyResult<()> {
     let options = eframe::NativeOptions {
@@ -41,6 +43,7 @@ fn run() -> PyResult<()> {
 /// 启动 Editor 独立窗口。由 Launcher 通过子进程调用。
 ///
 /// 阻塞直到用户关闭 Editor 窗口。
+#[cfg(feature = "python-scripting")]
 #[pyfunction]
 fn open_editor(project_path: String) -> PyResult<()> {
     let options = eframe::NativeOptions {
@@ -64,6 +67,7 @@ fn open_editor(project_path: String) -> PyResult<()> {
 }
 
 /// 把入口函数注册到 Python 模块。
+#[cfg(feature = "python-scripting")]
 #[pymodule]
 pub fn pydesktop(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(run, m)?)?;

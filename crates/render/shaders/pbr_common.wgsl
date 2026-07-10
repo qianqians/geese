@@ -3,7 +3,7 @@
 // 的 `GpuLight` / `LightStorage` 严格对齐。
 
 const PI: f32 = 3.14159265359;
-const MAX_LIGHTS: u32 = 16u;
+const MAX_LIGHTS: u32 = 32u;
 const TOTAL_CLUSTERS: u32 = 1024u;
 const CLUSTER_TILES_X: u32 = 8u;
 const CLUSTER_TILES_Y: u32 = 8u;
@@ -37,6 +37,11 @@ struct ClusterUniform {
     screen_z: vec4<f32>,
     depth_params: vec4<f32>,
     flags: vec4<f32>,
+    /// inverse_view_projection row 0..3（world-space ← clip-space）
+    inv_vp_0: vec4<f32>,
+    inv_vp_1: vec4<f32>,
+    inv_vp_2: vec4<f32>,
+    inv_vp_3: vec4<f32>,
 };
 
 struct MaterialUniform {

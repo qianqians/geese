@@ -1,3 +1,7 @@
+use std::sync::Arc;
+
+use crate::shader_graph::ShaderGraph;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct MaterialHandle(pub usize);
 
@@ -19,6 +23,8 @@ pub struct Material {
     pub alpha_mode: AlphaMode,
     pub alpha_cutoff: f32,
     pub double_sided: bool,
+    /// 自定义 shader graph（替换默认 PBR 着色）。`None` = 使用默认 PBR。
+    pub custom_shader: Option<Arc<ShaderGraph>>,
 }
 
 impl Default for Material {
@@ -37,6 +43,7 @@ impl Default for Material {
             alpha_mode: AlphaMode::Opaque,
             alpha_cutoff: 0.5,
             double_sided: false,
+            custom_shader: None,
         }
     }
 }

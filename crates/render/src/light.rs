@@ -1,7 +1,7 @@
 use bytemuck::{Pod, Zeroable};
 
 /// 单帧最多支持的光源数量。受 cluster bitmask 为 u32 的限制，硬上限为 32。
-pub const MAX_LIGHTS: usize = 16;
+pub const MAX_LIGHTS: usize = 32;
 
 /// 光源类型枚举，对应 GPU 端 `direction_type.w`：
 /// 0=Directional，1=Point，2=Spot。
@@ -303,7 +303,7 @@ mod tests {
 
     #[test]
     fn light_storage_layout_size_matches_gpu_expectation() {
-        // 16 字节 ambient + 16 字节 count + 16 个 GpuLight × 64 字节 = 32 + 1024 = 1056
+        // 16 字节 ambient + 16 字节 count + 32 个 GpuLight × 64 字节 = 32 + 2048 = 2080
         assert_eq!(std::mem::size_of::<LightStorage>(), 32 + 64 * MAX_LIGHTS);
     }
 }

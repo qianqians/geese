@@ -280,6 +280,10 @@ pub fn invert_4x4(m: [[f32; 4]; 4]) -> Option<[[f32; 4]; 4]> {
     let det = a[0] * inv[0] + a[1] * inv[4] + a[2] * inv[8] + a[3] * inv[12];
     // 使用相对阈值：将行列式与矩阵元素尺度的 4 次方比较
     let max_abs = a.iter().fold(0.0f32, |acc, &v| acc.max(v.abs()));
+    // 若矩阵所有元素接近零，必然是奇异矩阵（det 也为零，但阈值会退化为 0）
+    if max_abs < f32::EPSILON {
+        return None;
+    }
     let threshold = 1e-8 * max_abs.powi(4);
     if det.abs() < threshold {
         return None;
@@ -354,6 +358,28 @@ impl Default for GpuResourceCache {
 
 // -------- Render command (轻量级，引用缓存中的 GPU 资源) --------
 
+/// GPU 实例化数据 — 每个实例 64 字节（一个 4×4 model 矩阵），与 WGSL `InstanceData` 对齐。
+///
+/// 存储在 storage buffer 中供 instanced draw 使用。
+/// Feature gate: `instancing`（默认启用）。
+#[cfg(feature = "instancing")]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
+pub struct InstanceData {
+    /// World-space model 矩阵（行主序）
+    pub model: [[f32; 4]; 4],
+}
+
+#[cfg(feature = "instancing")]
+impl InstanceData {
+    /// 从 ObjectUniform 的 model 矩阵构建。
+    pub fn from_object_uniform(uniform: &ObjectUniform) -> Self {
+        Self {
+            model: uniform.model,
+        }
+    }
+}
+
 /// 单条已 prepare 的绘制命令。GPU 资源（buffer / 纹理）保存在 `GpuResourceCache` 中，
 /// 此处仅保存查找键和每帧重建的 bind group。
 pub struct WgpuRenderCommand {
@@ -362,6 +388,15 @@ pub struct WgpuRenderCommand {
     pub index_count: u32,
     pub material_bind_group: wgpu::BindGroup,
     pub object_bind_group: wgpu::BindGroup,
+    /// Per-instance model 矩阵（首实例），供 instanced draw 或常规 draw 使用。
+    pub model_matrix: [[f32; 4]; 4],
+    /// 实例数量：1 = 常规绘制，>1 = 使用 instanced pipeline。
+    /// Feature gate: `instancing` 启用时有效；禁用时始终为 1。
+    #[cfg(feature = "instancing")]
+    pub instance_count: u32,
+    /// 所有实例的 model 矩阵（仅当 instance_count > 1 时填充多个元素）。
+    #[cfg(feature = "instancing")]
+    pub instance_models: Vec<[[f32; 4]; 4]>,
 }
 
 pub struct WgpuRenderQueue {

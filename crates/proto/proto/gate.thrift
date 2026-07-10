@@ -213,6 +213,14 @@ struct client_call_hub_ntf {
 struct client_call_gate_heartbeats {
 }
 
+/*
+ * version handshake — 协议版本协商
+ */
+struct version_handshake {
+	1:i32 min_version,
+	2:i32 max_version
+}
+
 union gate_client_service {
 	1:client_request_hub_login login,
 	2:client_request_hub_reconnect reconnect,

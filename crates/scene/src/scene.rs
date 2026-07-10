@@ -80,6 +80,12 @@ pub struct Scene {
     pub triggered_events: Vec<(String, String)>,
     /// Python 脚本组件（按 entity_id 索引），不侵入 SceneObject。
     pub scripts: HashMap<String, crate::ScriptComponent>,
+    /// 可选 ECS 注册表（通过 ecs_bridge feature 启用）。
+    /// 默认为 None；启用后可通过 `attach_ecs()` 注入。
+    #[cfg(feature = "ecs_bridge")]
+    pub ecs: Option<Box<dyn ecs::EcsBridge>>,
+    /// 可选事件总线（跨系统消息传递），默认为 None。
+    pub event_bus: Option<Box<dyn event::bus::EventBusBridge>>,
     /// 本帧触发的动画系统事件，由外部消费者 drain。
     animation_events: Vec<SceneAnimationEvent>,
     /// 动画图每个剪辑的上次时间（用于标记跨越检测）
@@ -136,6 +142,9 @@ impl Scene {
             marker_events: Vec::new(),
             triggered_events: Vec::new(),
             scripts: HashMap::new(),
+            #[cfg(feature = "ecs_bridge")]
+            ecs: None,
+            event_bus: None,
             animation_events: Vec::new(),
             graph_prev_times: HashMap::new(),
             object_index: HashMap::new(),

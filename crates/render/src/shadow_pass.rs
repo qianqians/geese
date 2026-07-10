@@ -285,12 +285,15 @@ impl ShadowPass {
     /// 渲染所有 shadow casters 到 shadow atlas。
     ///
     /// 在 ForwardPlusPipeline::render() 的 forward pass 之前调用。
+    ///
+    /// `timestamp_writes` 可传入 GPU profiler 的 timestamp query 对（启用 profiling 时）。
     pub fn render(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         atlas_view: &wgpu::TextureView,
         cache: &GpuResourceCache,
         commands: &[WgpuRenderCommand],
+        timestamp_writes: Option<wgpu::RenderPassTimestampWrites>,
     ) {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("shadow depth render pass"),
@@ -303,7 +306,7 @@ impl ShadowPass {
                 }),
                 stencil_ops: None,
             }),
-            timestamp_writes: None,
+            timestamp_writes,
             occlusion_query_set: None,
         });
 

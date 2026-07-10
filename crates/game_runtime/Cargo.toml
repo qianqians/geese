@@ -11,6 +11,10 @@ crate-type = ["rlib", "cdylib"]
 name = "geese_game"
 path = "src/main.rs"
 
+[features]
+default = []
+python-scripting = []
+
 [dependencies]
 winit = "0.30"
 wgpu = "22.1"

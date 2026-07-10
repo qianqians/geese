@@ -14,6 +14,14 @@ pub enum PostEffect {
     Bloom { threshold: f32, intensity: f32, iterations: u32 },
     /// 时序抗锯齿，jitter_strength 通常 1.0。
     Taa { jitter_strength: f32, feedback: f32 },
+    /// 屏幕空间环境光遮蔽 (SSAO/HBAO)。
+    Ssao { radius: f32, bias: f32 },
+    /// 屏幕空间反射 (SSR)。
+    Ssr { max_steps: u32, stride: f32 },
+    /// 景深 (Depth of Field)。
+    DepthOfField { focus_distance: f32, aperture: f32 },
+    /// 运动模糊 (Motion Blur)。
+    MotionBlur { intensity: f32 },
 }
 
 impl PostEffect {
@@ -22,6 +30,18 @@ impl PostEffect {
         Self::Bloom { threshold: threshold.max(0.0), intensity: intensity.max(0.0), iterations: 5 }
     }
     pub fn taa() -> Self { Self::Taa { jitter_strength: 1.0, feedback: 0.9 } }
+    pub fn ssao(radius: f32, bias: f32) -> Self {
+        Self::Ssao { radius: radius.max(0.0), bias }
+    }
+    pub fn ssr(max_steps: u32, stride: f32) -> Self {
+        Self::Ssr { max_steps: max_steps.min(256), stride: stride.max(0.0) }
+    }
+    pub fn dof(focus_distance: f32, aperture: f32) -> Self {
+        Self::DepthOfField { focus_distance: focus_distance.max(0.0), aperture: aperture.max(0.0) }
+    }
+    pub fn motion_blur(intensity: f32) -> Self {
+        Self::MotionBlur { intensity: intensity.clamp(0.0, 1.0) }
+    }
 }
 
 /// 后处理链。按 push 顺序执行。
@@ -66,10 +86,14 @@ impl EffectMask {
     pub const TONEMAP: Self = Self(1 << 0);
     pub const BLOOM: Self = Self(1 << 1);
     pub const TAA: Self = Self(1 << 2);
+    pub const SSAO: Self = Self(1 << 3);
+    pub const SSR: Self = Self(1 << 4);
+    pub const DOF: Self = Self(1 << 5);
+    pub const MOTION_BLUR: Self = Self(1 << 6);
 
     pub const fn empty() -> Self { Self(0) }
     pub const fn bits(self) -> u32 { self.0 }
-    pub const fn from_bits_truncate(bits: u32) -> Self { Self(bits & 0b111) }
+    pub const fn from_bits_truncate(bits: u32) -> Self { Self(bits & 0x7F) }
     pub const fn is_empty(self) -> bool { self.0 == 0 }
     pub const fn contains(self, other: Self) -> bool { (self.0 & other.0) == other.0 }
 }
@@ -103,6 +127,18 @@ pub fn build_post_uniform(chain: &PostChain, frame_index: u64) -> PostUniform {
                 u.frame[0] = (jx - 0.5) * jitter_strength;
                 u.frame[1] = (jy - 0.5) * jitter_strength;
                 mask |= EffectMask::TAA;
+            }
+            PostEffect::Ssao { .. } => {
+                mask |= EffectMask::SSAO;
+            }
+            PostEffect::Ssr { .. } => {
+                mask |= EffectMask::SSR;
+            }
+            PostEffect::DepthOfField { .. } => {
+                mask |= EffectMask::DOF;
+            }
+            PostEffect::MotionBlur { .. } => {
+                mask |= EffectMask::MOTION_BLUR;
             }
         }
     }

@@ -8,3 +8,11 @@ bytemuck = { version = "1.14", features = ["derive"] }
 cgmath = "0.18"
 wgpu = "22.1"
 log = "0.4"
+
+[features]
+default = ["instancing"]
+profiling = []
+instancing = []
+lod = []
+hi-z-occlusion = []
+particles = []

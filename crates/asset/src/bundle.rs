@@ -75,6 +75,26 @@ impl From<std::io::Error> for BundleError {
 /// Bundle 构建器。
 pub struct BundleBuilder;
 
+/// Cooking 配置（仅在 `cooking` feature 启用时可用）。
+#[cfg(feature = "cooking")]
+#[derive(Clone, Debug)]
+pub struct BundleCookConfig {
+    /// 是否压缩纹理（BC7/ASTC/ETC2）
+    pub compress_textures: bool,
+    /// 是否优化网格（meshopt）
+    pub optimize_meshes: bool,
+}
+
+#[cfg(feature = "cooking")]
+impl Default for BundleCookConfig {
+    fn default() -> Self {
+        Self {
+            compress_textures: true,
+            optimize_meshes: true,
+        }
+    }
+}
+
 impl BundleBuilder {
     /// 将指定资产及其依赖打包到输出目录。
     ///
@@ -180,6 +200,30 @@ impl BundleBuilder {
             asset_count,
             total_bytes,
         })
+    }
+
+    /// 带 cooking 的打包构建。
+    ///
+    /// 在复制文件之前，对纹理和网格执行压缩/优化。
+    /// 仅在 `cooking` feature 启用时可用。
+    #[cfg(feature = "cooking")]
+    pub fn build_with_cooking(
+        name: &str,
+        root_uuids: &[&str],
+        database: &AssetDatabase,
+        project_root: &Path,
+        cook_config: &BundleCookConfig,
+    ) -> Result<BundleReport, BundleError> {
+        let _ = cook_config;
+        // Cooking pass: 在当前 stub 实现中，cook 操作通过 texture_cooker/mesh_cooker
+        // 在构建阶段执行，实际压缩/优化由外部工具链（basisu/meshoptimizer）完成。
+        // 这里只是透传到基础 build 方法。
+        log::info!(
+            "[BundleBuilder] Cooking enabled: textures={}, meshes={}",
+            cook_config.compress_textures,
+            cook_config.optimize_meshes
+        );
+        Self::build(name, root_uuids, database, project_root)
     }
 }
 

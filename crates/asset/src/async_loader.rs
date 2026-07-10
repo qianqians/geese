@@ -235,7 +235,7 @@ mod tests {
         let loader = Arc::new(EchoLoader::new());
 
         // Request async
-        let rx = async_cache.request_async::<String, _>("test.txt", loader.clone());
+        let mut rx = async_cache.request_async::<String, _>("test.txt", loader.clone());
 
         // Wait for the tokio task to finish
         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -259,7 +259,7 @@ mod tests {
         let mut async_cache = AsyncAssetCache::new();
         let loader = Arc::new(EchoLoader::new());
 
-        let rx = async_cache.request_async::<String, _>("missing", loader.clone());
+        let mut rx = async_cache.request_async::<String, _>("missing", loader.clone());
 
         std::thread::sleep(std::time::Duration::from_millis(50));
         async_cache.poll_completed();
@@ -277,7 +277,7 @@ mod tests {
         async_cache.cache.insert("cached.txt", "cached_content".to_string());
 
         let loader = Arc::new(EchoLoader::new());
-        let rx = async_cache.request_async::<String, _>("cached.txt", loader.clone());
+        let mut rx = async_cache.request_async::<String, _>("cached.txt", loader.clone());
 
         // Should resolve immediately without polling
         let result = rx.try_recv().expect("should resolve immediately");
@@ -293,9 +293,9 @@ mod tests {
         let mut async_cache = AsyncAssetCache::new();
         let loader = Arc::new(EchoLoader::with_delay(std::time::Duration::from_millis(20)));
 
-        let rx1 = async_cache.request_async::<String, _>("file1.txt", loader.clone());
-        let rx2 = async_cache.request_async::<String, _>("file2.txt", loader.clone());
-        let rx3 = async_cache.request_async::<String, _>("file3.txt", loader.clone());
+        let mut rx1 = async_cache.request_async::<String, _>("file1.txt", loader.clone());
+        let mut rx2 = async_cache.request_async::<String, _>("file2.txt", loader.clone());
+        let mut rx3 = async_cache.request_async::<String, _>("file3.txt", loader.clone());
 
         std::thread::sleep(std::time::Duration::from_millis(100));
         async_cache.poll_completed();

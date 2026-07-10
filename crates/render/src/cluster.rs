@@ -11,7 +11,10 @@ pub const CLUSTER_DEPTH_SLICES: u32 = 16;
 pub const TOTAL_CLUSTERS: u32 = CLUSTER_TILES_X * CLUSTER_TILES_Y * CLUSTER_DEPTH_SLICES;
 
 /// `cluster_culling.wgsl` 与 `forward_plus.wgsl` / `deferred_lighting.wgsl` 共享的
-/// 划分参数 uniform。布局 = 4 个 vec4，共 64 字节。
+/// 划分参数 uniform。布局 = 8 个 vec4，共 128 字节。
+///
+/// 新增 `inv_vp_*` 字段用于 cluster culling compute shader 将
+/// NDC cluster 角点反投影到 world-space，构建 AABB 进行光源剔除。
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub struct ClusterUniform {
@@ -24,11 +27,20 @@ pub struct ClusterUniform {
     pub depth_params: [f32; 4],
     /// x=inverse_view_projection_valid（1.0 表示有效），其它 pad
     pub flags: [f32; 4],
+    /// inverse_view_projection row 0（world-space ← clip-space）
+    pub inv_vp_0: [f32; 4],
+    /// inverse_view_projection row 1
+    pub inv_vp_1: [f32; 4],
+    /// inverse_view_projection row 2
+    pub inv_vp_2: [f32; 4],
+    /// inverse_view_projection row 3
+    pub inv_vp_3: [f32; 4],
 }
 
 impl ClusterUniform {
     /// 根据当前视口尺寸与近远平面构造划分参数。
-    pub fn new(width: u32, height: u32, z_near: f32, z_far: f32) -> Self {
+    /// `inv_vp` 为 inverse(view_projection) 矩阵，用于 cluster culling。
+    pub fn new(width: u32, height: u32, z_near: f32, z_far: f32, inv_vp: [[f32; 4]; 4]) -> Self {
         let width_f = width.max(1) as f32;
         let height_f = height.max(1) as f32;
         let near = z_near.max(1e-4);
@@ -52,16 +64,34 @@ impl ClusterUniform {
                 height_f / CLUSTER_TILES_Y as f32,
             ],
             flags: [1.0, 0.0, 0.0, 0.0],
+            inv_vp_0: inv_vp[0],
+            inv_vp_1: inv_vp[1],
+            inv_vp_2: inv_vp[2],
+            inv_vp_3: inv_vp[3],
         }
     }
 
     /// 默认 1×1 占位，仅用于 GPU 初始化阶段，运行时必须随后调用 [`update`]。
     pub fn placeholder() -> Self {
-        Self::new(1, 1, 0.1, 100.0)
+        Self::new(1, 1, 0.1, 100.0, crate::common::identity_matrix())
     }
 
     pub fn update(&mut self, width: u32, height: u32, z_near: f32, z_far: f32) {
-        *self = Self::new(width, height, z_near, z_far);
+        *self = Self::new(width, height, z_near, z_far, self.inv_vp_matrix());
+    }
+
+    /// 获取当前存储的 inverse_view_projection 矩阵。
+    pub fn inv_vp_matrix(&self) -> [[f32; 4]; 4] {
+        [self.inv_vp_0, self.inv_vp_1, self.inv_vp_2, self.inv_vp_3]
+    }
+
+    /// 更新 inverse_view_projection 矩阵（相机变化时调用）。
+    pub fn set_inv_vp(&mut self, inv_vp: [[f32; 4]; 4]) {
+        self.inv_vp_0 = inv_vp[0];
+        self.inv_vp_1 = inv_vp[1];
+        self.inv_vp_2 = inv_vp[2];
+        self.inv_vp_3 = inv_vp[3];
+        self.flags[0] = 1.0;
     }
 
     /// 把 view-space `z`（正值，越远越大）映射到 cluster slice index。
@@ -84,6 +114,16 @@ impl Default for ClusterUniform {
 }
 
 #[cfg(test)]
+fn identity() -> [[f32; 4]; 4] {
+    [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -93,13 +133,13 @@ mod tests {
     }
 
     #[test]
-    fn uniform_size_is_64_bytes() {
-        assert_eq!(std::mem::size_of::<ClusterUniform>(), 64);
+    fn uniform_size_is_128_bytes() {
+        assert_eq!(std::mem::size_of::<ClusterUniform>(), 128);
     }
 
     #[test]
     fn new_records_tile_count_and_screen() {
-        let u = ClusterUniform::new(1280, 720, 0.1, 100.0);
+        let u = ClusterUniform::new(1280, 720, 0.1, 100.0, identity());
         assert_eq!(u.tile_count[0], CLUSTER_TILES_X);
         assert_eq!(u.tile_count[1], CLUSTER_TILES_Y);
         assert_eq!(u.tile_count[2], CLUSTER_DEPTH_SLICES);
@@ -108,11 +148,14 @@ mod tests {
         assert_eq!(u.screen_z[1], 720.0);
         assert!((u.depth_params[2] - 160.0).abs() < 1e-3);
         assert!((u.depth_params[3] - 90.0).abs() < 1e-3);
+        // inv_vp stored correctly
+        assert_eq!(u.inv_vp_0, identity()[0]);
+        assert_eq!(u.inv_vp_3, identity()[3]);
     }
 
     #[test]
     fn slice_mapping_is_monotonic_and_bounded() {
-        let u = ClusterUniform::new(800, 600, 0.1, 100.0);
+        let u = ClusterUniform::new(800, 600, 0.1, 100.0, identity());
         let near_slice = u.slice_for_view_z(0.1);
         let far_slice = u.slice_for_view_z(99.9);
         assert_eq!(near_slice, 0);
@@ -129,7 +172,7 @@ mod tests {
 
     #[test]
     fn placeholder_does_not_panic_on_degenerate_size() {
-        let _ = ClusterUniform::new(0, 0, 0.0, 0.0);
+        let _ = ClusterUniform::new(0, 0, 0.0, 0.0, identity());
     }
 
     #[test]
@@ -140,5 +183,19 @@ mod tests {
         assert_eq!(u.screen_z[1], 480.0);
         assert_eq!(u.screen_z[2], 0.5);
         assert_eq!(u.screen_z[3], 50.0);
+    }
+
+    #[test]
+    fn set_inv_vp_updates_matrix() {
+        let mut u = ClusterUniform::placeholder();
+        let new_vp = [
+            [2.0, 0.0, 0.0, 0.0],
+            [0.0, 2.0, 0.0, 0.0],
+            [0.0, 0.0, 2.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        u.set_inv_vp(new_vp);
+        assert_eq!(u.inv_vp_0, new_vp[0]);
+        assert_eq!(u.flags[0], 1.0);
     }
 }

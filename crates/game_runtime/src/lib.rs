@@ -3,6 +3,14 @@
 //! 提供平台无关的 [`GameState`] 和 [`run_event_loop`]，供桌面和 Android
 //! 两个入口共享。Android 入口通过 `android_main` 符号由 NativeActivity 调用。
 
+pub mod script_host;
+
+#[cfg(target_os = "ios")]
+pub mod ios;
+
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
+
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;

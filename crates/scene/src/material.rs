@@ -53,6 +53,7 @@ pub fn load_material_library(
                 alpha_mode: convert_alpha_mode(material.alpha_mode()),
                 alpha_cutoff: material.alpha_cutoff().unwrap_or(0.5),
                 double_sided: material.double_sided(),
+                custom_shader: None,
             }
         })
         .collect();

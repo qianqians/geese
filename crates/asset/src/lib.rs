@@ -14,6 +14,12 @@ pub mod database;
 pub mod dependency_scanner;
 pub mod bundle;
 pub mod async_loader;
+#[cfg(feature = "hot-reload")]
+pub mod hot_reload;
+#[cfg(feature = "cooking")]
+pub mod texture_cooker;
+#[cfg(feature = "cooking")]
+pub mod mesh_cooker;
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
@@ -21,6 +27,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 pub use async_loader::AsyncAssetCache;
+
+#[cfg(feature = "vfs")]
+pub use vfs::{MountPoint, Vfs};
 
 // ---------------------------------------------------------------------------
 // 现有 gltf 加载（保留向后兼容）
@@ -192,6 +201,8 @@ where
 #[derive(Default)]
 pub struct AssetCache {
     entries: HashMap<(TypeId, String), Box<dyn Any + Send + Sync>>,
+    #[cfg(feature = "vfs")]
+    vfs: Option<Arc<vfs::Vfs>>,
 }
 
 impl AssetCache {
@@ -209,6 +220,55 @@ impl AssetCache {
 
     pub fn clear(&mut self) {
         self.entries.clear();
+    }
+
+    // -----------------------------------------------------------------------
+    // VFS 集成（可选 feature）
+    // -----------------------------------------------------------------------
+
+    /// 创建带虚拟文件系统的缓存。
+    #[cfg(feature = "vfs")]
+    pub fn with_vfs(vfs: Arc<vfs::Vfs>) -> Self {
+        Self {
+            entries: HashMap::new(),
+            vfs: Some(vfs),
+        }
+    }
+
+    /// 设置虚拟文件系统（替换现有）。
+    #[cfg(feature = "vfs")]
+    pub fn set_vfs(&mut self, vfs: Arc<vfs::Vfs>) {
+        self.vfs = Some(vfs);
+    }
+
+    /// 获取虚拟文件系统引用。
+    #[cfg(feature = "vfs")]
+    pub fn vfs(&self) -> Option<&vfs::Vfs> {
+        self.vfs.as_deref()
+    }
+
+    /// 通过虚拟路径加载资源。
+    ///
+    /// 内部通过 VFS 将虚拟路径解析为物理路径，然后调用 `get_or_load`。
+    /// 若未设置 VFS，则直接使用虚拟路径作为物理路径（降级行为）。
+    #[cfg(feature = "vfs")]
+    pub fn get_or_load_virtual<T, L>(
+        &mut self,
+        virtual_path: &str,
+        loader: &L,
+    ) -> Result<Handle<T>, LoadError>
+    where
+        T: Send + Sync + 'static,
+        L: AssetLoader<T>,
+    {
+        let physical_path = match &self.vfs {
+            Some(vfs) => vfs
+                .resolve(virtual_path)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| virtual_path.to_string()),
+            None => virtual_path.to_string(),
+        };
+        self.get_or_load(&physical_path, loader)
     }
 
     fn key<T: 'static>(path: &str) -> (TypeId, String) {
@@ -253,6 +313,19 @@ impl AssetCache {
         T: Send + Sync + 'static,
     {
         self.entries.remove(&Self::key::<T>(path)).is_some()
+    }
+
+    /// 重新加载已缓存的资源（热重载支持）。
+    ///
+    /// 从缓存中驱逐旧条目，重新加载并返回新 Handle。
+    /// 若路径尚未缓存，等同于 `get_or_load`。
+    pub fn reload<T, L>(&mut self, path: &str, loader: &L) -> Result<Handle<T>, LoadError>
+    where
+        T: Send + Sync + 'static,
+        L: AssetLoader<T>,
+    {
+        self.evict::<T>(path);
+        self.get_or_load(path, loader)
     }
 }
 

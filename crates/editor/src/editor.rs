@@ -27,6 +27,7 @@ use crate::viewport::ViewportPanel;
 use std::process::Command;
 use asset::database::AssetDatabase;
 use asset::meta;
+use render::MaterialLibrary;
 use avatar::AnimationMarker;
 use physics_manager::PhysicsManager;
 use scene::prefab_manifest::{PrefabManifest, PrefabNodeDef, PrefabMeshDef};
@@ -89,6 +90,8 @@ pub struct Editor {
     animation_panel: AnimationPanel,
     /// 可选场景引用（供动画预览等使用）
     scene: Option<Scene>,
+    /// 材质库（编辑器独立管理）
+    pub material_library: MaterialLibrary,
     /// 编辑器是否请求关闭（供 DesktopApp 检查）
     pub close_requested: bool,
 }
@@ -145,6 +148,7 @@ impl Editor {
             last_transform_old: None,
             physics_enabled: true,
             animation_panel: AnimationPanel::new(),
+            material_library: MaterialLibrary::default(),
             scene: None,
             close_requested: false,
         }

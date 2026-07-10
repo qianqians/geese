@@ -34,6 +34,8 @@ pub struct DeferredPlusPipeline {
     sample_count: u32,
     width: u32,
     height: u32,
+    z_near: f32,
+    z_far: f32,
 
     // ---- 帧级 buffer ----
     camera_buffer: wgpu::Buffer,
@@ -287,7 +289,7 @@ impl DeferredPlusPipeline {
         });
         let width = descriptor.width.max(1);
         let height = descriptor.height.max(1);
-        let cluster_uniform = ClusterUniform::new(width, height, 0.1, 1000.0);
+        let cluster_uniform = ClusterUniform::new(width, height, 0.1, 1000.0, crate::common::identity_matrix());
         let cluster_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("deferred+ cluster buffer"),
             contents: bytemuck::bytes_of(&cluster_uniform),
@@ -383,6 +385,8 @@ impl DeferredPlusPipeline {
             sample_count: descriptor.sample_count,
             width,
             height,
+            z_near: 0.1,
+            z_far: 1000.0,
             camera_buffer,
             lights_buffer,
             cluster_buffer,
@@ -440,7 +444,9 @@ impl ScenePipeline for DeferredPlusPipeline {
     ) {
         let width = width.max(1);
         let height = height.max(1);
-        let cluster = ClusterUniform::new(width, height, z_near, z_far);
+        self.z_near = z_near;
+        self.z_far = z_far;
+        let cluster = ClusterUniform::new(width, height, z_near, z_far, crate::common::identity_matrix());
         queue.write_buffer(&self.cluster_buffer, 0, bytemuck::bytes_of(&cluster));
 
         // 仅在尺寸变化时重建 G-Buffer，避免每帧申请显存
@@ -495,6 +501,15 @@ impl ScenePipeline for DeferredPlusPipeline {
     ) {
         let camera = CameraUniform::new(view_projection, camera_position);
         queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));
+        // 同步 cluster uniform 的 inverse VP，供 cluster culling compute shader 使用
+        let cluster = ClusterUniform::new(
+            self.width,
+            self.height,
+            self.z_near,
+            self.z_far,
+            camera.inverse_view_projection,
+        );
+        queue.write_buffer(&self.cluster_buffer, 0, bytemuck::bytes_of(&cluster));
     }
 
     fn update_lights(&mut self, queue: &wgpu::Queue, ambient: [f32; 3], lights: &[Light]) {

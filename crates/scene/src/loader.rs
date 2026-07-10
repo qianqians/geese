@@ -524,6 +524,7 @@ pub(crate) fn create_pbr_material(name: &str, color: [f32; 3]) -> Material {
         occlusion_texture: None,
         emissive_texture: None,
         double_sided: false,
+        custom_shader: None,
     }
 }
 

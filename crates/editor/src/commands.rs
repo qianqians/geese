@@ -10,6 +10,8 @@
 use cgmath::{Point3, Vector3};
 use std::collections::VecDeque;
 
+use crate::command_group::CommandGroup;
+
 // ---------------------------------------------------------------------------
 // EditorCommand trait
 // ---------------------------------------------------------------------------
@@ -456,6 +458,8 @@ pub struct CommandHistory {
     redo_stack: Vec<Box<dyn EditorCommand>>,
     /// 最大历史深度
     max_depth: usize,
+    /// 上次 mark_saved() 时的 undo 栈深度（用于 is_dirty() 追踪）
+    saved_depth: usize,
 }
 
 impl CommandHistory {
@@ -464,6 +468,7 @@ impl CommandHistory {
             undo_stack: VecDeque::with_capacity(max_depth),
             redo_stack: Vec::new(),
             max_depth,
+            saved_depth: 0,
         }
     }
 
@@ -553,6 +558,71 @@ impl CommandHistory {
     pub fn clear(&mut self) {
         self.undo_stack.clear();
         self.redo_stack.clear();
+        self.saved_depth = 0;
+    }
+
+    // -----------------------------------------------------------------------
+    // 新增方法（P1 命令/撤销系统增强）
+    // -----------------------------------------------------------------------
+
+    /// 执行一个命令组：整组推入 undo 栈。
+    ///
+    /// 与 `execute()` 不同，命令组作为一个整体：
+    /// - Ctrl+Z 一次撤销整个组
+    /// - Ctrl+Shift+Z 一次重做整个组
+    ///
+    /// 返回是否执行成功。
+    pub fn execute_group(&mut self, mut group: CommandGroup) -> bool {
+        let success = group.execute();
+        if !success {
+            return false;
+        }
+        self.execute(Box::new(group))
+    }
+
+    /// 安全地就地修改栈顶命令。
+    ///
+    /// 替代手动 `pop_last_undo()` → 修改 → 重建 → `execute()` 的模式。
+    /// 若栈为空则不执行任何操作。
+    ///
+    /// # 典型用途
+    ///
+    /// Gizmo 连续拖拽：第一次拖拽创建 `TransformCommand`，后续拖拽通过
+    /// `merge_last` 更新其 `new_position` / `new_rotation_euler` / `new_scale`，
+    /// 最终 Ctrl+Z 一步撤销整个拖拽操作。
+    ///
+    /// ```ignore
+    /// history.merge_last(|cmd| {
+    ///     if let Some(tc) = cmd.as_any_mut().downcast_mut::<TransformCommand>() {
+    ///         tc.new_position = latest_position;
+    ///     }
+    /// });
+    /// ```
+    pub fn merge_last(&mut self, f: impl FnOnce(&mut Box<dyn EditorCommand>)) {
+        if let Some(cmd) = self.undo_stack.back_mut() {
+            // 使用 catch_unwind 保护命令历史完整性
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                f(cmd);
+            }));
+            if result.is_err() {
+                // merge 回调 panic：保留原命令不变
+                log::error!("CommandHistory::merge_last callback panicked; command preserved");
+            }
+        }
+    }
+
+    /// 标记当前状态为"已保存"。
+    ///
+    /// 通常在保存文件后调用，重置脏状态。
+    pub fn mark_saved(&mut self) {
+        self.saved_depth = self.undo_stack.len();
+    }
+
+    /// 是否存在未保存的变更。
+    ///
+    /// 当 undo 栈深度与上次 `mark_saved()` 记录的位置不同时返回 `true`。
+    pub fn is_dirty(&self) -> bool {
+        self.undo_stack.len() != self.saved_depth
     }
 }
 

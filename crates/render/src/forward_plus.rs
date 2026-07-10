@@ -13,9 +13,19 @@ use crate::shadow::{CascadeConfig, CsmUniform};
 use crate::shadow_pass::{ShadowPass, WgpuShadowAtlas};
 use crate::{MaterialLibrary, RenderQueue};
 
+#[cfg(feature = "profiling")]
+use crate::profiler::GpuProfiler;
+
+#[cfg(feature = "instancing")]
+use crate::common::InstanceData;
+
 const PBR_COMMON: &str = include_str!("../shaders/pbr_common.wgsl");
 const FORWARD_PLUS_WGSL: &str = include_str!("../shaders/forward_plus.wgsl");
 const CLUSTER_CULLING_WGSL: &str = include_str!("../shaders/cluster_culling.wgsl");
+
+#[cfg(feature = "instancing")]
+const FORWARD_PLUS_INSTANCED_WGSL: &str =
+    include_str!("../shaders/forward_plus_instanced.wgsl");
 
 const CLUSTER_BITMASK_SIZE: u64 = (TOTAL_CLUSTERS as u64) * 4;
 const CULLING_WORKGROUP_SIZE: u32 = 64;
@@ -40,12 +50,36 @@ pub struct ForwardPlusPipeline {
     forward_pipeline: wgpu::RenderPipeline,
     culling_pipeline: wgpu::ComputePipeline,
 
+    /// Instanced 渲染管线（feature = "instancing" 时启用）
+    #[cfg(feature = "instancing")]
+    instanced_pipeline: wgpu::RenderPipeline,
+    /// 实例数据 buffer，每帧重建
+    #[cfg(feature = "instancing")]
+    instance_buffer: wgpu::Buffer,
+    /// Instance bind group（绑定 instance buffer 到 group 2）
+    #[cfg(feature = "instancing")]
+    instance_bind_group: wgpu::BindGroup,
+    /// Instance bind group layout
+    #[cfg(feature = "instancing")]
+    #[allow(dead_code)]
+    instance_bind_group_layout: wgpu::BindGroupLayout,
+
     default_textures: DefaultTextures,
     prepared: WgpuRenderQueue,
     cache: GpuResourceCache,
 
     shadow_pass: Option<ShadowPass>,
     shadow_atlas: Option<WgpuShadowAtlas>,
+
+    /// GPU profiler（feature = "profiling" 时启用）
+    #[cfg(feature = "profiling")]
+    profiler: GpuProfiler,
+
+    /// 缓存 viewport 尺寸，供 update_camera 同步 cluster inverse VP 使用
+    cluster_width: u32,
+    cluster_height: u32,
+    cluster_z_near: f32,
+    cluster_z_far: f32,
 }
 
 impl ForwardPlusPipeline {
@@ -153,6 +187,105 @@ impl ForwardPlusPipeline {
             cache: None,
         });
 
+        // ---- instanced 渲染 pipeline ----
+        #[cfg(feature = "instancing")]
+        let (instanced_pipeline, instance_bind_group_layout, instance_buffer, instance_bind_group) = {
+            let instanced_src = format!("{PBR_COMMON}\n{FORWARD_PLUS_INSTANCED_WGSL}");
+            let instanced_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("forward+ instanced shader"),
+                source: wgpu::ShaderSource::Wgsl(instanced_src.into()),
+            });
+
+            // Group 2 for instances: storage buffer (read-only)
+            let instance_layout =
+                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("forward+ instance bind group layout"),
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: std::num::NonZeroU64::new(
+                                std::mem::size_of::<InstanceData>() as u64,
+                            ),
+                        },
+                        count: None,
+                    }],
+                });
+
+            let instanced_pipeline_layout =
+                device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("forward+ instanced pipeline layout"),
+                    bind_group_layouts: &[
+                        &frame_bind_group_layout,
+                        &material_bind_group_layout,
+                        &instance_layout,
+                    ],
+                    push_constant_ranges: &[],
+                });
+
+            let instanced_pipeline =
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("forward+ instanced pipeline"),
+                    layout: Some(&instanced_pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &instanced_shader,
+                        entry_point: "vs_main_instanced",
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        buffers: &vertex_buffers,
+                    },
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        strip_index_format: None,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: None,
+                        polygon_mode: wgpu::PolygonMode::Fill,
+                        unclipped_depth: false,
+                        conservative: false,
+                    },
+                    depth_stencil: Some(wgpu::DepthStencilState {
+                        format: descriptor.depth_format,
+                        depth_write_enabled: true,
+                        depth_compare: wgpu::CompareFunction::Less,
+                        stencil: wgpu::StencilState::default(),
+                        bias: wgpu::DepthBiasState::default(),
+                    }),
+                    multisample: wgpu::MultisampleState {
+                        count: descriptor.sample_count,
+                        mask: !0,
+                        alpha_to_coverage_enabled: false,
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &instanced_shader,
+                        entry_point: "fs_main",
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        targets: &color_targets,
+                    }),
+                    multiview: None,
+                    cache: None,
+                });
+
+            // 预分配 instance buffer（可容纳 1024 个实例）
+            let max_instances: u64 = 1024;
+            let instance_buf = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("forward+ instance buffer"),
+                size: max_instances * std::mem::size_of::<InstanceData>() as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let instance_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("forward+ instance bind group"),
+                layout: &instance_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: instance_buf.as_entire_binding(),
+                }],
+            });
+
+            (instanced_pipeline, instance_layout, instance_buf, instance_bg)
+        };
+
         // ---- compute pipeline (cluster culling) ----
         let culling_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("cluster culling bind group layout"),
@@ -192,6 +325,7 @@ impl ForwardPlusPipeline {
             descriptor.height.max(1),
             0.1,
             1000.0,
+            crate::common::identity_matrix(),
         );
         let cluster_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("forward+ cluster uniform buffer"),
@@ -268,6 +402,23 @@ impl ForwardPlusPipeline {
             cache: GpuResourceCache::new(),
             shadow_pass: None,
             shadow_atlas: None,
+
+            #[cfg(feature = "profiling")]
+            profiler: GpuProfiler::new(device, 16),
+
+            #[cfg(feature = "instancing")]
+            instanced_pipeline,
+            #[cfg(feature = "instancing")]
+            instance_buffer,
+            #[cfg(feature = "instancing")]
+            instance_bind_group,
+            #[cfg(feature = "instancing")]
+            instance_bind_group_layout,
+
+            cluster_width: descriptor.width.max(1),
+            cluster_height: descriptor.height.max(1),
+            cluster_z_near: 0.1,
+            cluster_z_far: 1000.0,
         }
     }
 
@@ -328,7 +479,17 @@ impl ScenePipeline for ForwardPlusPipeline {
         z_near: f32,
         z_far: f32,
     ) {
-        let cluster = ClusterUniform::new(width, height, z_near, z_far);
+        self.cluster_width = width.max(1);
+        self.cluster_height = height.max(1);
+        self.cluster_z_near = z_near;
+        self.cluster_z_far = z_far;
+        let cluster = ClusterUniform::new(
+            self.cluster_width,
+            self.cluster_height,
+            z_near,
+            z_far,
+            crate::common::identity_matrix(),
+        );
         queue.write_buffer(&self.cluster_buffer, 0, bytemuck::bytes_of(&cluster));
     }
 
@@ -340,6 +501,17 @@ impl ScenePipeline for ForwardPlusPipeline {
     ) {
         let camera = CameraUniform::new(view_projection, camera_position);
         queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));
+        // 同步 cluster uniform 的 inverse VP，供 cluster culling compute shader 使用
+        let mut cluster = ClusterUniform::new(
+            self.cluster_width,
+            self.cluster_height,
+            self.cluster_z_near,
+            self.cluster_z_far,
+            camera.inverse_view_projection,
+        );
+        // 保留 depth slice 参数兼容
+        cluster.flags[0] = 1.0;
+        queue.write_buffer(&self.cluster_buffer, 0, bytemuck::bytes_of(&cluster));
     }
 
     fn update_lights(&mut self, queue: &wgpu::Queue, ambient: [f32; 3], lights: &[Light]) {
@@ -354,7 +526,7 @@ impl ScenePipeline for ForwardPlusPipeline {
         materials: &MaterialLibrary,
         render_queue: &RenderQueue<'_>,
     ) {
-        let commands = render_queue
+        let mut commands: Vec<WgpuRenderCommand> = render_queue
             .commands
             .iter()
             .map(|command| {
@@ -370,6 +542,13 @@ impl ScenePipeline for ForwardPlusPipeline {
                 )
             })
             .collect();
+
+        // ---- GPU Instancing: 按 mesh_key 分组连续的相同 mesh 命令 ----
+        #[cfg(feature = "instancing")]
+        {
+            commands = group_instanced_commands(commands, &self.instance_buffer, queue);
+        }
+
         self.prepared = WgpuRenderQueue { commands };
     }
 
@@ -380,16 +559,29 @@ impl ScenePipeline for ForwardPlusPipeline {
         color_target: &wgpu::TextureView,
         depth_target: Option<&wgpu::TextureView>,
     ) {
+        // ---- begin frame profiling ----
+        #[cfg(feature = "profiling")]
+        self.profiler.begin_frame();
+
         // ---- shadow pass (optional) ----
         if let (Some(sp), Some(atlas)) = (&self.shadow_pass, &self.shadow_atlas) {
-            sp.render(encoder, &atlas.view, &self.cache, &self.prepared.commands);
+            #[cfg(feature = "profiling")]
+            let shadow_tw = self.profiler.render_pass_writes("shadow");
+            #[cfg(not(feature = "profiling"))]
+            let shadow_tw: Option<wgpu::RenderPassTimestampWrites> = None;
+            sp.render(encoder, &atlas.view, &self.cache, &self.prepared.commands, shadow_tw);
         }
 
         // ---- compute: cluster culling ----
         {
+            #[cfg(feature = "profiling")]
+            let culling_tw = self.profiler.compute_pass_writes("cluster_culling");
+            #[cfg(not(feature = "profiling"))]
+            let culling_tw: Option<wgpu::ComputePassTimestampWrites> = None;
+
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("forward+ cluster culling"),
-                timestamp_writes: None,
+                timestamp_writes: culling_tw,
             });
             cpass.set_pipeline(&self.culling_pipeline);
             cpass.set_bind_group(0, &self.culling_bind_group, &[]);
@@ -405,6 +597,12 @@ impl ScenePipeline for ForwardPlusPipeline {
                 return;
             }
         };
+
+        #[cfg(feature = "profiling")]
+        let forward_tw = self.profiler.render_pass_writes("forward+");
+        #[cfg(not(feature = "profiling"))]
+        let forward_tw: Option<wgpu::RenderPassTimestampWrites> = None;
+
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("forward+ render pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -428,7 +626,7 @@ impl ScenePipeline for ForwardPlusPipeline {
                 }),
                 stencil_ops: None,
             }),
-            timestamp_writes: None,
+            timestamp_writes: forward_tw,
             occlusion_query_set: None,
         });
 
@@ -440,11 +638,29 @@ impl ScenePipeline for ForwardPlusPipeline {
                 None => continue,
             };
             pass.set_bind_group(1, &command.material_bind_group, &[]);
-            pass.set_bind_group(2, &command.object_bind_group, &[]);
             pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
             pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+
+            // Instanced path: 当 instance_count > 1 时使用 instanced pipeline
+            #[cfg(feature = "instancing")]
+            {
+                if command.instance_count > 1 {
+                    pass.set_pipeline(&self.instanced_pipeline);
+                    pass.set_bind_group(2, &self.instance_bind_group, &[]);
+                    pass.draw_indexed(0..command.index_count, 0, 0..command.instance_count);
+                    pass.set_pipeline(&self.forward_pipeline);
+                    continue;
+                }
+            }
+
+            // Regular path: 单实例，使用 Object uniform
+            pass.set_bind_group(2, &command.object_bind_group, &[]);
             pass.draw_indexed(0..command.index_count, 0, 0..1);
         }
+
+        // ---- end frame profiling ----
+        #[cfg(feature = "profiling")]
+        self.profiler.end_frame(encoder, _device);
     }
 }
 
@@ -529,7 +745,7 @@ pub(crate) fn build_command(
     cache: &mut GpuResourceCache,
 ) -> WgpuRenderCommand {
     let mesh_key = compute_mesh_key(command.mesh);
-    let index_count = command.mesh.indices.len() as u32;
+    let index_count = command.lod_index_count.unwrap_or(command.mesh.indices.len() as u32);
     let entity_id = command.entity_id.to_string();
 
     // ---- 1. Mesh buffers (vertex + index) ----
@@ -812,5 +1028,71 @@ pub(crate) fn build_command(
         index_count,
         material_bind_group,
         object_bind_group,
+        model_matrix: command.model_matrix,
+        #[cfg(feature = "instancing")]
+        instance_count: 1,
+        #[cfg(feature = "instancing")]
+        instance_models: vec![command.model_matrix],
     }
+}
+
+// -------- GPU Instancing: 分组连续的相同 mesh 命令，合并实例数据 --------
+
+/// 按 `mesh_key` 分组连续的命令，将同 mesh 的多个绘制合并为一次 instanced draw。
+/// 仅当 `instancing` feature 启用时编译。
+#[cfg(feature = "instancing")]
+fn group_instanced_commands(
+    mut commands: Vec<WgpuRenderCommand>,
+    instance_buffer: &wgpu::Buffer,
+    queue: &wgpu::Queue,
+) -> Vec<WgpuRenderCommand> {
+    if commands.is_empty() {
+        return commands;
+    }
+
+    let mut grouped: Vec<WgpuRenderCommand> = Vec::with_capacity(commands.len());
+    let mut batch_start: usize = 0;
+
+    for i in 1..=commands.len() {
+        let flush = i == commands.len() || commands[i].mesh_key != commands[batch_start].mesh_key;
+        if flush {
+            let batch_size = i - batch_start;
+            if batch_size == 1 {
+                // 单实例：保持原样
+                grouped.push(commands.swap_remove(batch_start));
+            } else {
+                // 多实例：合并为一条 instanced 命令
+                let mut base = commands.swap_remove(batch_start);
+                // 收集 batch 中剩余命令的 model 矩阵
+                let mut models = base.instance_models;
+                for _ in 1..batch_size {
+                    let cmd = commands.swap_remove(batch_start);
+                    models.extend(cmd.instance_models);
+                }
+                base.instance_count = models.len() as u32;
+                base.instance_models = models;
+                grouped.push(base);
+            }
+            batch_start = i;
+        }
+    }
+
+    // 将所有实例数据写入 instance buffer
+    let mut all_instances: Vec<InstanceData> = Vec::new();
+    for cmd in &grouped {
+        if cmd.instance_count > 1 {
+            for model in &cmd.instance_models {
+                all_instances.push(InstanceData { model: *model });
+            }
+        }
+    }
+    if !all_instances.is_empty() {
+        queue.write_buffer(
+            instance_buffer,
+            0,
+            bytemuck::cast_slice(&all_instances),
+        );
+    }
+
+    grouped
 }

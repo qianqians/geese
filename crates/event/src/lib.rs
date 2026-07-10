@@ -1,14 +1,16 @@
 //! 事件组件系统。
 //!
-//! 提供：
-//! - `EventEntryDef`：事件条目（触发函数 → 响应函数）
-//! - `EventComponentDef`：实体事件组件定义（事件条目列表）
+//! 两个层次的事件系统：
+//! - `EventEntryDef` / `EventComponentDef`：实体级脚本触发器（客户端本地交互逻辑）
+//! - `bus::EventBus` / `bus::EngineEvent`：跨系统消息总线（引擎架构通信）
 //!
 //! 触发函数签名：`fn() -> bool`，返回 true 时触发响应。
 //! 响应函数签名：`fn()`，无参数无返回值。
 //!
 //! 注意：事件系统仅用于客户端本地交互逻辑（播放动画、音效、开门等）。
 //! 服务器端游戏逻辑请直接在 hub Python 脚本中编写，不需要事件组件。
+
+pub mod bus;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

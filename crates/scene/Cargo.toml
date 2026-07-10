@@ -16,14 +16,17 @@ camera = { path = "../camera", version = "0.1.0" }
 asset = { path = "../asset", version = "0.1.0" }
 render = { path = "../render", version = "0.1.0" }
 avatar = { path = "../avatar", version = "0.1.0" }
+event = { path = "../event", version = "0.1.0" }
 physics = { path = "../physics", version = "0.1.0", optional = true }
 gameplay_physics = { path = "../gameplay_physics", version = "0.1.0", optional = true }
 navmesh = { path = "../navmesh", version = "0.1.0", optional = true }
 bitflags = "2"
 pyo3 = { version = "0.22", optional = true, features = ["auto-initialize"] }
+ecs = { path = "../ecs", version = "0.1.0", optional = true }
 
 [features]
 default = ["physics", "navmesh"]
 physics = ["dep:physics", "dep:gameplay_physics"]
 navmesh = ["dep:navmesh"]
 python_script = ["dep:pyo3"]
+ecs_bridge = ["dep:ecs"]
