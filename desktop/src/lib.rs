@@ -25,7 +25,7 @@ fn run() -> PyResult<()> {
     let options = eframe::NativeOptions {
         renderer: eframe::Renderer::Wgpu,
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([900.0, 800.0])
+            .with_inner_size([1080.0, 640.0])
             .with_resizable(false),
         ..Default::default()
     };

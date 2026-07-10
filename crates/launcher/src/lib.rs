@@ -161,7 +161,7 @@ impl Launcher {
             let total_width = ui.available_width();
             let left_width = 440.0;
             let right_width = 210.0;
-            let side_gap = (total_width - left_width - right_width - 40.0) * 0.5;
+            let side_gap = (total_width - left_width - right_width - 40.0) * 0.5 - 50.0;
 
             ui.horizontal(|ui| {
                 ui.add_space(side_gap);
@@ -182,7 +182,7 @@ impl Launcher {
                     });
                 });
 
-                ui.add_space(40.0);
+                ui.add_space(85.0);
 
                 // 右侧：历史项目
                 ui.allocate_ui(egui::vec2(right_width, ui.available_height()), |ui| {
