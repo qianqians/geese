@@ -17,6 +17,9 @@ use std::collections::{HashMap, HashSet};
 mod gilrs_backend;
 pub use gilrs_backend::{GilrsBackend, GilrsInitError};
 
+mod winit_backend;
+pub use winit_backend::WinitBackend;
+
 // ---------------------------------------------------------------------------
 // 物理输入枚举
 // ---------------------------------------------------------------------------

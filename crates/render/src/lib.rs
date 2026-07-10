@@ -10,9 +10,12 @@ pub mod material;
 pub mod mesh;
 pub mod pipeline;
 pub mod post;
+pub mod post_pipeline;
 pub mod scene;
 pub mod shadow;
+pub mod shadow_pass;
 pub mod skinning;
+pub mod wgpu_ibl_baker;
 pub mod wgpu_renderer;
 
 pub use cluster::{
@@ -26,6 +29,7 @@ pub use common::{
 pub use deferred_plus::DeferredPlusPipeline;
 pub use forward_plus::ForwardPlusPipeline;
 pub use ibl::{IblBaker, IblConfig, IblResources, IblUniform, SkyboxKind, StubIblBaker};
+pub use wgpu_ibl_baker::{WgpuIblBaker, BakedIblTextures, IblBakeError};
 pub use light::{encode_light, GpuLight, Light, LightStorage, MAX_LIGHTS};
 pub use material::{
     AlphaMode, FilterMode, Material, MaterialHandle, MaterialLibrary, Sampler, Texture,
@@ -38,11 +42,13 @@ pub use pipeline::{
 pub use post::{
     aces_tonemap, build_post_uniform, halton_2_3, EffectMask, PostChain, PostEffect, PostUniform,
 };
+pub use post_pipeline::PostProcessPipeline;
 pub use scene::{RenderCommand, RenderObject, RenderQueue, RenderStats, SceneRenderer};
 pub use shadow::{
     compute_atlas_layout, compute_cascade_splits, AtlasRect, CascadeConfig, CascadeUniform,
     CsmUniform, DirectionalShadowCaster, NullShadowAtlas, ShadowAtlas, MAX_CASCADES,
 };
+pub use shadow_pass::{ShadowPass, WgpuShadowAtlas, CascadeVp};
 pub use skinning::{
     compute_joint_matrices, GpuJointMatrix, JointPalette, MorphWeights, NullSkinningUploader,
     SkinningMode, SkinningUploader, MAX_MORPH_TARGETS,

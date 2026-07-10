@@ -11,6 +11,12 @@
 
 use std::collections::{HashMap, HashSet};
 
+pub mod mesh_builder;
+pub mod gpu_renderer;
+
+pub use mesh_builder::{TerrainMesher, TerrainVertex};
+pub use gpu_renderer::{GpuTerrainRenderer, TerrainCameraUniform, TileUniformData};
+
 /// 单个高度图。坐标 (i, j)，i ∈ [0,width)，j ∈ [0,height)。
 pub struct Heightmap {
     pub width: u32,

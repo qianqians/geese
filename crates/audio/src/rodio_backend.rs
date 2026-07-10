@@ -12,6 +12,10 @@ use super::*;
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::sync::Arc;
+use std::sync::Mutex;
+
+/// 距离衰减系数（越大衰减越快）。
+const ROLLOFF_FACTOR: f32 = 0.1;
 
 /// rodio 后端：持有 OutputStream（保活）+ Handle（共享给 Sink）。
 pub struct RodioBackend {
@@ -21,6 +25,8 @@ pub struct RodioBackend {
     handle: rodio::OutputStreamHandle,
     sources: HashMap<SourceId, Arc<Vec<u8>>>,
     next_id: u64,
+    /// 共享监听者（注入到每个 RodioSound）
+    listener: Arc<Mutex<Listener>>,
 }
 
 impl RodioBackend {
@@ -32,7 +38,26 @@ impl RodioBackend {
             handle,
             sources: HashMap::new(),
             next_id: 0,
+            listener: Arc::new(Mutex::new(Listener::default())),
         })
+    }
+
+    /// 更新监听者位置（影响所有活跃 RodioSound 的距离衰减）。
+    ///
+    /// 因 `AudioBackend` trait 不含此方法，调用方需直接持有 `RodioBackend`。
+    pub fn update_listener(&self, listener: Listener) {
+        if let Ok(mut guard) = self.listener.lock() {
+            *guard = listener;
+        }
+    }
+
+    /// 计算距离衰减：`atten = 1.0 / (1.0 + dist * rolloff)`
+    fn compute_attenuation(listener_pos: [f32; 3], sound_pos: [f32; 3]) -> f32 {
+        let dx = listener_pos[0] - sound_pos[0];
+        let dy = listener_pos[1] - sound_pos[1];
+        let dz = listener_pos[2] - sound_pos[2];
+        let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+        1.0 / (1.0 + dist * ROLLOFF_FACTOR)
     }
 }
 
@@ -78,13 +103,47 @@ impl AudioBackend for RodioBackend {
         // 默认暂停，由 AudioSystem::play_2d/3d 显式 play()，与 NullBackend 行为对齐。
         sink.pause();
 
-        Ok(Arc::new(RodioSound { sink }))
+        let sound = RodioSound {
+            sink,
+            position: Mutex::new(config.position.unwrap_or_default()),
+            listener: self.listener.clone(),
+            base_volume_milli: AtomicU32::new(
+                (config.volume.clamp(0.0, 8.0) * 1000.0) as u32,
+            ),
+        };
+        Ok(Arc::new(sound))
     }
 }
 
 /// 单个 rodio 播放实例（独占一个 Sink）。
 pub struct RodioSound {
     sink: rodio::Sink,
+    /// 声源位置
+    position: Mutex<SoundPosition>,
+    /// 共享监听者（由 RodioBackend 注入）
+    listener: Arc<Mutex<Listener>>,
+    /// 原始音量（千分位整数），衰减基于此值
+    base_volume_milli: AtomicU32,
+}
+
+impl RodioSound {
+    /// 返回当前 base volume（f32）。
+    fn base_volume(&self) -> f32 {
+        self.base_volume_milli.load(Ordering::Relaxed) as f32 / 1000.0
+    }
+
+    /// 计算当前有效音量 = base_volume * distance_attenuation
+    fn effective_volume(&self) -> f32 {
+        let pos = self.position.lock().ok().map(|g| g.position).unwrap_or([0.0; 3]);
+        let listener_pos = self
+            .listener
+            .lock()
+            .ok()
+            .map(|g| g.position)
+            .unwrap_or([0.0; 3]);
+        let atten = RodioBackend::compute_attenuation(listener_pos, pos);
+        self.base_volume() * atten
+    }
 }
 
 impl Sound for RodioSound {
@@ -98,16 +157,40 @@ impl Sound for RodioSound {
         self.sink.stop();
     }
     fn set_volume(&self, volume: f32) {
-        self.sink.set_volume(volume.clamp(0.0, 8.0));
+        // 存储 base volume，重新计算有效音量（含距离衰减）
+        let clamped = volume.clamp(0.0, 8.0);
+        self.base_volume_milli
+            .store((clamped * 1000.0) as u32, Ordering::Relaxed);
+        let effective = clamped * self.current_attenuation();
+        self.sink.set_volume(effective.clamp(0.0, 8.0));
     }
     fn set_pitch(&self, pitch: f32) {
         self.sink.set_speed(pitch.max(0.01));
     }
-    fn set_position(&self, _pos: SoundPosition) {
-        // 占位：未来改用 SpatialSink 或在此根据 Listener 软件衰减。
+    fn set_position(&self, pos: SoundPosition) {
+        // 存储 position，重新计算距离衰减，更新 sink volume
+        if let Ok(mut guard) = self.position.lock() {
+            *guard = pos;
+        }
+        let effective = self.effective_volume();
+        self.sink.set_volume(effective.clamp(0.0, 8.0));
     }
     fn is_playing(&self) -> bool {
         !self.sink.is_paused() && !self.sink.empty()
+    }
+}
+
+impl RodioSound {
+    /// 当前距离衰减系数。
+    fn current_attenuation(&self) -> f32 {
+        let pos = self.position.lock().ok().map(|g| g.position).unwrap_or([0.0; 3]);
+        let listener_pos = self
+            .listener
+            .lock()
+            .ok()
+            .map(|g| g.position)
+            .unwrap_or([0.0; 3]);
+        RodioBackend::compute_attenuation(listener_pos, pos)
     }
 }
 

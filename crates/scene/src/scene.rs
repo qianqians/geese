@@ -78,6 +78,8 @@ pub struct Scene {
     pub marker_events: Vec<MarkerEvent>,
     /// 本帧触发的自定义事件列表（entity_id, response_name），由外部消费者 drain。
     pub triggered_events: Vec<(String, String)>,
+    /// Python 脚本组件（按 entity_id 索引），不侵入 SceneObject。
+    pub scripts: HashMap<String, crate::ScriptComponent>,
     /// 本帧触发的动画系统事件，由外部消费者 drain。
     animation_events: Vec<SceneAnimationEvent>,
     /// 动画图每个剪辑的上次时间（用于标记跨越检测）
@@ -133,6 +135,7 @@ impl Scene {
             character_anim_graphs: Vec::new(),
             marker_events: Vec::new(),
             triggered_events: Vec::new(),
+            scripts: HashMap::new(),
             animation_events: Vec::new(),
             graph_prev_times: HashMap::new(),
             object_index: HashMap::new(),

@@ -13,8 +13,8 @@ use crate::animation_panel::AnimationPanel;
 use crate::asset_browser::AssetBrowser;
 use crate::build_panel::BuildPanel;
 use crate::bundle_panel::BundlePanel;
-use crate::commands::CommandHistory;
-use crate::commands::TransformCommand;
+use crate::commands::{CommandHistory, TransformCommand};
+use crate::commands::{SceneSerializer, SerializedEntity};
 use crate::editor_mode::EditorMode;
 use crate::gltf_import_dialog::GltfImportDialog;
 use crate::hierarchy::{HierarchyPanel, SceneNodeData, NodeType};
@@ -277,14 +277,56 @@ impl Editor {
     }
 
     /// 保存当前场景到磁盘。
+    ///
+    /// 遍历层级树 + transform_cache，构造 [`SerializedEntity`] 列表，
+    /// 调用 [`SceneSerializer::serialize_to_json`] 序列化为 JSON，
+    /// 写入 `{project_path}/assets/scene.scene.json`。
     pub fn save_scene(&mut self) -> Result<(), String> {
-        // TODO: Implement full scene serialization and save.
-        // Currently the scene hierarchy and transform cache are in-memory only.
-        // A complete implementation should:
-        //   1. Serialize the hierarchy tree + transform_cache to a scene manifest
-        //   2. Write the manifest to `{project_path}/.scene.json`
-        //   3. Update the asset database if needed
-        eprintln!("[Editor] Save scene: not yet implemented (stub)");
+        let tree = self.hierarchy.tree();
+        let all_ids = tree.find("");
+
+        let mut entities: Vec<SerializedEntity> = Vec::new();
+
+        for id in &all_ids {
+            let node = match tree.get(id) {
+                Some(n) => n,
+                None => continue,
+            };
+
+            let transform = self
+                .state
+                .transform_cache
+                .get(id)
+                .copied()
+                .unwrap_or(([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]));
+
+            entities.push(SerializedEntity {
+                id: node.id.clone(),
+                name: node.name.clone(),
+                parent: node.parent.clone(),
+                position: transform.0,
+                rotation_euler: transform.1,
+                scale: transform.2,
+                visible: node.visible,
+                locked: node.locked,
+            });
+        }
+
+        let json = SceneSerializer::serialize_to_json(&entities)
+            .map_err(|e| format!("Failed to serialize scene: {e}"))?;
+
+        let dir = format!("{}/assets", self.state.project_path);
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("Failed to create assets directory: {e}"))?;
+
+        let path = format!("{}/scene.scene.json", dir);
+        std::fs::write(&path, json)
+            .map_err(|e| format!("Failed to write scene file '{path}': {e}"))?;
+
+        log::info!(
+            "[Editor] Scene saved to {path} ({} entities)",
+            entities.len()
+        );
         Ok(())
     }
 

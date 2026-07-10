@@ -9,6 +9,8 @@ use crate::common::{
 };
 use crate::light::{Light, LightStorage};
 use crate::pipeline::{RenderingPath, ScenePipeline, ScenePipelineDescriptor};
+use crate::shadow::{CascadeConfig, CsmUniform};
+use crate::shadow_pass::{ShadowPass, WgpuShadowAtlas};
 use crate::{MaterialLibrary, RenderQueue};
 
 const PBR_COMMON: &str = include_str!("../shaders/pbr_common.wgsl");
@@ -41,6 +43,9 @@ pub struct ForwardPlusPipeline {
     default_textures: DefaultTextures,
     prepared: WgpuRenderQueue,
     cache: GpuResourceCache,
+
+    shadow_pass: Option<ShadowPass>,
+    shadow_atlas: Option<WgpuShadowAtlas>,
 }
 
 impl ForwardPlusPipeline {
@@ -261,6 +266,8 @@ impl ForwardPlusPipeline {
             default_textures,
             prepared: WgpuRenderQueue::default(),
             cache: GpuResourceCache::new(),
+            shadow_pass: None,
+            shadow_atlas: None,
         }
     }
 
@@ -274,6 +281,36 @@ impl ForwardPlusPipeline {
 
     pub fn sample_count(&self) -> u32 {
         self.sample_count
+    }
+
+    /// Enable CSM shadow mapping. Creates the shadow atlas and depth-only render pipeline.
+    pub fn enable_shadows(
+        &mut self,
+        device: &wgpu::Device,
+        config: &CascadeConfig,
+    ) {
+        let shadow_atlas = WgpuShadowAtlas::new(device, config);
+        let shadow_pass = ShadowPass::new(
+            device,
+            config,
+            &self.object_bind_group_layout,
+        );
+        self.shadow_atlas = Some(shadow_atlas);
+        self.shadow_pass = Some(shadow_pass);
+    }
+
+    /// Write CSM uniform and per-cascade VP matrices to GPU buffers.
+    /// Must be called before [`render`] if shadows are enabled.
+    pub fn update_shadows(
+        &self,
+        queue: &wgpu::Queue,
+        cascade_vps: &[[[f32; 4]; 4]],
+        csm_uniform: &CsmUniform,
+    ) {
+        if let (Some(sp), Some(atlas)) = (&self.shadow_pass, &self.shadow_atlas) {
+            sp.update_cascade_vps(queue, cascade_vps);
+            atlas.write_csm_uniform(queue, csm_uniform);
+        }
     }
 }
 
@@ -343,6 +380,11 @@ impl ScenePipeline for ForwardPlusPipeline {
         color_target: &wgpu::TextureView,
         depth_target: Option<&wgpu::TextureView>,
     ) {
+        // ---- shadow pass (optional) ----
+        if let (Some(sp), Some(atlas)) = (&self.shadow_pass, &self.shadow_atlas) {
+            sp.render(encoder, &atlas.view, &self.cache, &self.prepared.commands);
+        }
+
         // ---- compute: cluster culling ----
         {
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {

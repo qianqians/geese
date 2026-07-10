@@ -13,11 +13,14 @@ pub mod meta;
 pub mod database;
 pub mod dependency_scanner;
 pub mod bundle;
+pub mod async_loader;
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+
+pub use async_loader::AsyncAssetCache;
 
 // ---------------------------------------------------------------------------
 // 现有 gltf 加载（保留向后兼容）

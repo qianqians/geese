@@ -11,6 +11,9 @@
 
 use std::ops::Range;
 
+pub mod gpu_renderer;
+pub use gpu_renderer::{GpuParticleRenderer, ParticleInstanceData, ParticleCameraUniform};
+
 /// 单个粒子的运行时状态。
 #[derive(Clone, Copy, Debug)]
 pub struct Particle {
