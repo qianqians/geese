@@ -185,7 +185,13 @@ impl HubServer {
         let redis_service = self.hub_redis_service.clone().unwrap();
         let mut _service = redis_service.as_ref().lock().await;
         let lock_key = create_lock_key( self.hub_name.clone(), _gate_name.clone());
-        let value = _service.acquire_lock(lock_key.clone(), 3, None).await.unwrap_or_default();
+        let value = match _service.acquire_lock(lock_key.clone(), 3, None).await {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Failed to acquire lock for gate '{}': {}", _gate_name, e);
+                return;
+            }
+        };
         let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
         if _conn_mgr.get_gate_proxy(&_gate_name).is_none() {
             _conn_mgr.add_lock(lock_key, value);
@@ -209,7 +215,9 @@ impl HubServer {
             }  
         }
         else {
-            let _ = _service.release_lock(lock_key.clone(), value, None).await;
+            if let Err(e) = _service.release_lock(lock_key.clone(), value, None).await {
+                error!("Failed to release lock for gate '{}': {}", _gate_name, e);
+            }
         }
     }
 

@@ -7,15 +7,14 @@
 //!
 //! ```
 //! use event::bus::{EventBus, EngineEvent};
-//! use std::cell::RefCell;
-//! use std::rc::Rc;
+//! use std::sync::{Arc, Mutex};
 //!
 //! let mut bus = EventBus::new();
-//! let received = Rc::new(RefCell::new(Vec::new()));
+//! let received = Arc::new(Mutex::new(Vec::new()));
 //! let received_clone = received.clone();
 //!
 //! bus.subscribe::<EngineEvent>(Box::new(move |e| {
-//!     received_clone.borrow_mut().push(format!("{:?}", e));
+//!     received_clone.lock().unwrap().push(format!("{:?}", e));
 //! }));
 //!
 //! bus.publish(EngineEvent::EntityCreated { entity_id: "player".into() });
@@ -23,19 +22,19 @@
 //!
 //! bus.flush_all();
 //!
-//! assert_eq!(received.borrow().len(), 2);
+//! assert_eq!(received.lock().unwrap().len(), 2);
 //! ```
 
 use std::any::TypeId;
-use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::RwLock;
 
 // ---------------------------------------------------------------------------
 // AnyChannel — 类型擦除的事件通道
 // ---------------------------------------------------------------------------
 
 /// 类型擦除的事件通道 trait。EventBus 通过此 trait 操作异构事件类型。
-trait AnyChannel {
+trait AnyChannel: Send + Sync {
     /// 分发队列中所有事件给订阅者。
     fn flush(&mut self);
     /// 用于向下转型为 EventChannel<E>。
@@ -45,31 +44,31 @@ trait AnyChannel {
 }
 
 /// 具型事件通道：存储事件队列 + 订阅者回调列表。
-struct EventChannel<E: Send + 'static> {
-    queue: RefCell<Vec<E>>,
-    subscribers: Vec<Box<dyn Fn(&E)>>,
+struct EventChannel<E: Send + Sync + 'static> {
+    queue: RwLock<Vec<E>>,
+    subscribers: Vec<Box<dyn Fn(&E) + Send + Sync>>,
 }
 
-impl<E: Send + 'static> EventChannel<E> {
+impl<E: Send + Sync + 'static> EventChannel<E> {
     fn new() -> Self {
         Self {
-            queue: RefCell::new(Vec::new()),
+            queue: RwLock::new(Vec::new()),
             subscribers: Vec::new(),
         }
     }
 
     fn publish(&self, event: E) {
-        self.queue.borrow_mut().push(event);
+        self.queue.write().unwrap().push(event);
     }
 
-    fn subscribe(&mut self, handler: Box<dyn Fn(&E)>) {
+    fn subscribe(&mut self, handler: Box<dyn Fn(&E) + Send + Sync>) {
         self.subscribers.push(handler);
     }
 }
 
-impl<E: Send + 'static> AnyChannel for EventChannel<E> {
+impl<E: Send + Sync + 'static> AnyChannel for EventChannel<E> {
     fn flush(&mut self) {
-        let events = self.queue.borrow_mut().drain(..).collect::<Vec<_>>();
+        let events = self.queue.write().unwrap().drain(..).collect::<Vec<_>>();
         for event in &events {
             for handler in &self.subscribers {
                 handler(event);
@@ -94,27 +93,22 @@ impl<E: Send + 'static> AnyChannel for EventChannel<E> {
 ///
 /// 每帧调用 `flush_all()` 将队列中的事件分发给所有订阅者。
 pub struct EventBus {
-    channels: RefCell<HashMap<TypeId, Box<dyn AnyChannel>>>,
+    channels: RwLock<HashMap<TypeId, Box<dyn AnyChannel>>>,
 }
-
-// EventBus 可安全在线程间共享（内部使用 RefCell + 类型安全的 channel）
-// SAFETY: EventBus 设计为在持有 &mut 的上下文中调用（单线程或外部同步）。
-unsafe impl Send for EventBus {}
-unsafe impl Sync for EventBus {}
 
 impl EventBus {
     /// 创建空的事件总线。
     pub fn new() -> Self {
         Self {
-            channels: RefCell::new(HashMap::new()),
+            channels: RwLock::new(HashMap::new()),
         }
     }
 
     /// 发布事件。事件暂存于队列中，在 `flush_all()` 时批量分发。
     ///
     /// 使用 `&self`（内部可变性）以支持从多个订阅者发布。
-    pub fn publish<E: Send + 'static>(&self, event: E) {
-        let mut channels = self.channels.borrow_mut();
+    pub fn publish<E: Send + Sync + 'static>(&self, event: E) {
+        let mut channels = self.channels.write().unwrap();
         let channel = channels
             .entry(TypeId::of::<E>())
             .or_insert_with(|| Box::new(EventChannel::<E>::new()));
@@ -128,8 +122,8 @@ impl EventBus {
     /// 订阅事件。处理器在每次 `flush_all()` 时被调用。
     ///
     /// 使用 `&mut self` 以确保订阅操作独占。
-    pub fn subscribe<E: Send + 'static>(&mut self, handler: Box<dyn Fn(&E)>) {
-        let mut channels = self.channels.borrow_mut();
+    pub fn subscribe<E: Send + Sync + 'static>(&mut self, handler: Box<dyn Fn(&E) + Send + Sync>) {
+        let mut channels = self.channels.write().unwrap();
         let channel = channels
             .entry(TypeId::of::<E>())
             .or_insert_with(|| Box::new(EventChannel::<E>::new()));
@@ -144,7 +138,7 @@ impl EventBus {
     ///
     /// 应在每帧末尾调用一次。
     pub fn flush_all(&mut self) {
-        let mut channels = self.channels.borrow_mut();
+        let mut channels = self.channels.write().unwrap();
         for channel in channels.values_mut() {
             channel.flush();
         }
@@ -152,12 +146,12 @@ impl EventBus {
 
     /// 清空所有事件队列和订阅者。
     pub fn clear(&mut self) {
-        self.channels.borrow_mut().clear();
+        self.channels.write().unwrap().clear();
     }
 
     /// 已注册的事件类型数量。
     pub fn event_type_count(&self) -> usize {
-        self.channels.borrow().len()
+        self.channels.read().unwrap().len()
     }
 }
 
@@ -222,109 +216,109 @@ impl EventBusBridge for EventBus {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::RefCell;
-    use std::rc::Rc;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn publish_and_flush() {
         let mut bus = EventBus::new();
-        let received = Rc::new(RefCell::new(Vec::new()));
+        let received = Arc::new(Mutex::new(Vec::new()));
         let received_clone = received.clone();
 
         bus.subscribe::<String>(Box::new(move |msg| {
-            received_clone.borrow_mut().push(msg.clone());
+            received_clone.lock().unwrap().push(msg.clone());
         }));
 
         bus.publish("hello".to_string());
         bus.publish("world".to_string());
         bus.flush_all();
 
-        assert_eq!(received.borrow().len(), 2);
-        assert_eq!(received.borrow()[0], "hello");
-        assert_eq!(received.borrow()[1], "world");
+        let r = received.lock().unwrap();
+        assert_eq!(r.len(), 2);
+        assert_eq!(r[0], "hello");
+        assert_eq!(r[1], "world");
     }
 
     #[test]
     fn multiple_subscribers() {
         let mut bus = EventBus::new();
-        let count_a = Rc::new(RefCell::new(0usize));
-        let count_b = Rc::new(RefCell::new(0usize));
+        let count_a = Arc::new(Mutex::new(0usize));
+        let count_b = Arc::new(Mutex::new(0usize));
         let a_clone = count_a.clone();
         let b_clone = count_b.clone();
 
-        bus.subscribe::<i32>(Box::new(move |_| *a_clone.borrow_mut() += 1));
-        bus.subscribe::<i32>(Box::new(move |_| *b_clone.borrow_mut() += 1));
+        bus.subscribe::<i32>(Box::new(move |_| *a_clone.lock().unwrap() += 1));
+        bus.subscribe::<i32>(Box::new(move |_| *b_clone.lock().unwrap() += 1));
 
         bus.publish(42);
         bus.flush_all();
 
-        assert_eq!(*count_a.borrow(), 1);
-        assert_eq!(*count_b.borrow(), 1);
+        assert_eq!(*count_a.lock().unwrap(), 1);
+        assert_eq!(*count_b.lock().unwrap(), 1);
     }
 
     #[test]
     fn different_event_types() {
         let mut bus = EventBus::new();
-        let string_count = Rc::new(RefCell::new(0usize));
-        let int_count = Rc::new(RefCell::new(0usize));
+        let string_count = Arc::new(Mutex::new(0usize));
+        let int_count = Arc::new(Mutex::new(0usize));
         let sc = string_count.clone();
         let ic = int_count.clone();
 
-        bus.subscribe::<String>(Box::new(move |_| *sc.borrow_mut() += 1));
-        bus.subscribe::<i32>(Box::new(move |_| *ic.borrow_mut() += 1));
+        bus.subscribe::<String>(Box::new(move |_| *sc.lock().unwrap() += 1));
+        bus.subscribe::<i32>(Box::new(move |_| *ic.lock().unwrap() += 1));
 
         bus.publish("test".to_string());
         bus.publish(1);
         bus.publish(2);
         bus.flush_all();
 
-        assert_eq!(*string_count.borrow(), 1);
-        assert_eq!(*int_count.borrow(), 2);
+        assert_eq!(*string_count.lock().unwrap(), 1);
+        assert_eq!(*int_count.lock().unwrap(), 2);
     }
 
     #[test]
     fn engine_events() {
         let mut bus = EventBus::new();
-        let events = Rc::new(RefCell::new(Vec::new()));
+        let events = Arc::new(Mutex::new(Vec::new()));
         let events_clone = events.clone();
 
         bus.subscribe::<EngineEvent>(Box::new(move |e| {
-            events_clone.borrow_mut().push(format!("{:?}", e));
+            events_clone.lock().unwrap().push(format!("{:?}", e));
         }));
 
         bus.publish(EngineEvent::EntityCreated { entity_id: "e1".into() });
         bus.publish(EngineEvent::ConfigChanged);
         bus.flush_all();
 
-        assert_eq!(events.borrow().len(), 2);
+        assert_eq!(events.lock().unwrap().len(), 2);
     }
 
     #[test]
     fn clear_removes_all() {
         let mut bus = EventBus::new();
-        let count = Rc::new(RefCell::new(0usize));
+        let count = Arc::new(Mutex::new(0usize));
         let count_clone = count.clone();
 
-        bus.subscribe::<String>(Box::new(move |_| *count_clone.borrow_mut() += 1));
+        bus.subscribe::<String>(Box::new(move |_| *count_clone.lock().unwrap() += 1));
         bus.publish("msg".to_string());
         bus.clear();
         bus.flush_all();
 
-        assert_eq!(*count.borrow(), 0);
+        assert_eq!(*count.lock().unwrap(), 0);
     }
 
     #[test]
     fn eventbusbridge_trait_object() {
         let mut bus = EventBus::new();
-        let count = Rc::new(RefCell::new(0usize));
+        let count = Arc::new(Mutex::new(0usize));
         let count_clone = count.clone();
 
-        bus.subscribe::<String>(Box::new(move |_| *count_clone.borrow_mut() += 1));
+        bus.subscribe::<String>(Box::new(move |_| *count_clone.lock().unwrap() += 1));
         bus.publish("test".to_string());
 
         let bridge: &mut dyn EventBusBridge = &mut bus;
         bridge.flush();
 
-        assert_eq!(*count.borrow(), 1);
+        assert_eq!(*count.lock().unwrap(), 1);
     }
 }

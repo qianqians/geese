@@ -9,6 +9,7 @@ use crate::forward_plus::{
 };
 use crate::light::LightStorage;
 use crate::pipeline::{RenderingPath, ScenePipeline, ScenePipelineDescriptor};
+use crate::shadow::{CascadeConfig, CsmUniform};
 use crate::{Light, MaterialLibrary, RenderQueue};
 
 const PBR_COMMON: &str = include_str!("../shaders/pbr_common.wgsl");
@@ -77,6 +78,9 @@ pub struct DeferredPlusPipeline {
     default_textures: DefaultTextures,
     prepared: WgpuRenderQueue,
     cache: GpuResourceCache,
+
+    /// 是否已输出过阴影缺失警告
+    shadow_warned: bool,
 }
 
 struct GBufferTexture {
@@ -412,6 +416,7 @@ impl DeferredPlusPipeline {
             default_textures,
             prepared: WgpuRenderQueue::default(),
             cache: GpuResourceCache::new(),
+            shadow_warned: false,
         }
     }
 
@@ -425,6 +430,28 @@ impl DeferredPlusPipeline {
 
     pub fn sample_count(&self) -> u32 {
         self.sample_count
+    }
+
+    /// Warns that CSM shadows are not yet implemented for the Deferred+ path.
+    /// Use Forward+ for shadow mapping.
+    pub fn enable_shadows(&mut self, _device: &wgpu::Device, _config: &CascadeConfig) {
+        if !self.shadow_warned {
+            log::warn!(
+                "DeferredPlusPipeline: CSM shadow mapping is not yet implemented. \
+                 Shadows will not appear. Use RenderingPath::ForwardPlus for shadows."
+            );
+            self.shadow_warned = true;
+        }
+    }
+
+    /// Stub: shadows not implemented for Deferred+. Use Forward+ for CSM.
+    pub fn update_shadows(
+        &self,
+        _queue: &wgpu::Queue,
+        _cascade_vps: &[[[f32; 4]; 4]],
+        _csm_uniform: &CsmUniform,
+    ) {
+        // Shadows not implemented for Deferred+; use Forward+ for CSM.
     }
 }
 

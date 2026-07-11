@@ -40,6 +40,18 @@ impl ScriptComponent {
     pub fn set_property(&mut self, key: impl Into<String>, value: serde_json::Value) {
         self.properties.insert(key.into(), value);
     }
+
+    /// 检查是否注册了事件处理器。
+    /// 默认返回 false；子类或外部可覆盖以提供实际事件处理能力。
+    pub fn has_event_handler(&self) -> bool {
+        false
+    }
+
+    /// 评估事件触发器，返回触发的 response 名称列表。
+    /// 默认返回空；子类或外部可覆盖以提供实际事件触发逻辑。
+    pub fn evaluate_triggers(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 impl Default for ScriptComponent {

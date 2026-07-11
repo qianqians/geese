@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use rand::Rng;
 use tokio::sync::Mutex;
-use tracing::error;
+use tracing::{error, warn};
 
 use thrift::protocol::{TCompactOutputProtocol, TSerializable};
 use thrift::transport::{TIoChannel, TBufferChannel};
@@ -37,9 +37,19 @@ pub async fn entry_direct_hub_server(
     let mut _conn_mgr_handle = _conn_mgr.as_ref().lock().await;
     let mut _service = _redis_mq_service.as_ref().lock().await;
     let lock_key = create_lock_key(_conn_mgr_handle.get_hub_name(), _hub_name.clone());
-    let value = _service.acquire_lock(lock_key.clone(), 3, None).await.unwrap_or_default();
+    let value = match _service.acquire_lock(lock_key.clone(), 3, None).await {
+        Ok(v) => v,
+        Err(e) => {
+            warn!("Failed to acquire lock for hub '{}': {}", _hub_name, e);
+            String::new()
+        }
+    };
     if let Some(_hubproxy) = _conn_mgr_handle.get_hub_proxy(&_hub_name) {
-        let _ = _service.release_lock(lock_key.clone(), value.clone(), None).await;
+        if !value.is_empty() {
+            if let Err(e) = _service.release_lock(lock_key.clone(), value.clone(), None).await {
+                warn!("Failed to release lock for hub '{}': {}", _hub_name, e);
+            }
+        }
         return;
     }
 
@@ -90,9 +100,19 @@ pub async fn entry_hub_service(
         else {
             let mut _service = _redis_mq_service.as_ref().lock().await;
             let lock_key = create_lock_key(_conn_mgr_handle.get_hub_name(), service.id.clone());
-            let value = _service.acquire_lock(lock_key.clone(), 3, None).await.unwrap_or_default();
+            let value = match _service.acquire_lock(lock_key.clone(), 3, None).await {
+                Ok(v) => v,
+                Err(e) => {
+                    warn!("Failed to acquire lock for service '{}': {}", service.id, e);
+                    String::new()
+                }
+            };
             if let Some(_hubproxy) = _conn_mgr_handle.get_hub_proxy(&service.id) {
-                let _ = _service.release_lock(lock_key.clone(), value.clone(), None).await;
+                if !value.is_empty() {
+                    if let Err(e) = _service.release_lock(lock_key.clone(), value.clone(), None).await {
+                        warn!("Failed to release lock for service '{}': {}", service.id, e);
+                    }
+                }
                 return service.id.clone();
             }
 

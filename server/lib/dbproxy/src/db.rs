@@ -133,19 +133,29 @@ impl DBEvGetObjectCount {
     }
 }
 
+/// DBEvent 事件数据的类型安全 trait。
+/// 要求 Send 以确保可跨线程传递，并提供 Any 向下转型能力。
+pub trait DBEventData: Any + Send {
+    fn as_any(&self) -> &dyn Any;
+}
+
+impl<T: Any + Send> DBEventData for T {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 pub struct DBEvent {
     pub send_proxy: Weak<Mutex<Box<dyn NetWriter + Send + 'static>>>,
     pub ev_type: DBEventType,
     pub db: String,
     pub collection: String,
     pub callback_id: String,
-    pub ev_data: Box<dyn Any>
+    pub ev_data: Box<dyn DBEventData>
 }
 
-unsafe impl Send for DBEvent {}
-
 impl DBEvent {
-    pub fn new(_send_proxy: Weak<Mutex<Box<dyn NetWriter + Send + 'static>>>, _ev_type: DBEventType, _db: String, _collection: String,  _callback_id: String, _ev_data: Box<dyn Any>) -> DBEvent {
+    pub fn new(_send_proxy: Weak<Mutex<Box<dyn NetWriter + Send + 'static>>>, _ev_type: DBEventType, _db: String, _collection: String,  _callback_id: String, _ev_data: Box<dyn DBEventData>) -> DBEvent {
         DBEvent {
             send_proxy: _send_proxy,
             ev_type: _ev_type,
@@ -182,7 +192,7 @@ impl DBEvent {
 
     async fn do_create_object(&mut self, mongo_proxy:&mut MongoProxy){
         trace!("begin do_create_object");
-        let p_ev_data = self.ev_data.downcast_ref::<DBEvCreateObject>();
+        let p_ev_data = self.ev_data.as_any().downcast_ref::<DBEvCreateObject>();
         let ev_data = match p_ev_data {
             None => {
                 error!("do_create_object p_ev_data is null!");
@@ -213,7 +223,7 @@ impl DBEvent {
 
     async fn do_updata_object(&mut self, mongo_proxy:&mut MongoProxy) {
         trace!("begin do_updata_object");
-        let p_ev_data = self.ev_data.downcast_ref::<DBEvUpdataObject>();
+        let p_ev_data = self.ev_data.as_any().downcast_ref::<DBEvUpdataObject>();
         let ev_data = match p_ev_data {
             None => {
                 error!("do_updata_object p_ev_data is null!");
@@ -244,7 +254,7 @@ impl DBEvent {
 
     async fn do_find_and_modify(&mut self, mongo_proxy:&mut MongoProxy) {
         trace!("begin do_find_and_modify");
-        let p_ev_data = self.ev_data.downcast_ref::<DBEvFindAndModify>();
+        let p_ev_data = self.ev_data.as_any().downcast_ref::<DBEvFindAndModify>();
         let ev_data = match p_ev_data {
             None => {
                 error!("do_find_and_modify p_ev_data is null!");
@@ -289,7 +299,7 @@ impl DBEvent {
 
     async fn do_remove_object(&mut self, mongo_proxy:&mut MongoProxy) {
         trace!("begin do_remove_object");
-        let p_ev_data = self.ev_data.downcast_ref::<DBEvRemoveObject>();
+        let p_ev_data = self.ev_data.as_any().downcast_ref::<DBEvRemoveObject>();
         let ev_data = match p_ev_data {
             None => {
                 error!("do_remove_object p_ev_data is null!");
@@ -320,7 +330,7 @@ impl DBEvent {
 
     async fn do_get_object_info(&mut self, mongo_proxy:&mut MongoProxy) {
         trace!("begin do_get_object_info");
-        let p_ev_data = self.ev_data.downcast_ref::<DBEvGetObjectInfo>();
+        let p_ev_data = self.ev_data.as_any().downcast_ref::<DBEvGetObjectInfo>();
         let ev_data = match p_ev_data {
             None => {
                 error!("do_get_object_info p_ev_data is null!");
@@ -402,7 +412,7 @@ impl DBEvent {
 
     async fn do_get_object_count(&mut self, mongo_proxy:&mut MongoProxy) {
         trace!("begin do_get_object_count");
-        let p_ev_data = self.ev_data.downcast_ref::<DBEvGetObjectCount>();
+        let p_ev_data = self.ev_data.as_any().downcast_ref::<DBEvGetObjectCount>();
         let ev_data = match p_ev_data {
             None => {
                 error!("do_get_object_count p_ev_data is null!");

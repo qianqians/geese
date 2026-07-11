@@ -254,7 +254,9 @@ impl ConnCallbackMsgHandle {
                     let value = _conn_mgr.remove_lock(lock_key.clone());
                     let _redis_service = _self.redis_service.clone().unwrap();
                     let mut _service = _redis_service.as_ref().lock().await;
-                    let _ = _service.release_lock(lock_key, value, None).await;
+                    if let Err(e) = _service.release_lock(lock_key, value, None).await {
+                        error!("Failed to release lock '{}': {}", lock_key, e);
+                    }
                 });
             },
             HubService::QueryEntity(ref ev) => {
@@ -286,7 +288,13 @@ impl ConnCallbackMsgHandle {
 
                                 let _close = _self.close.clone();
 
-                                let value = _service.acquire_lock(_lock_key.clone(), 3, None).await.unwrap_or_default();
+                                let value = match _service.acquire_lock(_lock_key.clone(), 3, None).await {
+                                    Ok(v) => v,
+                                    Err(e) => {
+                                        error!("Failed to acquire lock for gate '{}': {}", _gate_name, e);
+                                        return hub_name;
+                                    }
+                                };
                                 if _conn_mgr.get_gate_proxy(&_gate_name).is_none() {
                                     _conn_mgr.add_lock(_lock_key, value);
 
@@ -311,7 +319,9 @@ impl ConnCallbackMsgHandle {
                                     }
                                 }
                                 else {
-                                    let _ = _service.release_lock(_lock_key, value, None).await;
+                                    if let Err(e) = _service.release_lock(_lock_key, value, None).await {
+                                        error!("Failed to release lock for gate '{}': {}", _gate_name, e);
+                                    }
                                 }
                             }
                             else {
@@ -352,7 +362,13 @@ impl ConnCallbackMsgHandle {
 
                                     let _close = _self.close.clone();
 
-                                    let value = _service.acquire_lock(_lock_key.clone(), 3, None).await.unwrap_or_default();
+                                    let value = match _service.acquire_lock(_lock_key.clone(), 3, None).await {
+                                        Ok(v) => v,
+                                        Err(e) => {
+                                            error!("Failed to acquire lock for gate '{}': {}", _gate_name, e);
+                                            return hub_name;
+                                        }
+                                    };
                                     if _conn_mgr.get_gate_proxy(&_gate_name).is_none() {
                                         _conn_mgr.add_lock(_lock_key, value);
 
@@ -377,7 +393,9 @@ impl ConnCallbackMsgHandle {
                                         }
                                     }
                                     else {
-                                        let _ = _service.release_lock(_lock_key, value, None).await;
+                                        if let Err(e) = _service.release_lock(_lock_key, value, None).await {
+                                            error!("Failed to release lock for gate '{}': {}", _gate_name, e);
+                                        }
                                     }
                                 }
                             }

@@ -72,12 +72,17 @@ pub struct Scene {
     /// 运行时导航网格（由 build_navmesh() 构建）
     #[cfg(feature = "navmesh")]
     pub navmesh: Option<NavMesh>,
+    /// build_navmesh 是否需要重新构建
+    #[cfg(feature = "navmesh")]
+    navmesh_dirty: bool,
     /// 角色动画蓝图列表（Phase 4 动画混合），带实体绑定。
     pub character_anim_graphs: Vec<EntityAnimationGraph>,
     /// 本帧触发的动画标记事件，由外部消费者 drain。
     pub marker_events: Vec<MarkerEvent>,
     /// 本帧触发的自定义事件列表（entity_id, response_name），由外部消费者 drain。
     pub triggered_events: Vec<(String, String)>,
+    /// 是否有注册了事件处理器的脚本组件（快速路径标志）
+    has_event_components: bool,
     /// Python 脚本组件（按 entity_id 索引），不侵入 SceneObject。
     pub scripts: HashMap<String, crate::ScriptComponent>,
     /// 可选 ECS 注册表（通过 ecs_bridge feature 启用）。
@@ -138,9 +143,12 @@ impl Scene {
             physics_enabled: true,
             #[cfg(feature = "navmesh")]
             navmesh: None,
+            #[cfg(feature = "navmesh")]
+            navmesh_dirty: true,
             character_anim_graphs: Vec::new(),
             marker_events: Vec::new(),
             triggered_events: Vec::new(),
+            has_event_components: false,
             scripts: HashMap::new(),
             #[cfg(feature = "ecs_bridge")]
             ecs: None,
@@ -628,14 +636,60 @@ impl Scene {
 
     /// 从场景中标记了 NavMesh 组件的对象构建统一的导航网格。
     ///
-    /// 当前为桩实现：仅重置 navmesh 为 None。
-    /// 未来版本将从对象三角形数据自动构建 NavMesh。
+    /// 遍历所有 SceneObject，提取其 mesh 三角形数据，
+    /// 应用世界变换后构建 NavMesh。
     #[cfg(feature = "navmesh")]
     pub fn build_navmesh(&mut self) {
-        // TODO: 遍历 self.objects 中所有标记了 navmesh 组件的对象，
-        // 提取其 mesh 三角形数据构建统一的 NavMesh 实例。
-        // 初期版本可通过外部调用者传入三角形数据构建。
-        self.navmesh = None;
+        let mut vertices: Vec<navmesh::Vec2> = Vec::new();
+        let mut triangles: Vec<navmesh::NavTri> = Vec::new();
+
+        for obj in &self.objects {
+            let node_idx = obj.node;
+            if node_idx >= self.nodes.len() {
+                continue;
+            }
+
+            let mesh = &obj.mesh;
+            if mesh.vertices.is_empty() || mesh.indices.is_empty() {
+                continue;
+            }
+
+            let world_matrix = self.nodes[node_idx].world_transform;
+            let base_idx = vertices.len() as u32;
+
+            // 提取三角形顶点（XZ 平面）并应用世界变换
+            for v in &mesh.vertices {
+                let world_pos = world_matrix * cgmath::Vector4::new(v.position.x, v.position.y, v.position.z, 1.0);
+                vertices.push(navmesh::Vec2::new(world_pos.x, world_pos.z));
+            }
+
+            // 提取三角形索引
+            for i in (0..mesh.indices.len()).step_by(3) {
+                if i + 2 < mesh.indices.len() {
+                    triangles.push(navmesh::NavTri::new(
+                        base_idx + mesh.indices[i],
+                        base_idx + mesh.indices[i + 1],
+                        base_idx + mesh.indices[i + 2],
+                    ));
+                }
+            }
+        }
+
+        if triangles.is_empty() {
+            log::warn!("[Scene] build_navmesh: no triangles found in scene");
+            self.navmesh = None;
+        } else {
+            self.navmesh = Some(navmesh::NavMesh::from_triangles(vertices, triangles));
+        }
+        self.navmesh_dirty = false;
+    }
+
+    /// 惰性构建导航网格（仅在脏标记设置时重新构建）。
+    #[cfg(feature = "navmesh")]
+    pub fn ensure_navmesh(&mut self) {
+        if self.navmesh_dirty {
+            self.build_navmesh();
+        }
     }
 
     /// 递归深度上限，防止因节点树循环引用导致栈溢出。
@@ -847,10 +901,25 @@ impl Scene {
 
     /// 评估所有实体的事件组件，将触发的 response 推入 triggered_events。
     ///
-    /// 当前为桩实现。未来版本将遍历所有标记了 event 组件的实体，
-    /// 调用其 trigger 函数检查是否触发，将触发的 (entity_id, response_name) 推入队列。
+    /// 遍历 scripts HashMap 中注册了事件处理器的脚本组件，
+    /// 调用其 evaluate_triggers 方法检查触发条件，将触发的
+    /// (entity_id, response_name) 推入 triggered_events 队列。
     pub fn evaluate_event_components(&mut self) {
-        // TODO: 遍历实体的事件组件，评估 trigger 函数，填充 triggered_events
+        if !self.has_event_components {
+            return; // 快速路径：无事件组件，跳过
+        }
+
+        let mut has_any = false;
+        for (entity_id, script) in &self.scripts {
+            if script.has_event_handler() {
+                let triggered = script.evaluate_triggers();
+                for response_name in triggered {
+                    self.triggered_events.push((entity_id.clone(), response_name));
+                }
+                has_any = true;
+            }
+        }
+        self.has_event_components = has_any;
     }
 
     /// 统一帧更新：驱动动画、更新变换、生成事件。
