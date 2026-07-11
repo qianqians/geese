@@ -43,3 +43,75 @@ impl AABB {
         self.min.z <= other.max.z && self.max.z >= other.min.z
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_aabb(min: [f32; 3], max: [f32; 3]) -> AABB {
+        AABB::new(
+            Point3::new(min[0], min[1], min[2]),
+            Point3::new(max[0], max[1], max[2]),
+        )
+    }
+
+    #[test]
+    fn test_center() {
+        let aabb = make_aabb([0.0, 0.0, 0.0], [4.0, 6.0, 8.0]);
+        let c = aabb.center();
+        assert!((c.x - 2.0).abs() < 1e-6);
+        assert!((c.y - 3.0).abs() < 1e-6);
+        assert!((c.z - 4.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_size() {
+        let aabb = make_aabb([1.0, 2.0, 3.0], [5.0, 8.0, 10.0]);
+        let s = aabb.size();
+        assert!((s.x - 4.0).abs() < 1e-6);
+        assert!((s.y - 6.0).abs() < 1e-6);
+        assert!((s.z - 7.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_contains_point() {
+        let aabb = make_aabb([0.0, 0.0, 0.0], [10.0, 10.0, 10.0]);
+        // 内部点
+        assert!(aabb.contains_point(Point3::new(5.0, 5.0, 5.0)));
+        // 边界点
+        assert!(aabb.contains_point(Point3::new(0.0, 0.0, 0.0)));
+        assert!(aabb.contains_point(Point3::new(10.0, 10.0, 10.0)));
+        // 外部点
+        assert!(!aabb.contains_point(Point3::new(11.0, 5.0, 5.0)));
+        assert!(!aabb.contains_point(Point3::new(5.0, -1.0, 5.0)));
+    }
+
+    #[test]
+    fn test_intersects_aabb() {
+        let a = make_aabb([0.0, 0.0, 0.0], [10.0, 10.0, 10.0]);
+        // 重叠
+        let b = make_aabb([5.0, 5.0, 5.0], [15.0, 15.0, 15.0]);
+        assert!(a.intersects_aabb(&b));
+        // 刚好接触（共享面）
+        let c = make_aabb([10.0, 0.0, 0.0], [20.0, 10.0, 10.0]);
+        assert!(a.intersects_aabb(&c));
+        // 完全分离
+        let d = make_aabb([11.0, 0.0, 0.0], [20.0, 10.0, 10.0]);
+        assert!(!a.intersects_aabb(&d));
+    }
+
+    #[test]
+    fn test_zero_volume_aabb() {
+        let aabb = make_aabb([3.0, 4.0, 5.0], [3.0, 4.0, 5.0]);
+        let c = aabb.center();
+        assert!((c.x - 3.0).abs() < 1e-6);
+        assert!((c.y - 4.0).abs() < 1e-6);
+        assert!((c.z - 5.0).abs() < 1e-6);
+        let s = aabb.size();
+        assert!(s.x.abs() < 1e-6);
+        assert!(s.y.abs() < 1e-6);
+        assert!(s.z.abs() < 1e-6);
+        // 零体积 AABB 包含其自身的点
+        assert!(aabb.contains_point(Point3::new(3.0, 4.0, 5.0)));
+    }
+}

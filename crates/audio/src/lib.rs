@@ -18,7 +18,8 @@ use std::sync::{
 };
 
 mod rodio_backend;
-pub use rodio_backend::{RodioBackend, RodioSound};
+pub use rodio_backend::{RodioBackend, RodioSound, AttenuationParams, DEFAULT_ROLLOFF_FACTOR, DEFAULT_MAX_DISTANCE};
+pub use rodio_backend::compute_attenuation;
 
 // ---------------------------------------------------------------------------
 // 通用数据
@@ -131,6 +132,8 @@ pub trait AudioBackend {
     fn unload(&mut self, id: SourceId);
     /// 创建一个该源的播放实例。
     fn spawn(&self, id: SourceId, config: SoundConfig) -> Result<Arc<dyn Sound>, AudioError>;
+    /// 更新监听者位置（影响 3D 衰减计算）。默认 no-op。
+    fn update_listener(&mut self, _listener: Listener) {}
 }
 
 #[derive(Debug)]
@@ -250,6 +253,10 @@ pub struct AudioSystem {
     channel_volume: HashMap<MixerChannel, f32>,
     master_volume: f32,
     listener: Listener,
+    /// 距离衰减系数（传递给后端）。
+    rolloff_factor: f32,
+    /// 最大可听距离（传递给后端）。
+    max_distance: f32,
 }
 
 impl AudioSystem {
@@ -263,6 +270,8 @@ impl AudioSystem {
             channel_volume,
             master_volume: 1.0,
             listener: Listener::default(),
+            rolloff_factor: DEFAULT_ROLLOFF_FACTOR,
+            max_distance: DEFAULT_MAX_DISTANCE,
         }
     }
 
@@ -302,10 +311,26 @@ impl AudioSystem {
 
     pub fn set_listener(&mut self, l: Listener) {
         self.listener = l;
+        self.backend.update_listener(l);
     }
 
     pub fn listener(&self) -> &Listener {
         &self.listener
+    }
+
+    /// 设置 3D 衰减参数（仅影响当前 AudioSystem 层面的记录，
+    /// 后端特定实现如 RodioBackend 可通过 `set_attenuation` 进一步生效）。
+    pub fn set_attenuation_params(&mut self, rolloff_factor: f32, max_distance: f32) {
+        self.rolloff_factor = rolloff_factor;
+        self.max_distance = max_distance;
+    }
+
+    pub fn rolloff_factor(&self) -> f32 {
+        self.rolloff_factor
+    }
+
+    pub fn max_distance(&self) -> f32 {
+        self.max_distance
     }
 
     pub fn load(&mut self, bytes: &[u8]) -> Result<SourceId, AudioError> {
@@ -403,5 +428,51 @@ mod tests {
         // Null sound 不真正持位置，但接口必须接受。
         let s = sys.play_3d(id, pos, SoundConfig::default()).unwrap();
         assert!(s.is_playing());
+    }
+
+    #[test]
+    fn attenuation_at_zero_distance_is_one() {
+        let atten = compute_attenuation([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 0.1, 100.0);
+        assert!((atten - 1.0).abs() < 1e-6, "atten={atten}");
+    }
+
+    #[test]
+    fn attenuation_decreases_as_distance_increases() {
+        let a1 = compute_attenuation([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], 0.1, 100.0);
+        let a2 = compute_attenuation([0.0, 0.0, 0.0], [10.0, 0.0, 0.0], 0.1, 100.0);
+        let a3 = compute_attenuation([0.0, 0.0, 0.0], [50.0, 0.0, 0.0], 0.1, 100.0);
+        assert!(a1 > a2, "a1={a1} should > a2={a2}");
+        assert!(a2 > a3, "a2={a2} should > a3={a3}");
+    }
+
+    #[test]
+    fn attenuation_beyond_max_distance_is_zero() {
+        let atten = compute_attenuation([0.0, 0.0, 0.0], [150.0, 0.0, 0.0], 0.1, 100.0);
+        assert!(atten.abs() < 1e-6, "atten={atten}");
+    }
+
+    #[test]
+    fn attenuation_at_max_distance_boundary_is_zero() {
+        let atten = compute_attenuation([0.0, 0.0, 0.0], [100.0, 0.0, 0.0], 0.1, 100.0);
+        assert!(atten.abs() < 1e-6, "atten={atten}");
+    }
+
+    #[test]
+    fn audio_system_update_listener_forwards_to_backend() {
+        let mut sys = AudioSystem::with_null();
+        let l = Listener {
+            position: [5.0, 10.0, 15.0],
+            ..Default::default()
+        };
+        sys.set_listener(l);
+        assert!((sys.listener().position[0] - 5.0).abs() < 1e-6);
+        assert!((sys.listener().position[1] - 10.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn audio_system_attenuation_params_defaults() {
+        let sys = AudioSystem::with_null();
+        assert!((sys.rolloff_factor() - DEFAULT_ROLLOFF_FACTOR).abs() < 1e-6);
+        assert!((sys.max_distance() - DEFAULT_MAX_DISTANCE).abs() < 1e-6);
     }
 }

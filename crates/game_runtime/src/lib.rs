@@ -16,6 +16,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use cgmath::Point3;
+use config::{ConfigRenderingPath, EngineConfig};
 use render::{
     Light, Material, MaterialLibrary, RenderQueue, SceneRenderer,
     WgpuSceneRenderer, WgpuSceneRendererDescriptor,
@@ -102,6 +103,15 @@ impl GameState {
         project_dir: &str,
         scene_file: &str,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::new_with_config(window, project_dir, scene_file, &EngineConfig::default()).await
+    }
+
+    pub async fn new_with_config(
+        window: winit::window::Window,
+        project_dir: &str,
+        scene_file: &str,
+        engine_config: &EngineConfig,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let window = Arc::new(window);
         let size = window.inner_size();
 
@@ -170,12 +180,23 @@ impl GameState {
         });
         let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        // ── 渲染器 ──
-        let renderer_desc = WgpuSceneRendererDescriptor::forward_plus(
-            surface_format,
-            size.width,
-            size.height,
-        );
+        // ── 渲染器（根据配置选择管线） ──
+        let renderer_desc = match engine_config.render.rendering_path {
+            ConfigRenderingPath::ForwardPlus => {
+                WgpuSceneRendererDescriptor::forward_plus(
+                    surface_format,
+                    size.width,
+                    size.height,
+                )
+            }
+            ConfigRenderingPath::DeferredPlus => {
+                WgpuSceneRendererDescriptor::deferred_plus(
+                    surface_format,
+                    size.width,
+                    size.height,
+                )
+            }
+        };
         let renderer = WgpuSceneRenderer::new(&device, &queue, renderer_desc);
 
         let default_mat = Material::default();

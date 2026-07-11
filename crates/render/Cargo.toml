@@ -11,7 +11,7 @@ log = "0.4"
 config = { path = "../config" }
 
 [features]
-default = ["instancing"]
+default = []
 profiling = []
 instancing = []
 lod = []

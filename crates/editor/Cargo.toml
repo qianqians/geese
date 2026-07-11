@@ -16,7 +16,7 @@ gltf = {version = "1.4.1", features = ["extras", "names"]}
 log = "0.4"
 
 ui = { path = "../ui", version = "0.1.0" }
-render = { path = "../render", version = "0.1.0" }
+render = { path = "../render", version = "0.1.0", features = ["instancing"] }
 scene = { path = "../scene", version = "0.1.0", features = ["physics"] }
 avatar = { path = "../avatar", version = "0.1.0" }
 asset = { path = "../asset", version = "0.1.0" }

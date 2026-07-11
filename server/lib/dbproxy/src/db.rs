@@ -166,28 +166,38 @@ impl DBEvent {
         }
     }
 
+    async fn serialize_and_send(&self, cb: &DbCallback, buffer_cap: usize, context: &str) {
+        let t = TBufferChannel::with_capacity(0, buffer_cap);
+        let (rd, wr) = match t.split() {
+            Ok(v) => v,
+            Err(e) => { error!("{} t.split error {}", context, e); return; }
+        };
+        let mut o_prot = TCompactOutputProtocol::new(wr);
+        let _ = DbCallback::write_to_out_protocol(cb, &mut o_prot);
+        if let Some(p) = self.send_proxy.upgrade() {
+            let mut p_send = p.as_ref().lock().await;
+            let _ = p_send.send(&rd.write_bytes()).await;
+        } else {
+            error!("{} send_proxy is destroy!", context);
+        }
+    }
+
+    async fn send_batched_docs(&self, p_send: &mut Box<dyn NetWriter + Send + 'static>, cb: &DbCallback, buffer_cap: usize) {
+        let t = TBufferChannel::with_capacity(0, buffer_cap);
+        let (rd, wr) = match t.split() {
+            Ok(v) => v,
+            Err(e) => { error!("do_get_object_info t.split error {}", e); return; }
+        };
+        let mut o_prot = TCompactOutputProtocol::new(wr);
+        let _ = DbCallback::write_to_out_protocol(cb, &mut o_prot);
+        let _ = p_send.send(&rd.write_bytes()).await;
+    }
+
     async fn do_get_guid(&mut self, mongo_proxy:&mut MongoProxy) {
         trace!("begin do_get_guid");
         let guid = mongo_proxy.get_guid(self.db.to_string(), self.collection.to_string()).await;
         let cb = DbCallback::GetGuid(AckGetGuid::new(self.callback_id.to_string(), guid));
-        let t = TBufferChannel::with_capacity(0, 16384);
-        let (rd, wr) = match t.split() {
-            Ok(_t) => (_t.0, _t.1),
-            Err(_e) => {
-                error!("do_get_guid t.split error {}", _e);
-                return;
-            }
-        };
-        let mut o_prot = TCompactOutputProtocol::new(wr);
-        let _ = DbCallback::write_to_out_protocol(&cb, &mut o_prot);
-        let tmp = rd.write_bytes();
-        if let Some(p) = self.send_proxy.upgrade() {
-            let mut p_send = p.as_ref().lock().await;
-            let _ = p_send.send(&tmp).await;
-        }
-        else {
-            error!("do_get_guid send_proxy is destory!");
-        }
+        self.serialize_and_send(&cb, 16384, "do_get_guid").await;
     }
 
     async fn do_create_object(&mut self, mongo_proxy:&mut MongoProxy){
@@ -202,23 +212,7 @@ impl DBEvent {
         };
         let result = mongo_proxy.save(self.db.to_string(), self.collection.to_string(), &ev_data.object_info).await;
         let cb = DbCallback::CreateObject(AckCreateObject::new(self.callback_id.to_string(), result));
-        let t = TBufferChannel::with_capacity(0, 16384);
-        let (rd, wr) = match t.split() {
-            Ok(_t) => (_t.0, _t.1),
-            Err(_e) => {
-                error!("do_get_guid t.split error {}", _e);
-                return;
-            }
-        };
-        let mut o_prot = TCompactOutputProtocol::new(wr);
-        let _ = DbCallback::write_to_out_protocol(&cb, &mut o_prot);
-        if let Some(p) = self.send_proxy.upgrade() {
-            let mut p_send = p.as_ref().lock().await;
-            let _ = p_send.send(&rd.write_bytes()).await;
-        }
-        else {
-            error!("do_create_object send_proxy is destory!");
-        }
+        self.serialize_and_send(&cb, 16384, "do_create_object").await;
     }
 
     async fn do_updata_object(&mut self, mongo_proxy:&mut MongoProxy) {
@@ -233,23 +227,7 @@ impl DBEvent {
         };
         let result = mongo_proxy.update(self.db.to_string(), self.collection.to_string(), &ev_data.query_info, &ev_data.updata_info, ev_data.upsert).await;
         let cb = DbCallback::UpdataObject(AckUpdataObject::new(self.callback_id.to_string(), result));
-        let t = TBufferChannel::with_capacity(0, 16384);
-        let (rd, wr) = match t.split() {
-            Ok(_t) => (_t.0, _t.1),
-            Err(_e) => {
-                error!("do_get_guid t.split error {}", _e);
-                return;
-            }
-        };
-        let mut o_prot = TCompactOutputProtocol::new(wr);
-        let _ = DbCallback::write_to_out_protocol(&cb, &mut o_prot);
-        if let Some(p) = self.send_proxy.upgrade() {
-            let mut p_send = p.as_ref().lock().await;
-            let _ = p_send.send(&rd.write_bytes()).await;
-        }
-        else {
-            error!("do_updata_object send_proxy is destory!");
-        }
+        self.serialize_and_send(&cb, 16384, "do_updata_object").await;
     }
 
     async fn do_find_and_modify(&mut self, mongo_proxy:&mut MongoProxy) {
@@ -278,23 +256,7 @@ impl DBEvent {
         let _ = doc.to_writer(&mut bin);
         let wsize = (bin.len() + 2047) / 1024 * 1024;
         let cb = DbCallback::FindAndModify(AckFindAndModify::new(self.callback_id.to_string(), bin));
-        let t = TBufferChannel::with_capacity(0, wsize);
-        let (rd, wr) = match t.split() {
-            Ok(_t) => (_t.0, _t.1),
-            Err(_e) => {
-                error!("do_get_guid t.split error {}", _e);
-                return;
-            }
-        };
-        let mut o_prot = TCompactOutputProtocol::new(wr);
-        let _ = DbCallback::write_to_out_protocol(&cb, &mut o_prot);
-        if let Some(p) = self.send_proxy.upgrade() {
-            let mut p_send = p.as_ref().lock().await;
-            let _ = p_send.send(&rd.write_bytes()).await;
-        }
-        else {
-            error!("do_find_and_modify send_proxy is destory!");
-        }
+        self.serialize_and_send(&cb, wsize, "do_find_and_modify").await;
     }
 
     async fn do_remove_object(&mut self, mongo_proxy:&mut MongoProxy) {
@@ -309,23 +271,7 @@ impl DBEvent {
         };
         let result = mongo_proxy.remove(self.db.to_string(), self.collection.to_string(), &ev_data.query_info).await;
         let cb = DbCallback::RemoveObject(AckRemoveObject::new(self.callback_id.to_string(), result));
-        let t = TBufferChannel::with_capacity(0, 16384);
-        let (rd, wr) = match t.split() {
-            Ok(_t) => (_t.0, _t.1),
-            Err(_e) => {
-                error!("do_get_guid t.split error {}", _e);
-                return;
-            }
-        };
-        let mut o_prot = TCompactOutputProtocol::new(wr);
-        let _ = DbCallback::write_to_out_protocol(&cb, &mut o_prot);
-        if let Some(p) = self.send_proxy.upgrade() {
-            let mut p_send = p.as_ref().lock().await;
-            let _ = p_send.send(&rd.write_bytes()).await;
-        }
-        else {
-            error!("do_remove_object send_proxy is destory!");
-        }
+        self.serialize_and_send(&cb, 16384, "do_remove_object").await;
     }
 
     async fn do_get_object_info(&mut self, mongo_proxy:&mut MongoProxy) {
@@ -355,17 +301,7 @@ impl DBEvent {
                 let _ = doc.to_writer(&mut bin);
                 let wsize = (bin.len() + 2047) / 1024 * 1024;
                 let cb = DbCallback::GetObjectInfo(AckGetObjectInfo::new(self.callback_id.to_string(), bin));
-                let t = TBufferChannel::with_capacity(0, wsize);
-                let (rd, wr) = match t.split() {
-                    Ok(_t) => (_t.0, _t.1),
-                    Err(_e) => {
-                        error!("do_get_object_info t.split error {}", _e);
-                        return;
-                    }
-                };
-                let mut o_prot = TCompactOutputProtocol::new(wr);
-                let _ = DbCallback::write_to_out_protocol(&cb, &mut o_prot);
-                let _ = p_send.send(&rd.write_bytes()).await;
+                self.send_batched_docs(&mut p_send, &cb, wsize).await;
             }
             else {
                 let mut idx = 0;
@@ -379,31 +315,11 @@ impl DBEvent {
                     let _ = doc.to_writer(&mut bin);
                     let wsize = (bin.len() + 2047) / 1024 * 1024;
                     let cb = DbCallback::GetObjectInfo(AckGetObjectInfo::new(self.callback_id.to_string(), bin));
-                    let t = TBufferChannel::with_capacity(0, wsize);
-                    let (rd, wr) = match t.split() {
-                        Ok(_t) => (_t.0, _t.1),
-                        Err(_e) => {
-                            error!("do_get_object_info t.split error {}", _e);
-                            return;
-                        }
-                    };
-                    let mut o_prot = TCompactOutputProtocol::new(wr);
-                    let _ = DbCallback::write_to_out_protocol(&cb, &mut o_prot);
-                    let _ = p_send.send(&rd.write_bytes()).await;
+                    self.send_batched_docs(&mut p_send, &cb, wsize).await;
                 }
             }
             let cb = DbCallback::GetObjectInfoEnd(AckGetObjectInfoEnd::new(self.callback_id.to_string()));
-            let t = TBufferChannel::with_capacity(0, 1024);
-            let (rd, wr) = match t.split() {
-                Ok(_t) => (_t.0, _t.1),
-                Err(_e) => {
-                    error!("do_get_object_info t.split error {}", _e);
-                    return;
-                }
-            };
-            let mut o_prot = TCompactOutputProtocol::new(wr);
-            let _ = DbCallback::write_to_out_protocol(&cb, &mut o_prot);
-            let _ = p_send.send(&rd.write_bytes()).await;
+            self.send_batched_docs(&mut p_send, &cb, 1024).await;
         }
         else {
             error!("do_get_object_info send_proxy is destory!");
@@ -422,23 +338,7 @@ impl DBEvent {
         };
         let count = mongo_proxy.count(self.db.to_string(), self.collection.to_string(), &ev_data.query_info).await;
         let cb = DbCallback::GetObjectCount(AckGetObjectCount::new(self.callback_id.to_string(), count));
-        let t = TBufferChannel::with_capacity(0, 16384);
-        let (rd, wr) = match t.split() {
-            Ok(_t) => (_t.0, _t.1),
-            Err(_e) => {
-                error!("do_get_object_count t.split error {}", _e);
-                return;
-            }
-        };
-        let mut o_prot = TCompactOutputProtocol::new(wr);
-        let _ = DbCallback::write_to_out_protocol(&cb, &mut o_prot);
-        if let Some(p) = self.send_proxy.upgrade() {
-            let mut p_send = p.as_ref().lock().await;
-            let _ = p_send.send(&rd.write_bytes()).await;
-        }
-        else {
-            error!("do_get_object_count send_proxy is destory!");
-        }
+        self.serialize_and_send(&cb, 16384, "do_get_object_count").await;
     }
 
     pub async fn do_event(&mut self, mongo_proxy:&mut MongoProxy) {

@@ -840,13 +840,13 @@ impl Editor {
                 EditorAction::InstantiatePrefab { prefab_uuid, position, parent_node_id } => {
                     self.handle_instantiate_prefab(&prefab_uuid, position, parent_node_id);
                 }
-                EditorAction::ToggleCharacterController { node_id, enabled, move_speed, jump_impulse, air_control, half_height, radius } => {
-                    // 角色控制器切换：由 Editor 处理物理集成
-                    // TODO: 当 Editor 持有 Scene 引用时，调用 scene.character_physics 相关 API
-                    eprintln!(
-                        "[Editor] ToggleCharacterController: node={}, enabled={}, move_speed={}, jump_impulse={}, air_control={}, half_height={}, radius={}",
-                        node_id, enabled, move_speed, jump_impulse, air_control, half_height, radius
-                    );
+                EditorAction::ToggleCharacterController { node_id, enabled, component } => {
+                    if let Some(cfg) = component {
+                        self.state.character_controller_cache.insert(node_id.clone(), cfg);
+                    } else {
+                        self.state.character_controller_cache.remove(&node_id);
+                    }
+                    log::info!("[Editor] ToggleCharacterController: node={}, enabled={}", node_id, enabled);
                 }
                 EditorAction::ModifyAnimationMarker { clip_index, time, name, remove } => {
                     self.handle_modify_animation_marker(clip_index, time, name, remove);
@@ -1075,6 +1075,7 @@ impl Editor {
                 overrides,
                 physics,
                 navmesh,
+                character_controller: None,
                 _body_kind: None,
             });
         }

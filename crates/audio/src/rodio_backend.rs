@@ -14,8 +14,48 @@ use std::io::Cursor;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-/// 距离衰减系数（越大衰减越快）。
-const ROLLOFF_FACTOR: f32 = 0.1;
+/// 默认距离衰减系数（越大衰减越快）。
+pub const DEFAULT_ROLLOFF_FACTOR: f32 = 0.1;
+
+/// 默认最大可听距离，超过此距离衰减系数为 0。
+pub const DEFAULT_MAX_DISTANCE: f32 = 100.0;
+
+/// 共享的 3D 衰减参数（由 RodioBackend 持有并注入到每个 RodioSound）。
+#[derive(Debug, Clone, Copy)]
+pub struct AttenuationParams {
+    pub rolloff_factor: f32,
+    pub max_distance: f32,
+}
+
+impl Default for AttenuationParams {
+    fn default() -> Self {
+        Self {
+            rolloff_factor: DEFAULT_ROLLOFF_FACTOR,
+            max_distance: DEFAULT_MAX_DISTANCE,
+        }
+    }
+}
+
+/// 计算距离衰减系数。
+///
+/// - 反距离模型：`atten = 1.0 / (1.0 + dist * rolloff)`
+/// - 当距离超过 `max_distance` 时直接返回 `0.0`
+/// - 当距离为 0 时返回 `1.0`
+pub fn compute_attenuation(
+    listener_pos: [f32; 3],
+    sound_pos: [f32; 3],
+    rolloff: f32,
+    max_distance: f32,
+) -> f32 {
+    let dx = listener_pos[0] - sound_pos[0];
+    let dy = listener_pos[1] - sound_pos[1];
+    let dz = listener_pos[2] - sound_pos[2];
+    let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+    if dist >= max_distance {
+        return 0.0;
+    }
+    1.0 / (1.0 + dist * rolloff)
+}
 
 /// rodio 后端：持有 OutputStream（保活）+ Handle（共享给 Sink）。
 pub struct RodioBackend {
@@ -27,6 +67,8 @@ pub struct RodioBackend {
     next_id: u64,
     /// 共享监听者（注入到每个 RodioSound）
     listener: Arc<Mutex<Listener>>,
+    /// 共享衰减参数（注入到每个 RodioSound）
+    attenuation: Arc<Mutex<AttenuationParams>>,
 }
 
 impl RodioBackend {
@@ -39,26 +81,26 @@ impl RodioBackend {
             sources: HashMap::new(),
             next_id: 0,
             listener: Arc::new(Mutex::new(Listener::default())),
+            attenuation: Arc::new(Mutex::new(AttenuationParams::default())),
         })
     }
 
+    /// 更新衰减参数（影响所有活跃 RodioSound 的距离衰减计算）。
+    pub fn set_attenuation(&self, rolloff_factor: f32, max_distance: f32) {
+        if let Ok(mut guard) = self.attenuation.lock() {
+            guard.rolloff_factor = rolloff_factor;
+            guard.max_distance = max_distance;
+        }
+    }
+
     /// 更新监听者位置（影响所有活跃 RodioSound 的距离衰减）。
-    ///
-    /// 因 `AudioBackend` trait 不含此方法，调用方需直接持有 `RodioBackend`。
     pub fn update_listener(&self, listener: Listener) {
         if let Ok(mut guard) = self.listener.lock() {
             *guard = listener;
         }
     }
 
-    /// 计算距离衰减：`atten = 1.0 / (1.0 + dist * rolloff)`
-    fn compute_attenuation(listener_pos: [f32; 3], sound_pos: [f32; 3]) -> f32 {
-        let dx = listener_pos[0] - sound_pos[0];
-        let dy = listener_pos[1] - sound_pos[1];
-        let dz = listener_pos[2] - sound_pos[2];
-        let dist = (dx * dx + dy * dy + dz * dz).sqrt();
-        1.0 / (1.0 + dist * ROLLOFF_FACTOR)
-    }
+
 }
 
 impl AudioBackend for RodioBackend {
@@ -76,6 +118,10 @@ impl AudioBackend for RodioBackend {
 
     fn unload(&mut self, id: SourceId) {
         self.sources.remove(&id);
+    }
+
+    fn update_listener(&mut self, listener: Listener) {
+        RodioBackend::update_listener(self, listener);
     }
 
     fn spawn(&self, id: SourceId, config: SoundConfig) -> Result<Arc<dyn Sound>, AudioError> {
@@ -107,6 +153,7 @@ impl AudioBackend for RodioBackend {
             sink,
             position: Mutex::new(config.position.unwrap_or_default()),
             listener: self.listener.clone(),
+            attenuation: self.attenuation.clone(),
             base_volume_milli: AtomicU32::new(
                 (config.volume.clamp(0.0, 8.0) * 1000.0) as u32,
             ),
@@ -122,6 +169,8 @@ pub struct RodioSound {
     position: Mutex<SoundPosition>,
     /// 共享监听者（由 RodioBackend 注入）
     listener: Arc<Mutex<Listener>>,
+    /// 共享衰减参数（由 RodioBackend 注入）
+    attenuation: Arc<Mutex<AttenuationParams>>,
     /// 原始音量（千分位整数），衰减基于此值
     base_volume_milli: AtomicU32,
 }
@@ -134,14 +183,7 @@ impl RodioSound {
 
     /// 计算当前有效音量 = base_volume * distance_attenuation
     fn effective_volume(&self) -> f32 {
-        let pos = self.position.lock().ok().map(|g| g.position).unwrap_or([0.0; 3]);
-        let listener_pos = self
-            .listener
-            .lock()
-            .ok()
-            .map(|g| g.position)
-            .unwrap_or([0.0; 3]);
-        let atten = RodioBackend::compute_attenuation(listener_pos, pos);
+        let atten = self.current_attenuation();
         self.base_volume() * atten
     }
 }
@@ -190,7 +232,13 @@ impl RodioSound {
             .ok()
             .map(|g| g.position)
             .unwrap_or([0.0; 3]);
-        RodioBackend::compute_attenuation(listener_pos, pos)
+        let (rolloff, max_dist) = self
+            .attenuation
+            .lock()
+            .ok()
+            .map(|g| (g.rolloff_factor, g.max_distance))
+            .unwrap_or((DEFAULT_ROLLOFF_FACTOR, DEFAULT_MAX_DISTANCE));
+        compute_attenuation(listener_pos, pos, rolloff, max_dist)
     }
 }
 

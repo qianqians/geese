@@ -681,10 +681,14 @@ edition = "2024"
 [dependencies]
 egui = {{ version = "0.29", default-features = false }}
 cgmath = "0.18"
-wgpu = "0.20"
+wgpu = "22.1"
 winit = "0.30"
+env_logger = "0.11"
+log = "0.4"
+pollster = "0.3"
 serde = {{ version = "1.0", features = ["derive"] }}
 serde_json = "1.0"
+geese_game = {{ path = "../crates/game_runtime" }}
 
 "#
     )
@@ -713,23 +717,31 @@ pub fn main_rs_content(template: &ProjectTemplate) -> String {
 //! 摄像机：{camera_type}
 
 {mod_decls}
-use std::time::Instant;
-use winit::{{event_loop::EventLoop, window::WindowAttributes}};
+use geese_game::run_event_loop;
+use winit::event_loop::EventLoop;
+use winit::window::WindowAttributes;
 
 fn main() {{
     env_logger::init();
 
+    let project_dir = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| ".".to_string());
+    let scene_file = std::env::args()
+        .nth(2)
+        .unwrap_or_else(|| "assets/scenes/default.scene.json".to_string());
+
     let event_loop = EventLoop::new().unwrap();
-    let window = winit::window::WindowBuilder::new()
-        .with_title("{project_name}")
-        .with_inner_size(winit::dpi::LogicalSize::new(1280, 720))
-        .build(&event_loop)
+    let window = event_loop
+        .create_window(
+            WindowAttributes::default()
+                .with_title("{project_name}")
+                .with_inner_size(winit::dpi::LogicalSize::new(1280, 720)),
+        )
         .unwrap();
 
-    // TODO: 初始化 wgpu 设备、渲染器、场景、物理世界
-    // TODO: 主循环：输入轮询 → 更新 → 渲染
-
-    println!("🚀 {project_name} 已启动！模板：{template_name}");
+    log::info!("Launching {project_name} (template: {template_name})");
+    run_event_loop(event_loop, window, &project_dir, &scene_file);
 }}
 "#,
         project_name = "{{project_name}}",

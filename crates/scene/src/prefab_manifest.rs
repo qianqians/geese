@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::manifest::{BodyKindDef, NavMeshComponentDef, PhysicsComponentDef, TransformDef};
+use crate::manifest::{BodyKindDef, CharacterControllerDef, NavMeshComponentDef, PhysicsComponentDef, TransformDef};
 
 /// Prefab 清单——`.prefab.json` 文件的顶级结构。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,6 +70,9 @@ pub struct PrefabNodeDef {
     /// NavMesh 组件定义。None 表示不参与导航网格构建。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub navmesh: Option<NavMeshComponentDef>,
+    /// 角色控制器组件定义。None 表示无角色控制器。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub character_controller: Option<CharacterControllerDef>,
     // ── 旧格式兼容字段（仅反序列化）──
     /// [deprecated] 旧格式 body_kind —— 自动迁移到 physics.body_kind
     #[serde(default, skip_serializing, alias = "body_kind")]
@@ -238,6 +241,7 @@ mod tests {
             overrides: None,
             physics: None,
             navmesh: None,
+            character_controller: None,
             _body_kind: None,
         });
         manifest.root_nodes.push(0);

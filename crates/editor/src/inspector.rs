@@ -3,7 +3,7 @@
 //! 显示和编辑选中实体的属性：Transform（Position/Rotation/Scale）、
 //! Mesh 信息（顶点数、三角形数、材质）、组件列表。
 
-use crate::panels::{EditorAction, EditorPanel, EditorState, PendingTransform};
+use crate::panels::{CharacterControllerConfig, EditorAction, EditorPanel, EditorState, PendingTransform};
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
@@ -382,11 +382,17 @@ impl EditorPanel for InspectorPanel {
                                 state.pending_actions.push(EditorAction::ToggleCharacterController {
                                     node_id: eid.clone(),
                                     enabled: self.cc_enabled,
-                                    move_speed: self.cc_move_speed,
-                                    jump_impulse: self.cc_jump_impulse,
-                                    air_control: self.cc_air_control,
-                                    half_height: self.cc_half_height,
-                                    radius: self.cc_radius,
+                                    component: if self.cc_enabled {
+                                        Some(CharacterControllerConfig {
+                                            move_speed: self.cc_move_speed,
+                                            jump_impulse: self.cc_jump_impulse,
+                                            air_control: self.cc_air_control,
+                                            half_height: self.cc_half_height,
+                                            radius: self.cc_radius,
+                                        })
+                                    } else {
+                                        None
+                                    },
                                 });
                             }
                         });

@@ -63,6 +63,9 @@ pub struct ModelRef {
     /// NavMesh 组件定义。None 表示不参与导航网格构建。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub navmesh: Option<NavMeshComponentDef>,
+    /// 角色控制器组件定义。None 表示无角色控制器。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub character_controller: Option<CharacterControllerDef>,
     // ── 以下为旧格式兼容字段（仅反序列化，不序列化输出）──
     /// [deprecated] 旧格式 collision_enabled —— 自动迁移到 physics.collision_enabled
     #[serde(default, skip_serializing, alias = "collision_enabled")]
@@ -188,6 +191,100 @@ impl Default for NavMeshComponentDef {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Character Controller Component
+// ---------------------------------------------------------------------------
+
+/// 角色控制器组件定义。
+///
+/// 序列化到 RON 格式示例：
+/// ```ron
+/// character_controller: Some((
+///     move_speed: 5.0,
+///     jump_impulse: 8.0,
+///     air_control: 0.3,
+///     gravity: [0.0, -9.81, 0.0],
+///     half_height: 1.0,
+///     radius: 0.5,
+/// )),
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CharacterControllerDef {
+    /// 水平移动速度 (m/s)
+    #[serde(default = "default_move_speed")]
+    pub move_speed: f32,
+    /// 跳跃冲量大小
+    #[serde(default = "default_jump_impulse")]
+    pub jump_impulse: f32,
+    /// 空中移动控制系数 (0-1)
+    #[serde(default = "default_air_control")]
+    pub air_control: f32,
+    /// 重力向量
+    #[serde(default = "default_gravity")]
+    pub gravity: [f32; 3],
+    /// 胶囊体半高（不含半球帽）
+    #[serde(default = "default_half_height")]
+    pub half_height: f32,
+    /// 胶囊体半径
+    #[serde(default = "default_radius")]
+    pub radius: f32,
+}
+
+fn default_move_speed() -> f32 { 5.0 }
+fn default_jump_impulse() -> f32 { 8.0 }
+fn default_air_control() -> f32 { 0.3 }
+fn default_gravity() -> [f32; 3] { [0.0, -9.81, 0.0] }
+fn default_half_height() -> f32 { 1.0 }
+fn default_radius() -> f32 { 0.5 }
+
+impl Default for CharacterControllerDef {
+    fn default() -> Self {
+        Self {
+            move_speed: default_move_speed(),
+            jump_impulse: default_jump_impulse(),
+            air_control: default_air_control(),
+            gravity: default_gravity(),
+            half_height: default_half_height(),
+            radius: default_radius(),
+        }
+    }
+}
+
+impl CharacterControllerDef {
+    /// 序列化为 RON 格式字符串（作为实体组件字段输出）。
+    ///
+    /// 输出格式：
+    /// ```ron
+    /// character_controller: Some((
+    ///     move_speed: 5.0,
+    ///     jump_impulse: 8.0,
+    ///     air_control: 0.3,
+    ///     gravity: [0.0, -9.81, 0.0],
+    ///     half_height: 1.0,
+    ///     radius: 0.5,
+    /// )),
+    /// ```
+    pub fn to_ron_string(&self) -> String {
+        let pretty = ron::ser::PrettyConfig::new()
+            .depth_limit(2)
+            .separate_tuple_members(true)
+            .indentor("    ".to_string());
+        let inner = ron::ser::to_string_pretty(self, pretty)
+            .unwrap_or_else(|_| format!(
+                "(move_speed: {}, jump_impulse: {}, air_control: {}, gravity: [{}, {}, {}], half_height: {}, radius: {})",
+                self.move_speed, self.jump_impulse, self.air_control,
+                self.gravity[0], self.gravity[1], self.gravity[2],
+                self.half_height, self.radius,
+            ));
+        format!("character_controller: Some({}),", inner)
+    }
+
+    /// 从 RON 字符串反序列化。
+    pub fn from_ron_str(s: &str) -> Result<Self, ron::de::SpannedError> {
+        ron::from_str(s)
+    }
+}
+
 /// 程序化内联对象定义（不依赖外部 glTF 文件）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SceneObjectDef {
@@ -213,6 +310,9 @@ pub struct SceneObjectDef {
     /// NavMesh 组件定义。None 表示不参与导航网格构建。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub navmesh: Option<NavMeshComponentDef>,
+    /// 角色控制器组件定义。None 表示无角色控制器。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub character_controller: Option<CharacterControllerDef>,
     // ── 旧格式兼容字段（仅反序列化）──
     /// [deprecated] 旧格式 body_kind —— 自动迁移到 physics.body_kind
     #[serde(default, skip_serializing, alias = "body_kind")]
@@ -450,5 +550,106 @@ mod tests {
             BodyKindDef::Dynamic.to_physics_kind(),
             physics::world::BodyKind::Dynamic
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // CharacterControllerDef tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn character_controller_defaults() {
+        let def = CharacterControllerDef::default();
+        assert!((def.move_speed - 5.0).abs() < f32::EPSILON);
+        assert!((def.jump_impulse - 8.0).abs() < f32::EPSILON);
+        assert!((def.air_control - 0.3).abs() < f32::EPSILON);
+        assert_eq!(def.gravity, [0.0, -9.81, 0.0]);
+        assert!((def.half_height - 1.0).abs() < f32::EPSILON);
+        assert!((def.radius - 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn character_controller_ron_roundtrip() {
+        let def = CharacterControllerDef {
+            move_speed: 5.0,
+            jump_impulse: 8.0,
+            air_control: 0.3,
+            gravity: [0.0, -9.81, 0.0],
+            half_height: 1.0,
+            radius: 0.5,
+        };
+        // 序列化为 RON
+        let ron_str = ron::to_string(&def).unwrap();
+        // 反序列化回来
+        let restored: CharacterControllerDef = ron::from_str(&ron_str).unwrap();
+        assert_eq!(def, restored);
+    }
+
+    #[test]
+    fn character_controller_ron_output_format() {
+        let def = CharacterControllerDef::default();
+        let output = def.to_ron_string();
+        // 验证输出包含关键字段
+        assert!(output.contains("character_controller: Some("), "output: {output}");
+        assert!(output.contains("move_speed:"), "output: {output}");
+        assert!(output.contains("jump_impulse:"), "output: {output}");
+        assert!(output.contains("air_control:"), "output: {output}");
+        assert!(output.contains("gravity:"), "output: {output}");
+        assert!(output.contains("half_height:"), "output: {output}");
+        assert!(output.contains("radius:"), "output: {output}");
+    }
+
+    #[test]
+    fn character_controller_json_roundtrip() {
+        let def = CharacterControllerDef {
+            move_speed: 7.5,
+            jump_impulse: 10.0,
+            air_control: 0.5,
+            gravity: [0.0, -10.0, 0.0],
+            half_height: 1.2,
+            radius: 0.4,
+        };
+        let json = serde_json::to_string(&def).unwrap();
+        let restored: CharacterControllerDef = serde_json::from_str(&json).unwrap();
+        assert_eq!(def, restored);
+    }
+
+    #[test]
+    fn character_controller_json_defaults() {
+        // 空 JSON 对象应能反序列化为默认值
+        let def: CharacterControllerDef = serde_json::from_str("{}").unwrap();
+        assert_eq!(def, CharacterControllerDef::default());
+    }
+
+    #[test]
+    fn manifest_with_character_controller() {
+        let json = r#"{
+            "version": "1.0",
+            "name": "CCScene",
+            "objects": [
+                {
+                    "object_type": "cube",
+                    "position": [0,0,0],
+                    "character_controller": {
+                        "move_speed": 6.0,
+                        "jump_impulse": 10.0,
+                        "air_control": 0.5,
+                        "gravity": [0.0, -9.81, 0.0],
+                        "half_height": 1.0,
+                        "radius": 0.5
+                    }
+                }
+            ]
+        }"#;
+        let manifest: SceneManifest = serde_json::from_str(json).unwrap();
+        let cc = manifest.objects[0].character_controller.as_ref().unwrap();
+        assert!((cc.move_speed - 6.0).abs() < f32::EPSILON);
+        assert!((cc.jump_impulse - 10.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn manifest_without_character_controller() {
+        let json = r#"{"object_type":"cube","position":[0,0,0]}"#;
+        let obj: SceneObjectDef = serde_json::from_str(json).unwrap();
+        assert!(obj.character_controller.is_none());
     }
 }

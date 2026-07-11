@@ -12,6 +12,20 @@ use physics_manager::BodySnapshot;
 use std::collections::{HashMap, HashSet};
 
 // ---------------------------------------------------------------------------
+// CharacterControllerConfig - 角色控制器配置
+// ---------------------------------------------------------------------------
+
+/// 角色控制器配置（缓存于 EditorState，供 Play 模式物理集成使用）。
+#[derive(Debug, Clone)]
+pub struct CharacterControllerConfig {
+    pub move_speed: f32,
+    pub jump_impulse: f32,
+    pub air_control: f32,
+    pub half_height: f32,
+    pub radius: f32,
+}
+
+// ---------------------------------------------------------------------------
 // EditorAction - 面板请求的编辑器操作
 // ---------------------------------------------------------------------------
 
@@ -31,11 +45,7 @@ pub enum EditorAction {
     ToggleCharacterController {
         node_id: String,
         enabled: bool,
-        move_speed: f32,
-        jump_impulse: f32,
-        air_control: f32,
-        half_height: f32,
-        radius: f32,
+        component: Option<CharacterControllerConfig>,
     },
     /// 修改动画标记
     ModifyAnimationMarker {
@@ -126,6 +136,8 @@ pub struct EditorState {
     pub physics_component_cache: HashMap<String, scene::manifest::PhysicsComponentDef>,
     /// 实体 NavMesh 组件缓存 (entity_id → NavMeshComponentDef)
     pub navmesh_component_cache: HashMap<String, scene::manifest::NavMeshComponentDef>,
+    /// 角色控制器配置缓存 (entity_id → CharacterControllerConfig)
+    pub character_controller_cache: HashMap<String, CharacterControllerConfig>,
     /// 实体名称缓存 (entity_id → name)，用于 Inspector 即时编辑
     pub name_cache: HashMap<String, String>,
     /// 拥有 Mesh 组件的实体集合，用于 Inspector 判断是否显示 Mesh Renderer
@@ -167,6 +179,7 @@ impl EditorState {
             transform_cache: HashMap::new(),
             physics_component_cache: HashMap::new(),
             navmesh_component_cache: HashMap::new(),
+            character_controller_cache: HashMap::new(),
             name_cache: HashMap::new(),
             mesh_entities: HashSet::new(),
             pending_transform: None,

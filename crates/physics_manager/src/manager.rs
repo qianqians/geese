@@ -16,6 +16,15 @@ pub struct BodySnapshot {
     pub rotation: Quat4,
 }
 
+/// Full rigid-body state snapshot (position + rotation + velocities).
+#[derive(Debug, Clone)]
+pub struct StateSnapshot {
+    pub position: cgmath::Vector3<f32>,
+    pub rotation: cgmath::Quaternion<f32>,
+    pub linear_velocity: cgmath::Vector3<f32>,
+    pub angular_velocity: cgmath::Vector3<f32>,
+}
+
 /// 3D position (f64 for compatibility).
 #[derive(Debug, Clone, Copy)]
 pub struct Position3 {
@@ -290,6 +299,76 @@ impl PhysicsManager {
     /// Access the local physics world.
     pub fn world(&self) -> &PhysicsWorld {
         &self.world
+    }
+
+    // -------------------------------------------------------------------
+    // State migration (export / switch / import)
+    // -------------------------------------------------------------------
+
+    /// Export full state snapshots of all bodies in the current scene.
+    pub fn export_snapshots(&self) -> Vec<StateSnapshot> {
+        let mut snapshots = Vec::new();
+        if let Some(scene) = self.world.scene(self.scene_id) {
+            for handle in scene.body_handles() {
+                let iso = scene.body_isometry(handle);
+                let linvel = scene.body_linvel(handle);
+                let angvel = scene.body_angvel(handle);
+                if let Some(iso) = iso {
+                    let lv = linvel.unwrap_or(Vec3::ZERO);
+                    let av = angvel.unwrap_or(Vec3::ZERO);
+                    snapshots.push(StateSnapshot {
+                        position: cgmath::Vector3::new(
+                            iso.translation.x,
+                            iso.translation.y,
+                            iso.translation.z,
+                        ),
+                        rotation: cgmath::Quaternion::new(
+                            iso.rotation.w,
+                            iso.rotation.x,
+                            iso.rotation.y,
+                            iso.rotation.z,
+                        ),
+                        linear_velocity: cgmath::Vector3::new(lv.x, lv.y, lv.z),
+                        angular_velocity: cgmath::Vector3::new(av.x, av.y, av.z),
+                    });
+                }
+            }
+        }
+        snapshots
+    }
+
+    /// Switch to a new physics scene, returning the new `SceneId` and
+    /// snapshots exported from the old scene before the switch.
+    pub fn switch_scene(&mut self, gravity: [f32; 3]) -> (SceneId, Vec<StateSnapshot>) {
+        let snapshots = self.export_snapshots();
+        let new_id = self.world.create_scene(Vec3::new(gravity[0], gravity[1], gravity[2]));
+        self.scene_id = new_id;
+        (new_id, snapshots)
+    }
+
+    /// Restore rigid-body states from snapshots into the current scene.
+    ///
+    /// Bodies are matched by iteration order (index). The scene must already
+    /// contain the same number of bodies (e.g. loaded via `load_scene`)
+    /// for the mapping to be meaningful.
+    pub fn import_snapshots(&mut self, snapshots: &[StateSnapshot]) {
+        if let Some(scene) = self.world.scene_mut(self.scene_id) {
+            let handles: Vec<_> = scene.body_handles().collect();
+            for (i, snap) in snapshots.iter().enumerate() {
+                if i >= handles.len() {
+                    break;
+                }
+                let h = handles[i];
+                let pos = Vec3::new(snap.position.x, snap.position.y, snap.position.z);
+                let rot = Quat::from_xyzw(snap.rotation.v.x, snap.rotation.v.y, snap.rotation.v.z, snap.rotation.s);
+                let lv = Vec3::new(snap.linear_velocity.x, snap.linear_velocity.y, snap.linear_velocity.z);
+                let av = Vec3::new(snap.angular_velocity.x, snap.angular_velocity.y, snap.angular_velocity.z);
+                scene.set_translation(h, pos, true);
+                scene.set_rotation(h, rot, true);
+                scene.set_linvel(h, lv, true);
+                scene.set_angvel(h, av, true);
+            }
+        }
     }
 }
 

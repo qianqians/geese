@@ -324,3 +324,81 @@ impl Camera {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_construction() {
+        let cam = Camera::new(CameraMode::Fps { yaw: 0.0, pitch: 0.0 }, 16.0 / 9.0);
+        assert!((cam.fov - 60.0).abs() < 1e-6);
+        assert!((cam.z_near - 0.1).abs() < 1e-6);
+        assert!((cam.z_far - 500.0).abs() < 1e-6);
+        assert!((cam.sensitivity - 0.003).abs() < 1e-6);
+        assert!((cam.position.x - 0.0).abs() < 1e-6);
+        assert!((cam.position.y - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_view_projection_raw_nonzero() {
+        let cam = Camera::new(CameraMode::Fps { yaw: 0.0, pitch: 0.0 }, 16.0 / 9.0);
+        let raw = cam.view_projection_raw();
+        let has_nonzero = raw.iter().flatten().any(|&v| v.abs() > 1e-6);
+        assert!(has_nonzero, "view_projection_raw should have non-zero elements");
+    }
+
+    #[test]
+    fn test_frustum_valid_planes() {
+        let cam = Camera::new(
+            CameraMode::Fps { yaw: 0.0, pitch: 0.0 },
+            16.0 / 9.0,
+        );
+        let frustum = cam.frustum();
+        // 每个平面的法线应该是非零向量
+        for plane in &frustum.planes {
+            let mag = (plane.normal.x * plane.normal.x
+                + plane.normal.y * plane.normal.y
+                + plane.normal.z * plane.normal.z)
+                .sqrt();
+            assert!((mag - 1.0).abs() < 1e-4, "plane normal should be unit length");
+        }
+    }
+
+    #[test]
+    fn test_mode_switching() {
+        let mut cam = Camera::new(CameraMode::Fps { yaw: 0.0, pitch: 0.0 }, 1.0);
+        assert_eq!(cam.mode(), CameraMode::Fps { yaw: 0.0, pitch: 0.0 });
+
+        cam.set_mode(CameraMode::Orbit {
+            yaw: 1.0,
+            pitch: 0.5,
+            focal_point: Point3::new(0.0, 0.0, 0.0),
+            distance: 10.0,
+            min_distance: 1.0,
+            max_distance: 50.0,
+        });
+        assert!(matches!(cam.mode(), CameraMode::Orbit { .. }));
+
+        cam.set_mode(CameraMode::TopDown {
+            center: Point3::new(0.0, 0.0, 0.0),
+            height: 20.0,
+            angle: 0.0,
+        });
+        assert!(matches!(cam.mode(), CameraMode::TopDown { .. }));
+    }
+
+    #[test]
+    fn test_projection_matrix_reasonable() {
+        let cam = Camera::new(CameraMode::Fps { yaw: 0.0, pitch: 0.0 }, 1.0);
+        let proj = cam.projection_matrix();
+        // 对于 FOV=60°, aspect=1.0 的透视投影:
+        // proj[0][0] 和 proj[1][1] 应该 > 0 且有限
+        assert!(proj[0][0] > 0.0 && proj[0][0].is_finite());
+        assert!(proj[1][1] > 0.0 && proj[1][1].is_finite());
+        // 透视投影的 [3][3] 应为 0
+        assert!(proj[3][3].abs() < 1e-6);
+        // [2][3] 应为 -1 (右手坐标系)
+        assert!((proj[2][3] - (-1.0)).abs() < 1e-6);
+    }
+}
