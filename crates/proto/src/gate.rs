@@ -2001,6 +2001,76 @@ impl TSerializable for ClientCallGateHeartbeats {
 }
 
 //
+// VersionHandshake
+//
+
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct VersionHandshake {
+  pub min_version: Option<i32>,
+  pub max_version: Option<i32>,
+}
+
+impl VersionHandshake {
+  pub fn new<F1, F2>(min_version: F1, max_version: F2) -> VersionHandshake where F1: Into<Option<i32>>, F2: Into<Option<i32>> {
+    VersionHandshake {
+      min_version: min_version.into(),
+      max_version: max_version.into(),
+    }
+  }
+}
+
+impl TSerializable for VersionHandshake {
+  fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<VersionHandshake> {
+    i_prot.read_struct_begin()?;
+    let mut f_1: Option<i32> = Some(0);
+    let mut f_2: Option<i32> = Some(0);
+    loop {
+      let field_ident = i_prot.read_field_begin()?;
+      if field_ident.field_type == TType::Stop {
+        break;
+      }
+      let field_id = field_id(&field_ident)?;
+      match field_id {
+        1 => {
+          let val = i_prot.read_i32()?;
+          f_1 = Some(val);
+        },
+        2 => {
+          let val = i_prot.read_i32()?;
+          f_2 = Some(val);
+        },
+        _ => {
+          i_prot.skip(field_ident.field_type)?;
+        },
+      };
+      i_prot.read_field_end()?;
+    }
+    i_prot.read_struct_end()?;
+    let ret = VersionHandshake {
+      min_version: f_1,
+      max_version: f_2,
+    };
+    Ok(ret)
+  }
+  fn write_to_out_protocol(&self, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {
+    let struct_ident = TStructIdentifier::new("version_handshake");
+    o_prot.write_struct_begin(&struct_ident)?;
+    if let Some(fld_var) = self.min_version {
+      o_prot.write_field_begin(&TFieldIdentifier::new("min_version", TType::I32, 1))?;
+      o_prot.write_i32(fld_var)?;
+      o_prot.write_field_end()?
+    }
+    if let Some(fld_var) = self.max_version {
+      o_prot.write_field_begin(&TFieldIdentifier::new("max_version", TType::I32, 2))?;
+      o_prot.write_i32(fld_var)?;
+      o_prot.write_field_end()?
+    }
+    o_prot.write_field_stop()?;
+    o_prot.write_struct_end()
+  }
+}
+
+//
 // GateClientService
 //
 
@@ -2014,6 +2084,7 @@ pub enum GateClientService {
   CallErr(ClientCallHubErr),
   CallNtf(ClientCallHubNtf),
   Heartbeats(ClientCallGateHeartbeats),
+  Handshake(VersionHandshake),
 }
 
 impl TSerializable for GateClientService {
@@ -2081,6 +2152,13 @@ impl TSerializable for GateClientService {
           let val = ClientCallGateHeartbeats::read_from_in_protocol(i_prot)?;
           if ret.is_none() {
             ret = Some(GateClientService::Heartbeats(val));
+          }
+          received_field_count += 1;
+        },
+        9 => {
+          let val = VersionHandshake::read_from_in_protocol(i_prot)?;
+          if ret.is_none() {
+            ret = Some(GateClientService::Handshake(val));
           }
           received_field_count += 1;
         },
@@ -2155,6 +2233,11 @@ impl TSerializable for GateClientService {
       },
       GateClientService::Heartbeats(ref f) => {
         o_prot.write_field_begin(&TFieldIdentifier::new("heartbeats", TType::Struct, 8))?;
+        f.write_to_out_protocol(o_prot)?;
+        o_prot.write_field_end()?;
+      },
+      GateClientService::Handshake(ref f) => {
+        o_prot.write_field_begin(&TFieldIdentifier::new("handshake", TType::Struct, 9))?;
         f.write_to_out_protocol(o_prot)?;
         o_prot.write_field_end()?;
       },

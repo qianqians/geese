@@ -4,6 +4,7 @@
 //! Mesh 信息（顶点数、三角形数、材质）、组件列表。
 
 use crate::panels::{EditorAction, EditorPanel, EditorState, PendingTransform};
+use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
 // InspectorPanel
@@ -92,8 +93,16 @@ impl InspectorPanel {
     }
 
     /// 更新 Transform 值以匹配选中实体（从场景数据同步）。
-    pub fn sync_transform(&mut self, _entity_id: &str) {
-        // TODO: 从 Scene 读取实际 Transform
+    pub fn sync_transform(
+        &mut self,
+        entity_id: &str,
+        transform_cache: &HashMap<String, ([f32; 3], [f32; 3], [f32; 3])>,
+    ) {
+        if let Some(&(pos, rot, scl)) = transform_cache.get(entity_id) {
+            self.position = pos;
+            self.rotation = rot;
+            self.scale = scl;
+        }
     }
 }
 
@@ -161,8 +170,8 @@ impl EditorPanel for InspectorPanel {
                     self.rotation = rot;
                     self.scale = scl;
                 } else {
+                    log::warn!("Inspector: transform cache miss for entity '{}'", entity_id);
                     let defaults = ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-                    state.transform_cache.insert(entity_id.clone(), defaults);
                     self.position = defaults.0;
                     self.rotation = defaults.1;
                     self.scale = defaults.2;

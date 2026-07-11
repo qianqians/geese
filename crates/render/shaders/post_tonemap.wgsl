@@ -12,6 +12,7 @@ struct PostUniformData {
 @group(0) @binding(0) var<uniform> u_post: PostUniformData;
 @group(0) @binding(1) var t_input: texture_2d<f32>;
 @group(0) @binding(2) var s_input: sampler;
+@group(0) @binding(3) var t_bloom: texture_2d<f32>;
 
 struct VertexOutput {
     @builtin(position) position: vec4f,
@@ -53,6 +54,12 @@ fn fs_tonemap(in: VertexOutput) -> @location(0) vec4f {
     let exposure = u_post.params.x;
 
     var result = color * exposure;
+
+    // Bloom synthesis (bit 1 = bloom enabled)
+    if ((enabled_mask() & 2u) != 0u) {
+        let bloom = textureSample(t_bloom, s_input, in.uv).rgb;
+        result = result + bloom * u_post.params.z;  // z = bloom_intensity
+    }
 
     // Check if tonemap is enabled (bit 0)
     if ((enabled_mask() & 1u) != 0u) {

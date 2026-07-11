@@ -8,6 +8,7 @@
 use crate::post::{EffectMask, PostUniform};
 use bytemuck::{Pod, Zeroable};
 use std::num::NonZeroU64;
+use std::sync::atomic::{AtomicBool, Ordering};
 use wgpu::util::DeviceExt;
 
 const POST_TONEMAP_WGSL: &str = include_str!("../shaders/post_tonemap.wgsl");
@@ -111,6 +112,16 @@ impl PostProcessPipeline {
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
                 ],
             });
 
@@ -185,6 +196,10 @@ impl PostProcessPipeline {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&bloom_a),
                 },
             ],
         });
@@ -261,6 +276,10 @@ impl PostProcessPipeline {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&self.sampler),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&self.bloom_a),
+                },
             ],
         });
         self.bloom_upsample_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -278,6 +297,10 @@ impl PostProcessPipeline {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&self.bloom_b),
                 },
             ],
         });
@@ -308,6 +331,25 @@ impl PostProcessPipeline {
 
         let mask = EffectMask::from_bits_truncate(uniform.frame[3].to_bits());
 
+        // Warn once for post effects that have no GPU implementation yet.
+        static WARNED_SSAO: AtomicBool = AtomicBool::new(false);
+        static WARNED_SSR: AtomicBool = AtomicBool::new(false);
+        static WARNED_DOF: AtomicBool = AtomicBool::new(false);
+        static WARNED_MOTION_BLUR: AtomicBool = AtomicBool::new(false);
+
+        if mask.contains(EffectMask::SSAO) && !WARNED_SSAO.swap(true, Ordering::Relaxed) {
+            log::warn!("SSAO effect is not yet implemented (no GPU shader); effect will be skipped.");
+        }
+        if mask.contains(EffectMask::SSR) && !WARNED_SSR.swap(true, Ordering::Relaxed) {
+            log::warn!("SSR effect is not yet implemented (no GPU shader); effect will be skipped.");
+        }
+        if mask.contains(EffectMask::DOF) && !WARNED_DOF.swap(true, Ordering::Relaxed) {
+            log::warn!("Depth of Field effect is not yet implemented (no GPU shader); effect will be skipped.");
+        }
+        if mask.contains(EffectMask::MOTION_BLUR) && !WARNED_MOTION_BLUR.swap(true, Ordering::Relaxed) {
+            log::warn!("Motion Blur effect is not yet implemented (no GPU shader); effect will be skipped.");
+        }
+
         // ---- 1. Bloom downsample: input → bloom_a ----
         if mask.contains(EffectMask::BLOOM) {
             // Create a temporary bind group for input → bloom_a
@@ -326,6 +368,10 @@ impl PostProcessPipeline {
                     wgpu::BindGroupEntry {
                         binding: 2,
                         resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(input_view),
                     },
                 ],
             });
@@ -373,16 +419,8 @@ impl PostProcessPipeline {
         }
 
         // ---- 3. Tonemap: (input + bloom) → output ----
-        // For the final pass, we use input_view as the source.
-        // In a full implementation, we'd composite input + bloom_a here.
-        // For simplicity, if bloom is enabled, we use bloom_a as input to tonemap;
-        // otherwise we use input_view directly.
-        let tonemap_source = if mask.contains(EffectMask::BLOOM) {
-            &self.bloom_a
-        } else {
-            input_view
-        };
-
+        // input_view is bound to binding 1; bloom_a is bound to binding 3.
+        // The tonemap shader composites input + bloom when BLOOM mask bit is set.
         let tonemap_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("post tonemap bg"),
             layout: &self.bind_group_layout,
@@ -393,11 +431,19 @@ impl PostProcessPipeline {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(tonemap_source),
+                    resource: wgpu::BindingResource::TextureView(input_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(if mask.contains(EffectMask::BLOOM) {
+                        &self.bloom_a
+                    } else {
+                        input_view
+                    }),
                 },
             ],
         });

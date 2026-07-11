@@ -64,14 +64,14 @@ impl DBCallbackMsgHandle {
             };
             _handle_arc = _p.get_msg_handle();
         }
-        let mut _handle = _handle_arc.as_ref().lock().unwrap();
+        let mut _handle = _handle_arc.as_ref().lock().unwrap_or_else(|e| e.into_inner());
         _handle.enque_event(_ev);
 
         trace!("DBCallbackMsgHandle on_event end!")
     }
 
     pub fn poll(_handle: Arc<StdMutex<DBCallbackMsgHandle>>, py: Python<'_>, py_handle: Py<PyAny>) -> bool {
-        let mut _self = _handle.as_ref().lock().unwrap();
+        let mut _self = _handle.as_ref().lock().unwrap_or_else(|e| e.into_inner());
         let opt_ev_data = _self.queue.deque();
         let ev = match opt_ev_data {
             None => return false,

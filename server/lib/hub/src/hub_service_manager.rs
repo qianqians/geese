@@ -63,7 +63,7 @@ fn handle_hub_event<F>(
     match ev_data.connproxy.upgrade() {
         Some(conn_proxy) => {
             let hub_name = rt.block_on(get_hub_name_async(&conn_proxy));
-            let mut handle = hub_msg_handle.as_ref().lock().unwrap();
+            let mut handle = hub_msg_handle.as_ref().lock().unwrap_or_else(|e| e.into_inner());
             f(&mut handle, py, py_handle, hub_name);
         }
         None => error!("{}", err_msg),
@@ -84,7 +84,7 @@ fn handle_gate_event<F>(
     match ev_data.connproxy.upgrade() {
         Some(conn_proxy) => {
             let gate_name = rt.block_on(get_gate_name_async(&conn_proxy));
-            let mut handle = gate_msg_handle.as_ref().lock().unwrap();
+            let mut handle = gate_msg_handle.as_ref().lock().unwrap_or_else(|e| e.into_inner());
             f(&mut handle, py, py_handle, gate_name);
         }
         None => error!("{}", err_msg),
@@ -182,7 +182,7 @@ impl ConnCallbackMsgHandle {
             Ok(d) => d
         };
         let _handle_arc = _p.get_msg_handle();
-        let mut _handle = _handle_arc.as_ref().lock().unwrap();
+        let mut _handle = _handle_arc.as_ref().lock().unwrap_or_else(|e| e.into_inner());
         _handle.enque_event(ConnEvent{
             connproxy: Arc::downgrade(&_proxy_clone),
             ev: _ev
@@ -190,7 +190,7 @@ impl ConnCallbackMsgHandle {
     }
 
     pub fn poll(_handle: Arc<StdMutex<ConnCallbackMsgHandle>>, py: Python<'_>, py_handle: Py<PyAny>) -> bool {
-        let mut _self = _handle.as_ref().lock().unwrap();
+        let mut _self = _handle.as_ref().lock().unwrap_or_else(|e| e.into_inner());
         let _handle_clone = _handle.clone();
         let rt = _self.rt_handle.as_ref().expect("rt_handle not set").clone();
         let opt_ev_data = _self.queue.deque();
@@ -209,8 +209,8 @@ impl ConnCallbackMsgHandle {
                         {
                             let mut _conn_proxy = conn_proxy.as_ref().lock().await;
 
-                            let svr_name = ev.name.clone().unwrap();
-                            let svr_type = ev.type_.clone().unwrap();
+                            let svr_name = ev.name.clone().unwrap_or_default();
+                            let svr_type = ev.type_.clone().unwrap_or_default();
                             
                             let cb_msg = RegServerCallback::new(_self.hub_name.clone());
 
@@ -240,7 +240,7 @@ impl ConnCallbackMsgHandle {
                             }
                         }
                     });
-                    let mut _hub_msg_handle = _hub_msg_handle_c.as_ref().lock().unwrap();
+                    let mut _hub_msg_handle = _hub_msg_handle_c.as_ref().lock().unwrap_or_else(|e| e.into_inner());
                     _hub_msg_handle.do_reg_hub(py, py_handle, ev_tmp);
                 }
                 else {
@@ -250,11 +250,17 @@ impl ConnCallbackMsgHandle {
             HubService::RegServerCallback(ev) => {
                 rt.block_on(async move {
                     let mut _conn_mgr = _self.conn_mgr.as_ref().lock().await;
-                    let lock_key = create_lock_key(_self.hub_name.clone(), ev.name.clone().unwrap());
+                    let lock_key = create_lock_key(_self.hub_name.clone(), ev.name.clone().unwrap_or_default());
                     let value = _conn_mgr.remove_lock(lock_key.clone());
-                    let _redis_service = _self.redis_service.clone().unwrap();
+                    let _redis_service = match _self.redis_service.clone() {
+                                                        Some(s) => s,
+                                                        None => {
+                                                            error!("Missing redis_service in msg handle");
+                                                            return;
+                                                        }
+                                                    };
                     let mut _service = _redis_service.as_ref().lock().await;
-                    if let Err(e) = _service.release_lock(lock_key, value, None).await {
+                    if let Err(e) = _service.release_lock(lock_key.clone(), value, None).await {
                         error!("Failed to release lock '{}': {}", lock_key, e);
                     }
                 });
@@ -276,13 +282,25 @@ impl ConnCallbackMsgHandle {
 
                             if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
                                 let _proxy_tmp = _hub_proxy.as_ref().lock().await;
-                                hub_name = _proxy_tmp.hub_name.clone().unwrap();
+                                hub_name = _proxy_tmp.hub_name.clone().unwrap_or_default();
 
-                                let _gate_name = ev.gate_name.clone().unwrap();
-                                let _gate_host = ev.gate_host.clone().unwrap(); 
+                                let _gate_name = match ev.gate_name.clone() {
+                                    Some(n) => n,
+                                    None => {
+                                        error!("Missing required field 'gate_name' in HubForwardClientRequestService");
+                                        return hub_name;
+                                    }
+                                };
+                                let _gate_host = ev.gate_host.clone().unwrap_or_default();
 
                                 let mut _conn_mgr = _self.conn_mgr.as_ref().lock().await;
-                                let _redis_service = _self.redis_service.clone().unwrap();
+                                let _redis_service = match _self.redis_service.clone() {
+                                                                    Some(s) => s,
+                                                                    None => {
+                                                                        error!("Missing redis_service in msg handle");
+                                                                        return hub_name;
+                                                                    }
+                                                                };
                                 let mut _service = _redis_service.as_ref().lock().await;
                                 let _lock_key = create_lock_key(_gate_name.clone(), _conn_mgr.get_hub_name());
 
@@ -331,7 +349,7 @@ impl ConnCallbackMsgHandle {
                         return hub_name;
                     });
 
-                    let mut _hub_msg_handle = _hub_msg_handle_c.as_ref().lock().unwrap();
+                    let mut _hub_msg_handle = _hub_msg_handle_c.as_ref().lock().unwrap_or_else(|e| e.into_inner());
                     _hub_msg_handle.do_forward_client_request_service(py, py_handle, hub_name, ev_tmp);
                 }
                 else {
@@ -349,14 +367,26 @@ impl ConnCallbackMsgHandle {
 
                             if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
                                 let _proxy_tmp = _hub_proxy.as_ref().lock().await;
-                                hub_name = _proxy_tmp.hub_name.clone().unwrap();
+                                hub_name = _proxy_tmp.hub_name.clone().unwrap_or_default();
                                 
-                                for info in ev.request_infos.unwrap() {
-                                    let _gate_name = info.gate_name.clone().unwrap();
-                                    let _gate_host = info.gate_host.clone().unwrap(); 
+                                for info in ev.request_infos.unwrap_or_default() {
+                                    let _gate_name = match info.gate_name.clone() {
+                                        Some(n) => n,
+                                        None => {
+                                            error!("Missing required field 'gate_name' in HubForwardClientRequestServiceExt");
+                                            continue;
+                                        }
+                                    };
+                                    let _gate_host = info.gate_host.clone().unwrap_or_default();
 
                                     let mut _conn_mgr = _self.conn_mgr.as_ref().lock().await;
-                                    let _redis_service = _self.redis_service.clone().unwrap();
+                                    let _redis_service = match _self.redis_service.clone() {
+                                                                        Some(s) => s,
+                                                                        None => {
+                                                                            error!("Missing redis_service in msg handle");
+                                                                            return hub_name;
+                                                                        }
+                                                                    };
                                     let mut _service = _redis_service.as_ref().lock().await;
                                     let _lock_key = create_lock_key(_gate_name.clone(), _conn_mgr.get_hub_name());
 
@@ -406,7 +436,7 @@ impl ConnCallbackMsgHandle {
                         return hub_name;
                     });
 
-                    let mut _hub_msg_handle = _hub_msg_handle_c.as_ref().lock().unwrap();
+                    let mut _hub_msg_handle = _hub_msg_handle_c.as_ref().lock().unwrap_or_else(|e| e.into_inner());
                     _hub_msg_handle.do_forward_client_request_service_ext(py, py_handle, hub_name, ev_tmp);
                 }
                 else {
@@ -447,7 +477,13 @@ impl ConnCallbackMsgHandle {
                         {
                             let mut _conn_proxy = conn_proxy.as_ref().lock().await;
 
-                            let _gate_name = ev.gate_name.clone().unwrap();
+                            let _gate_name = match ev.gate_name.clone() {
+                                Some(n) => n,
+                                None => {
+                                    error!("Missing required field 'gate_name' in ClientRequestLogin");
+                                    return;
+                                }
+                            };
                             let _proxy = Arc::new(Mutex::new(
                                 GateProxy::new(_conn_proxy.wr.clone())
                             ));
@@ -458,7 +494,7 @@ impl ConnCallbackMsgHandle {
 
                             let mut _proxy_tmp = _proxy.as_ref().lock().await;
                             _proxy_tmp.gate_name = Some(_gate_name.clone());
-                            _proxy_tmp.gate_host = Some(ev.clone().gate_host.unwrap());
+                            _proxy_tmp.gate_host = Some(ev.clone().gate_host.unwrap_or_default());
 
                             let cb_msg = RegServerCallback::new(_self.hub_name.clone());
                             let msg = GateHubService::RegServerCallback(cb_msg);
@@ -466,7 +502,7 @@ impl ConnCallbackMsgHandle {
                         }
                     });
 
-                    let mut _gate_msg_handle = _gate_msg_handle_c.as_ref().lock().unwrap();
+                    let mut _gate_msg_handle = _gate_msg_handle_c.as_ref().lock().unwrap_or_else(|e| e.into_inner());
                     _gate_msg_handle.do_client_request_login(py, py_handle, ev_tmp);
                 }
                 else {
@@ -481,7 +517,13 @@ impl ConnCallbackMsgHandle {
                         {
                             let mut _conn_proxy = conn_proxy.as_ref().lock().await;
 
-                            let _gate_name = ev.gate_name.clone().unwrap();
+                            let _gate_name = match ev.gate_name.clone() {
+                            Some(n) => n,
+                            None => {
+                                error!("Missing required field 'gate_name' in ClientRequestReconnect");
+                                return;
+                            }
+                        };
 
                             let _proxy = Arc::new(Mutex::new(
                                 GateProxy::new(_conn_proxy.wr.clone())
@@ -501,7 +543,7 @@ impl ConnCallbackMsgHandle {
                         }
                     });
 
-                    let mut _gate_msg_handle = _gate_msg_handle_c.as_ref().lock().unwrap();
+                    let mut _gate_msg_handle = _gate_msg_handle_c.as_ref().lock().unwrap_or_else(|e| e.into_inner());
                     _gate_msg_handle.do_client_request_reconnect(py, py_handle, _ev_tmp);
                 }
                 else {
@@ -509,7 +551,7 @@ impl ConnCallbackMsgHandle {
                 }
             },
             HubService::TransferMsgEnd(ev) => {
-                let mut _gate_msg_handle_c = _self.gate_msg_handle.as_ref().lock().unwrap();
+                let mut _gate_msg_handle_c = _self.gate_msg_handle.as_ref().lock().unwrap_or_else(|e| e.into_inner());
                 _gate_msg_handle_c.do_transfer_msg_end(py, py_handle, ev);
 
             },
@@ -517,7 +559,7 @@ impl ConnCallbackMsgHandle {
                 let conn_id = ev.conn_id.clone();
                 let entity_id = ev.entity_id.clone();
 
-                let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap();
+                let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap_or_else(|e| e.into_inner());
                 _gate_msg_handle.do_transfer_entity_control(py, py_handle, ev);
 
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
@@ -526,7 +568,7 @@ impl ConnCallbackMsgHandle {
 
                         if let Some(_gate_proxy) = &_conn_proxy.gateproxy {
                             let mut _proxy_tmp = _gate_proxy.as_ref().lock().await;
-                            _proxy_tmp.send_gate_msg(GateHubService::TransferComplete(HubCallTransferEntityComplete::new(conn_id.unwrap(), entity_id.unwrap()))).await;
+                            _proxy_tmp.send_gate_msg(GateHubService::TransferComplete(HubCallTransferEntityComplete::new(conn_id.unwrap_or_default(), entity_id.unwrap_or_default()))).await;
                         }
                         else {
                             error!("HubService::TransferEntityControl! wrong msg handle!");
@@ -554,10 +596,10 @@ impl ConnCallbackMsgHandle {
 
                             if let Some(_gate_proxy) = _conn_proxy.gateproxy.clone() {
                                 let _proxy_tmp = _gate_proxy.as_ref().lock().await;
-                                gate_name = _proxy_tmp.gate_name.clone().unwrap();
+                                gate_name = _proxy_tmp.gate_name.clone().unwrap_or_default();
                             }
                             else {
-                                gate_name = ev.gate_name.unwrap();
+                                gate_name = ev.gate_name.unwrap_or_default();
                                 let _proxy = Arc::new(Mutex::new(
                                     GateProxy::new(_conn_proxy.wr.clone())
                                 ));
@@ -579,7 +621,7 @@ impl ConnCallbackMsgHandle {
                         }
                         return gate_name;
                     });
-                    let mut _gate_msg_handle = _gate_msg_handle_c.as_ref().lock().unwrap();
+                    let mut _gate_msg_handle = _gate_msg_handle_c.as_ref().lock().unwrap_or_else(|e| e.into_inner());
                     _gate_msg_handle.do_client_request_service(py, py_handle, gate_name, _ev_tmp);
                 }
                 else {

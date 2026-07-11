@@ -1,7 +1,7 @@
 use std::sync::{Arc, Weak};
 
 use tokio::sync::Mutex;
-use tracing::{error, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use thrift::protocol::{TCompactInputProtocol, TSerializable};
 use thrift::transport::TBufferChannel;
@@ -110,7 +110,10 @@ impl GateClientMsgHandle {
                 GateClientService::CallRsp(ev) => GateClientMsgHandle::do_call_hub_rsp(proxy, ev).await,
                 GateClientService::CallErr(ev) => GateClientMsgHandle::do_call_hub_err(proxy, ev).await,
                 GateClientService::CallNtf(ev) => GateClientMsgHandle::do_call_hub_ntf(proxy, ev).await,
-                GateClientService::Heartbeats(ev) => GateClientMsgHandle::do_call_gate_heartbeats(proxy, self.offset_time.clone(), ev).await
+                GateClientService::Heartbeats(ev) => GateClientMsgHandle::do_call_gate_heartbeats(proxy, self.offset_time.clone(), ev).await,
+                                GateClientService::Handshake(_ev) => {
+                                    debug!("Client version handshake received; version negotiation not yet implemented.");
+                                }
             }
         }
     }

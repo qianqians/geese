@@ -64,6 +64,7 @@ impl TextureCooker {
         let _ = (width, height, config);
         // Stub: 返回原始 RGBA8 数据
         // TODO: 集成 basis-universal 进行 BC7/ASTC/ETC2 编码
+        log::warn!("TextureCooker::cook is a stub — returning raw RGBA8 data. Integrate basis-universal for BC7/ASTC/ETC2 compression.");
         pixels.to_vec()
     }
 
@@ -94,6 +95,7 @@ impl MeshCooker {
         let _ = config;
         // Stub: 返回原始数据
         // TODO: 集成 meshopt 进行 vertex fetch + overdraw optimization
+        log::warn!("MeshCooker::cook is a stub — returning raw vertex/index data. Integrate meshopt for vertex fetch + overdraw optimization.");
         (vertices.to_vec(), indices.to_vec())
     }
 }

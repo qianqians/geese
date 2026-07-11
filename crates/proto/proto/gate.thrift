@@ -229,5 +229,6 @@ union gate_client_service {
 	5:client_call_hub_rsp call_rsp,
 	6:client_call_hub_err call_err,
 	7:client_call_hub_ntf call_ntf,
-	8:client_call_gate_heartbeats heartbeats
+	8:client_call_gate_heartbeats heartbeats,
+	9:version_handshake handshake,
 }

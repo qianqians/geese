@@ -796,7 +796,10 @@ impl HubConnMsgPump {
                         attempts += 1;
                         std::thread::sleep(std::time::Duration::from_millis(10));
                     }
-                    Err(_) => panic!("Failed to acquire server lock after 500ms"),
+                    Err(_) => {
+                        error!("Failed to acquire server lock after 500ms");
+                        return Err(PyValueError::new_err("Failed to acquire server lock after 500ms"));
+                    },
                 }
             }
         };
@@ -830,7 +833,10 @@ impl HubDBMsgPump {
                         attempts += 1;
                         std::thread::sleep(std::time::Duration::from_millis(10));
                     }
-                    Err(_) => panic!("Failed to acquire server lock after 500ms"),
+                    Err(_) => {
+                        error!("Failed to acquire server lock after 500ms");
+                        return Err(PyValueError::new_err("Failed to acquire server lock after 500ms"));
+                    },
                 }
             }
         };

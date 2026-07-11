@@ -15,6 +15,15 @@ impl Default for RenderingPath {
     }
 }
 
+impl From<config::ConfigRenderingPath> for RenderingPath {
+    fn from(c: config::ConfigRenderingPath) -> Self {
+        match c {
+            config::ConfigRenderingPath::ForwardPlus => Self::ForwardPlus,
+            config::ConfigRenderingPath::DeferredPlus => Self::DeferredPlus,
+        }
+    }
+}
+
 /// 渲染管线统一构造参数。
 pub struct ScenePipelineDescriptor {
     pub rendering_path: RenderingPath,

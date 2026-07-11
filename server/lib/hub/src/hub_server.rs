@@ -108,7 +108,7 @@ impl HubServer {
             Ok(s) => Some(Arc::new(Mutex::new(s)))
         };
         {
-            let mut _conn_msg_handle_ref = self.conn_msg_handle.as_ref().lock().unwrap();
+            let mut _conn_msg_handle_ref = self.conn_msg_handle.as_ref().lock().unwrap_or_else(|e| e.into_inner());
             _conn_msg_handle_ref.redis_service = self.hub_redis_service.clone();
         }
 
@@ -125,7 +125,13 @@ impl HubServer {
         };
 
         {    
-            let _rs = self.hub_redis_service.as_mut().unwrap();
+            let _rs = match self.hub_redis_service.as_mut() {
+                Some(rs) => rs,
+                None => {
+                    error!("Missing hub_redis_service in listen_hub_service");
+                    return true;
+                }
+            };
             let mut _r = _rs.as_ref().lock().await;
             let _ = _r.set(create_host_cache_key(name.clone()), self.hub_host.clone(), 10, None).await;
         }
@@ -135,11 +141,17 @@ impl HubServer {
     }
 
     pub async fn entry_dbproxy_service(&mut self) -> String {
-        let redis_mq_service = self.hub_redis_service.clone();
+        let redis_mq_service = match self.hub_redis_service.clone() {
+            Some(s) => s,
+            None => {
+                error!("Missing hub_redis_service for entry_dbproxy_service");
+                return "".to_string();
+            }
+        };
         entry_dbproxy_service(
             self.db_msg_handle.clone(), 
             self.conn_mgr.clone(),
-            redis_mq_service.unwrap(), 
+            redis_mq_service, 
             self.consul_impl.clone(),
             self.close.clone()).await
     }
@@ -152,23 +164,35 @@ impl HubServer {
     }
 
     pub async fn entry_hub_service(&self, service_name: String) -> String {
-        let redis_mq_service = self.hub_redis_service.clone();
+        let redis_mq_service = match self.hub_redis_service.clone() {
+            Some(s) => s,
+            None => {
+                error!("Missing hub_redis_service for entry_hub_service");
+                return "".to_string();
+            }
+        };
         entry_hub_service(
             service_name, 
             self.conn_msg_handle.clone(),
             self.conn_mgr.clone(),
-            redis_mq_service.unwrap(),
+            redis_mq_service,
             self.consul_impl.clone(),
             self.close.clone()).await
     }
 
     pub async fn entry_direct_hub_server(&self, hub_name: String) {
-        let redis_mq_service = self.hub_redis_service.clone();
+        let redis_mq_service = match self.hub_redis_service.clone() {
+            Some(s) => s,
+            None => {
+                error!("Missing hub_redis_service for entry_direct_hub_server");
+                return;
+            }
+        };
         entry_direct_hub_server(
             hub_name,
             self.conn_msg_handle.clone(),
             self.conn_mgr.clone(),
-            redis_mq_service.unwrap(),
+            redis_mq_service,
             self.close.clone()
         ).await
     }
@@ -182,7 +206,13 @@ impl HubServer {
             }
         }
 
-        let redis_service = self.hub_redis_service.clone().unwrap();
+        let redis_service = match self.hub_redis_service.clone() {
+                    Some(rs) => rs,
+                    None => {
+                        error!("Missing hub_redis_service in connect_to_gate");
+                        return;
+                    }
+                };
         let mut _service = redis_service.as_ref().lock().await;
         let lock_key = create_lock_key( self.hub_name.clone(), _gate_name.clone());
         let value = match _service.acquire_lock(lock_key.clone(), 3, None).await {
@@ -230,7 +260,7 @@ impl HubServer {
     }
 
     pub fn set_conn_rt_handle(&self, handle: tokio::runtime::Handle) {
-        let mut conn_handle = self.conn_msg_handle.as_ref().lock().unwrap();
+        let mut conn_handle = self.conn_msg_handle.as_ref().lock().unwrap_or_else(|e| e.into_inner());
         conn_handle.set_rt_handle(handle);
     }
 
@@ -238,13 +268,19 @@ impl HubServer {
         let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
         if let Some(_gate_proxy) = _conn_mgr.get_gate_proxy(&gate_name) {
             let mut _gate = _gate_proxy.as_ref().lock().await;
-            return _gate.gate_host.clone().unwrap();
+            return _gate.gate_host.clone().unwrap_or_default();
         }
         return "".to_string();
     }
 
     pub async fn flush_hub_host_cache(&mut self) {
-        let _rs = self.hub_redis_service.as_mut().unwrap();
+        let _rs = match self.hub_redis_service.as_mut() {
+            Some(rs) => rs,
+            None => {
+                error!("Missing hub_redis_service in flush_hub_host_cache");
+                return;
+            }
+        };
         let mut _r = _rs.as_ref().lock().await;
         let _ = _r.set(create_host_cache_key(self.hub_name.clone()), self.hub_host.clone(), 10, None).await;
     }
