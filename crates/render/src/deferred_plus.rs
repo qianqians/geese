@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use wgpu::util::DeviceExt;
 
 use crate::cluster::{ClusterUniform, TOTAL_CLUSTERS};
@@ -432,8 +433,8 @@ impl DeferredPlusPipeline {
         self.sample_count
     }
 
-    /// Warns that CSM shadows are not yet implemented for the Deferred+ path.
-    /// Use Forward+ for shadow mapping.
+    /// 警告：Deferred+ 管线尚未实现 CSM 阴影。
+    /// 请使用 Forward+ 路径获得阴影支持。
     pub fn enable_shadows(&mut self, _device: &wgpu::Device, _config: &CascadeConfig) {
         if !self.shadow_warned {
             log::warn!(
@@ -444,14 +445,14 @@ impl DeferredPlusPipeline {
         }
     }
 
-    /// Stub: shadows not implemented for Deferred+. Use Forward+ for CSM.
+    /// 桩函数：Deferred+ 尚未实现阴影，请使用 Forward+ 获得 CSM 支持。
     pub fn update_shadows(
         &self,
         _queue: &wgpu::Queue,
         _cascade_vps: &[[[f32; 4]; 4]],
         _csm_uniform: &CsmUniform,
     ) {
-        // Shadows not implemented for Deferred+; use Forward+ for CSM.
+        // Deferred+ 尚未实现阴影，请使用 Forward+ 获得 CSM 支持。
     }
 }
 
@@ -577,6 +578,15 @@ impl ScenePipeline for DeferredPlusPipeline {
         color_target: &wgpu::TextureView,
         _depth_target: Option<&wgpu::TextureView>,
     ) {
+        // Deferred+ 管线尚未集成阴影，仅输出一次警告
+        static SHADOW_WARN: AtomicBool = AtomicBool::new(false);
+        if !SHADOW_WARN.swap(true, Ordering::Relaxed) {
+            log::warn!(
+                "Deferred+ pipeline does not support shadows yet. \
+                 Shadows are only available with Forward+ pipeline."
+            );
+        }
+
         // ---- compute: cluster culling ----
         {
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {

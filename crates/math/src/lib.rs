@@ -114,4 +114,73 @@ mod tests {
         // 零体积 AABB 包含其自身的点
         assert!(aabb.contains_point(Point3::new(3.0, 4.0, 5.0)));
     }
+
+    #[test]
+    fn test_contains_point_boundary_edges() {
+        let aabb = make_aabb([-5.0, -5.0, -5.0], [5.0, 5.0, 5.0]);
+        // All six face centers should be contained
+        assert!(aabb.contains_point(Point3::new(-5.0, 0.0, 0.0)));
+        assert!(aabb.contains_point(Point3::new(5.0, 0.0, 0.0)));
+        assert!(aabb.contains_point(Point3::new(0.0, -5.0, 0.0)));
+        assert!(aabb.contains_point(Point3::new(0.0, 5.0, 0.0)));
+        assert!(aabb.contains_point(Point3::new(0.0, 0.0, -5.0)));
+        assert!(aabb.contains_point(Point3::new(0.0, 0.0, 5.0)));
+        // Just outside each face
+        assert!(!aabb.contains_point(Point3::new(-5.001, 0.0, 0.0)));
+        assert!(!aabb.contains_point(Point3::new(5.001, 0.0, 0.0)));
+        assert!(!aabb.contains_point(Point3::new(0.0, -5.001, 0.0)));
+        assert!(!aabb.contains_point(Point3::new(0.0, 5.001, 0.0)));
+        assert!(!aabb.contains_point(Point3::new(0.0, 0.0, -5.001)));
+        assert!(!aabb.contains_point(Point3::new(0.0, 0.0, 5.001)));
+    }
+
+    #[test]
+    fn test_intersects_aabb_contained() {
+        let outer = make_aabb([0.0, 0.0, 0.0], [10.0, 10.0, 10.0]);
+        // Completely contained AABB should intersect
+        let inner = make_aabb([2.0, 2.0, 2.0], [8.0, 8.0, 8.0]);
+        assert!(outer.intersects_aabb(&inner));
+        assert!(inner.intersects_aabb(&outer));
+    }
+
+    #[test]
+    fn test_intersects_aabb_symmetric() {
+        let a = make_aabb([0.0, 0.0, 0.0], [5.0, 5.0, 5.0]);
+        let b = make_aabb([3.0, 3.0, 3.0], [8.0, 8.0, 8.0]);
+        // Intersection should be symmetric
+        assert_eq!(a.intersects_aabb(&b), b.intersects_aabb(&a));
+        assert!(a.intersects_aabb(&b));
+    }
+
+    #[test]
+    fn test_negative_coordinates() {
+        let aabb = make_aabb([-10.0, -20.0, -30.0], [-1.0, -2.0, -3.0]);
+        let c = aabb.center();
+        assert!((c.x - (-5.5)).abs() < 1e-6);
+        assert!((c.y - (-11.0)).abs() < 1e-6);
+        assert!((c.z - (-16.5)).abs() < 1e-6);
+        let s = aabb.size();
+        assert!((s.x - 9.0).abs() < 1e-6);
+        assert!((s.y - 18.0).abs() < 1e-6);
+        assert!((s.z - 27.0).abs() < 1e-6);
+        assert!(aabb.contains_point(Point3::new(-5.0, -10.0, -15.0)));
+        assert!(!aabb.contains_point(Point3::new(0.0, 0.0, 0.0)));
+    }
+
+    #[test]
+    fn test_center_size_consistency() {
+        // Verify that center +/- half_size reconstructs min/max
+        let aabb = make_aabb([1.0, 2.0, 3.0], [7.0, 10.0, 15.0]);
+        let c = aabb.center();
+        let half = aabb.size();
+        let half_x = half.x * 0.5;
+        let half_y = half.y * 0.5;
+        let half_z = half.z * 0.5;
+        assert!((c.x - half_x - 1.0).abs() < 1e-5);
+        assert!((c.y - half_y - 2.0).abs() < 1e-5);
+        assert!((c.z - half_z - 3.0).abs() < 1e-5);
+        assert!((c.x + half_x - 7.0).abs() < 1e-5);
+        assert!((c.y + half_y - 10.0).abs() < 1e-5);
+        assert!((c.z + half_z - 15.0).abs() < 1e-5);
+    }
 }

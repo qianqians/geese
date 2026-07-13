@@ -57,7 +57,6 @@ fn fs_bloom_downsample(in: VertexOutput) -> @location(0) vec4f {
 // Upsample pass: bilinear upsample + additive blend
 @fragment
 fn fs_bloom_upsample(in: VertexOutput) -> @location(0) vec4f {
-    let intensity = u_post.params.z;
     let texel_size = 1.0 / vec2f(textureDimensions(t_input, 0));
 
     // 9-tap tent filter
@@ -78,5 +77,6 @@ fn fs_bloom_upsample(in: VertexOutput) -> @location(0) vec4f {
         result += textureSample(t_input, s_input, in.uv + offset).rgb * weights[i];
     }
 
-    return vec4f(result * intensity, 1.0);
+    // intensity 乘法延迟到 tonemap 阶段统一处理，避免双重应用
+    return vec4f(result, 1.0);
 }

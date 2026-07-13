@@ -74,4 +74,59 @@ mod tests {
         assert!(t2 >= t1);
         assert!(t3 >= t2);
     }
+
+    #[test]
+    fn negative_offset_decreases_time() {
+        let t = OffsetTime::new();
+        let base = t.utc_unix_time_with_offset();
+        t.set_time_offset(-10_000_000); // -10 seconds
+        let adjusted = t.utc_unix_time_with_offset();
+        // adjusted should be approximately base - 10_000_000 (within some tolerance for elapsed time)
+        let diff = base - adjusted;
+        assert!(diff >= 9_999_000 && diff <= 10_100_000,
+            "expected ~10_000_000ms difference, got {}", diff);
+    }
+
+    #[test]
+    fn set_offset_overwrites_previous() {
+        let t = OffsetTime::new();
+        t.set_time_offset(100);
+        assert_eq!(t.off_set.load(Ordering::SeqCst), 100);
+        t.set_time_offset(200);
+        assert_eq!(t.off_set.load(Ordering::SeqCst), 200);
+        t.set_time_offset(0);
+        assert_eq!(t.off_set.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn utc_unix_time_is_positive() {
+        let t = OffsetTime::new();
+        let ts = t.utc_unix_time();
+        // Current UTC timestamp should be well above 0 (post-1970)
+        assert!(ts > 1_000_000_000_000, "timestamp should be in milliseconds since epoch, got {}", ts);
+    }
+
+    #[test]
+    fn zero_offset_returns_same_as_raw() {
+        let t = OffsetTime::new();
+        // With zero offset, utc_unix_time_with_offset should be close to utc_unix_time
+        let raw = t.utc_unix_time();
+        let with_offset = t.utc_unix_time_with_offset();
+        // They should be within a few milliseconds of each other
+        let diff = (with_offset - raw).abs();
+        assert!(diff < 100, "expected <100ms difference, got {}ms", diff);
+    }
+
+    #[test]
+    fn large_offset_values() {
+        let t = OffsetTime::new();
+        // Test with very large offset (1 year in milliseconds)
+        let one_year_ms: i64 = 365 * 24 * 60 * 60 * 1000;
+        t.set_time_offset(one_year_ms);
+        let result = t.utc_unix_time_with_offset();
+        let raw = t.utc_unix_time();
+        let diff = result - raw;
+        assert!((diff - one_year_ms).abs() < 100,
+            "expected ~{} difference, got {}", one_year_ms, diff);
+    }
 }

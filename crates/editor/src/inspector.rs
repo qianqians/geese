@@ -93,15 +93,27 @@ impl InspectorPanel {
     }
 
     /// 更新 Transform 值以匹配选中实体（从场景数据同步）。
+    ///
+    /// 当 transform_cache 命中时，直接同步到 Inspector 字段；
+    /// 当 cache 未命中时，写入默认 Transform 并回填 cache，确保后续帧不再 miss。
     pub fn sync_transform(
         &mut self,
         entity_id: &str,
-        transform_cache: &HashMap<String, ([f32; 3], [f32; 3], [f32; 3])>,
+        transform_cache: &mut HashMap<String, ([f32; 3], [f32; 3], [f32; 3])>,
     ) {
         if let Some(&(pos, rot, scl)) = transform_cache.get(entity_id) {
             self.position = pos;
             self.rotation = rot;
             self.scale = scl;
+        } else {
+            log::warn!("Inspector: transform cache miss for entity '{}', inserting default", entity_id);
+            let default_pos = [0.0, 0.0, 0.0];
+            let default_rot = [0.0, 0.0, 0.0];
+            let default_scl = [1.0, 1.0, 1.0];
+            transform_cache.insert(entity_id.to_string(), (default_pos, default_rot, default_scl));
+            self.position = default_pos;
+            self.rotation = default_rot;
+            self.scale = default_scl;
         }
     }
 }
@@ -164,18 +176,8 @@ impl EditorPanel for InspectorPanel {
                     .get(entity_id)
                     .cloned()
                     .unwrap_or_default();
-                // 同步 Transform
-                if let Some(&(pos, rot, scl)) = state.transform_cache.get(entity_id) {
-                    self.position = pos;
-                    self.rotation = rot;
-                    self.scale = scl;
-                } else {
-                    log::warn!("Inspector: transform cache miss for entity '{}'", entity_id);
-                    let defaults = ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-                    self.position = defaults.0;
-                    self.rotation = defaults.1;
-                    self.scale = defaults.2;
-                }
+                // 同步 Transform（通过 sync_transform 统一处理命中与 miss）
+                self.sync_transform(entity_id, &mut state.transform_cache);
                 // 同步 Physics Component
                 self.physics_enabled = state.physics_component_cache.contains_key(entity_id);
                 if self.physics_enabled {

@@ -157,6 +157,7 @@ impl AudioBackend for RodioBackend {
             base_volume_milli: AtomicU32::new(
                 (config.volume.clamp(0.0, 8.0) * 1000.0) as u32,
             ),
+            spatial: Mutex::new(SpatialParams::default()),
         };
         Ok(Arc::new(sound))
     }
@@ -173,6 +174,8 @@ pub struct RodioSound {
     attenuation: Arc<Mutex<AttenuationParams>>,
     /// 原始音量（千分位整数），衰减基于此值
     base_volume_milli: AtomicU32,
+    /// 双耳空间化参数缓存（最近一次计算的左右耳增益）
+    spatial: Mutex<SpatialParams>,
 }
 
 impl RodioSound {
@@ -181,10 +184,13 @@ impl RodioSound {
         self.base_volume_milli.load(Ordering::Relaxed) as f32 / 1000.0
     }
 
-    /// 计算当前有效音量 = base_volume * distance_attenuation
+    /// 计算当前有效音量 = base_volume * distance_attenuation * spatial_gain
     fn effective_volume(&self) -> f32 {
         let atten = self.current_attenuation();
-        self.base_volume() * atten
+        let spatial_gain = self.spatial.lock().ok()
+            .map(|sp| (sp.left_gain + sp.right_gain) * 0.5)
+            .unwrap_or(1.0);
+        self.base_volume() * atten * spatial_gain
     }
 }
 
@@ -210,10 +216,19 @@ impl Sound for RodioSound {
         self.sink.set_speed(pitch.max(0.01));
     }
     fn set_position(&self, pos: SoundPosition) {
-        // 存储 position，重新计算距离衰减，更新 sink volume
+        // 存储 position，重新计算距离衰减 + 双耳空间化，更新 sink volume
         if let Ok(mut guard) = self.position.lock() {
             *guard = pos;
         }
+        // 计算双耳空间化参数
+        let listener_guard = self.listener.lock().ok();
+        let listener_pos = listener_guard.as_ref().map(|g| g.position).unwrap_or([0.0; 3]);
+        let listener_fwd = listener_guard.as_ref().map(|g| g.forward).unwrap_or([0.0, 0.0, -1.0]);
+        let sp = compute_spatial_params(listener_pos, listener_fwd, pos.position);
+        if let Ok(mut sg) = self.spatial.lock() {
+            *sg = sp;
+        }
+        // 有效音量 = base * 距离衰减 * 双耳平均增益
         let effective = self.effective_volume();
         self.sink.set_volume(effective.clamp(0.0, 8.0));
     }

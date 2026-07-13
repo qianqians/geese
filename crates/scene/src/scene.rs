@@ -83,6 +83,9 @@ pub struct Scene {
     pub triggered_events: Vec<(String, String)>,
     /// 是否有注册了事件处理器的脚本组件（快速路径标志）
     has_event_components: bool,
+    /// 实体事件组件定义（按 entity_id 索引），独立于 ScriptComponent。
+    /// 由 `add_event_component()` 注册，`evaluate_event_components()` 消费。
+    event_components: HashMap<String, event::EventComponentDef>,
     /// Python 脚本组件（按 entity_id 索引），不侵入 SceneObject。
     pub scripts: HashMap<String, crate::ScriptComponent>,
     /// 可选 ECS 注册表（通过 ecs_bridge feature 启用）。
@@ -149,6 +152,7 @@ impl Scene {
             marker_events: Vec::new(),
             triggered_events: Vec::new(),
             has_event_components: false,
+            event_components: HashMap::new(),
             scripts: HashMap::new(),
             #[cfg(feature = "ecs_bridge")]
             ecs: None,
@@ -899,25 +903,50 @@ impl Scene {
         std::mem::take(&mut self.triggered_events)
     }
 
+    /// 为实体注册事件组件定义。
+    ///
+    /// 每个实体最多一个 EventComponentDef，包含多个触发器/响应对。
+    /// 设置后自动更新 `has_event_components` 快速路径标志。
+    pub fn add_event_component(&mut self, entity_id: impl Into<String>, def: event::EventComponentDef) {
+        let id = entity_id.into();
+        if !def.entries.is_empty() {
+            self.has_event_components = true;
+        }
+        self.event_components.insert(id, def);
+    }
+
+    /// 移除实体的事件组件定义。
+    pub fn remove_event_component(&mut self, entity_id: &str) {
+        self.event_components.remove(entity_id);
+        // 延迟到 evaluate_event_components() 下次调用时更新标志
+    }
+
     /// 评估所有实体的事件组件，将触发的 response 推入 triggered_events。
     ///
-    /// 遍历 scripts HashMap 中注册了事件处理器的脚本组件，
-    /// 调用其 evaluate_triggers 方法检查触发条件，将触发的
-    /// (entity_id, response_name) 推入 triggered_events 队列。
+    /// 遍历 `event_components` 中所有注册了事件条目的实体，
+    /// 当前实现：将每个条目的 response 直接推入 `triggered_events`。
+    ///
+    /// 限制：触发器函数（`trigger: String`）为 Python 脚本函数名，
+    /// Rust 侧无法求值 `fn() -> bool`，因此当前版本不过滤触发条件，
+    /// 所有已注册条目均视为触发。后续接入 Python 脚本运行时后，
+    /// 可在此处调用触发器函数进行过滤。
     pub fn evaluate_event_components(&mut self) {
         if !self.has_event_components {
             return; // 快速路径：无事件组件，跳过
         }
 
         let mut has_any = false;
-        for (entity_id, script) in &self.scripts {
-            if script.has_event_handler() {
-                let triggered = script.evaluate_triggers();
-                for response_name in triggered {
-                    self.triggered_events.push((entity_id.clone(), response_name));
-                }
-                has_any = true;
+        for (entity_id, comp) in &self.event_components {
+            if comp.entries.is_empty() {
+                continue;
             }
+            for entry in &comp.entries {
+                // TODO: 接入 Python 脚本运行时后，调用 trigger 函数求值：
+                //   let fired = python_runtime.call_trigger(entity_id, &entry.trigger);
+                //   if !fired { continue; }
+                self.triggered_events.push((entity_id.clone(), entry.response.clone()));
+            }
+            has_any = true;
         }
         self.has_event_components = has_any;
     }

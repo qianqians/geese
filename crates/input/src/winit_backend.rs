@@ -96,6 +96,27 @@ impl WinitBackend {
                 self.pending_events.push(InputEvent::FocusLost);
             }
 
+            WindowEvent::Touch(touch) => {
+                use winit::event::TouchPhase;
+                let id = touch.id;
+                let x = touch.location.x as f32;
+                let y = touch.location.y as f32;
+                match touch.phase {
+                    TouchPhase::Started => {
+                        self.pending_events.push(InputEvent::TouchStart { id, x, y });
+                    }
+                    TouchPhase::Moved => {
+                        self.pending_events.push(InputEvent::TouchMove { id, x, y });
+                    }
+                    TouchPhase::Ended => {
+                        self.pending_events.push(InputEvent::TouchEnd { id });
+                    }
+                    TouchPhase::Cancelled => {
+                        self.pending_events.push(InputEvent::TouchCancel { id });
+                    }
+                }
+            }
+
             _ => {}
         }
     }

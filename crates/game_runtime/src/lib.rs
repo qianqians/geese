@@ -18,8 +18,9 @@ use std::time::Instant;
 use cgmath::Point3;
 use config::{ConfigRenderingPath, EngineConfig};
 use render::{
-    Light, Material, MaterialLibrary, RenderQueue, SceneRenderer,
-    WgpuSceneRenderer, WgpuSceneRendererDescriptor,
+    build_post_uniform, Light, Material, MaterialLibrary, PostChain, PostEffect,
+    PostProcessPipeline, RenderQueue, SceneRenderer, WgpuSceneRenderer,
+    WgpuSceneRendererDescriptor,
 };
 use scene::Scene;
 use physics::{PhysicsWorld, SceneId};
@@ -95,6 +96,17 @@ pub struct GameState {
     pub depth_texture: wgpu::Texture,
     pub depth_view: wgpu::TextureView,
     pub last_frame: Instant,
+
+    // ── Post-processing ──────────────────────────────────────────────────
+    /// When `true`, the scene is first rendered to an HDR intermediate texture,
+    /// then `PostProcessPipeline::process()` composites Bloom + Tonemap + TAA
+    /// onto the surface. When `false`, rendering goes directly to the surface.
+    pub post_processing_enabled: bool,
+    pub post_pipeline: PostProcessPipeline,
+    pub post_chain: PostChain,
+    hdr_texture: wgpu::Texture,
+    hdr_view: wgpu::TextureView,
+    frame_index: u64,
 }
 
 impl GameState {
@@ -224,6 +236,25 @@ impl GameState {
         // ── 摄像机 ──
         let camera = GameCamera::new(size.width as f32 / size.height.max(1) as f32);
 
+        // ── Post-processing ──────────────────────────────────────────────
+        // Build a sensible default post-chain: ACES Tonemap + Bloom.
+        // Users can modify `state.post_chain` at runtime to add/remove effects.
+        let mut post_chain = PostChain::new();
+        post_chain
+            .push(PostEffect::aces(1.0))
+            .push(PostEffect::bloom(1.0, 0.15));
+
+        let post_pipeline = PostProcessPipeline::new(
+            &device,
+            &queue,
+            surface_format,
+            size.width,
+            size.height,
+        );
+
+        let hdr_texture = create_hdr_texture(&device, surface_format, size.width, size.height);
+        let hdr_view = hdr_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
         Ok(Self {
             window,
             surface,
@@ -240,6 +271,13 @@ impl GameState {
             depth_texture,
             depth_view,
             last_frame: Instant::now(),
+
+            post_processing_enabled: true,
+            post_pipeline,
+            post_chain,
+            hdr_texture,
+            hdr_view,
+            frame_index: 0,
         })
     }
 
@@ -268,6 +306,18 @@ impl GameState {
         self.depth_view = self
             .depth_texture
             .create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Rebuild HDR intermediate texture for post-processing.
+        self.hdr_texture = create_hdr_texture(
+            &self.device,
+            self.config.format,
+            width,
+            height,
+        );
+        self.hdr_view = self
+            .hdr_texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        self.post_pipeline.resize(&self.device, width, height);
 
         self.renderer
             .resize(&self.device, &self.queue, width, height, 0.1, 500.0);
@@ -299,7 +349,7 @@ impl GameState {
             .prepare(&self.device, &self.queue, &self.materials, &queue);
 
         let output = self.surface.get_current_texture()?;
-        let view = output
+        let surface_view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -309,14 +359,67 @@ impl GameState {
                 label: Some("game_encoder"),
             });
 
-        self.renderer
-            .render(&self.device, &mut encoder, &view, Some(&self.depth_view));
+        if self.post_processing_enabled {
+            // ── Render scene to HDR intermediate ──────────────────────────
+            self.renderer.render(
+                &self.device,
+                &mut encoder,
+                &self.hdr_view,
+                Some(&self.depth_view),
+            );
+
+            // ── Post-process: HDR → surface ───────────────────────────────
+            let post_uniform = build_post_uniform(&self.post_chain, self.frame_index);
+            self.post_pipeline.process(
+                &self.device,
+                &self.queue,
+                &mut encoder,
+                &self.hdr_view,
+                &surface_view,
+                &post_uniform,
+            );
+        } else {
+            // ── Direct render to surface (no post-processing) ────────────
+            self.renderer
+                .render(&self.device, &mut encoder, &surface_view, Some(&self.depth_view));
+        }
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
+        self.frame_index = self.frame_index.wrapping_add(1);
 
         Ok(())
     }
+}
+
+// ---------------------------------------------------------------------------
+// 辅助函数：创建后处理 HDR 中间纹理
+// ---------------------------------------------------------------------------
+
+/// 创建用于后处理的 HDR 中间渲染目标纹理。
+///
+/// 场景先渲染到此纹理，再由 `PostProcessPipeline::process()` 进行
+/// Bloom + Tonemap 合成后输出到 surface。
+fn create_hdr_texture(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+    width: u32,
+    height: u32,
+) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("post_hdr_intermediate"),
+        size: wgpu::Extent3d {
+            width: width.max(1),
+            height: height.max(1),
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    })
 }
 
 // ---------------------------------------------------------------------------

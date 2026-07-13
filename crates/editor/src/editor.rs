@@ -169,13 +169,37 @@ impl Editor {
             .unwrap_or(0.016);
         self.last_update = Some(now);
 
-        // 物理步进（本地物理）
-        if self.physics_enabled && self.state.mode.is_editing() {
+        // 物理步进（本地物理：编辑模式和 Play 模式均运行）
+        if self.physics_enabled {
             self.physics.step(dt);
             if self.physics_debug.enabled {
                 let bodies = self.physics.get_body_snapshots();
                 self.state.physics_debug_bodies = bodies.clone();
                 self.physics_debug.update(bodies);
+            }
+
+            // Play 模式下同步角色控制器刚体变换回场景节点
+            if self.state.mode.is_playing() && !self.state.cc_body_handles.is_empty() {
+                let handles: Vec<physics_manager::BodyHandle> =
+                    self.state.cc_body_handles.values().copied().collect();
+                let transforms = self.physics.get_body_transforms(&handles);
+                for (handle, (pos, rot)) in handles.iter().zip(transforms.iter()) {
+                    if let Some(node_id) = self
+                        .state
+                        .cc_body_handles
+                        .iter()
+                        .find_map(|(k, v)| (v == handle).then(|| k.clone()))
+                    {
+                        self.state.transform_cache.insert(
+                            node_id,
+                            (
+                                [pos.x, pos.y, pos.z],
+                                [rot.x, rot.y, rot.z],
+                                [1.0, 1.0, 1.0],
+                            ),
+                        );
+                    }
+                }
             }
         }
         // 1. 快捷键始终生效
@@ -841,12 +865,39 @@ impl Editor {
                     self.handle_instantiate_prefab(&prefab_uuid, position, parent_node_id);
                 }
                 EditorAction::ToggleCharacterController { node_id, enabled, component } => {
-                    if let Some(cfg) = component {
-                        self.state.character_controller_cache.insert(node_id.clone(), cfg);
+                    if enabled {
+                        if let Some(cfg) = component {
+                            // 在物理场景中创建胶囊体刚体
+                            let position = self.state.transform_cache
+                                .get(&node_id)
+                                .map(|&(p, _, _)| p)
+                                .unwrap_or([0.0, 1.0, 0.0]);
+                            match self.physics.create_capsule_body(
+                                position,
+                                cfg.half_height,
+                                cfg.radius,
+                            ) {
+                                Ok(handle) => {
+                                    self.state.cc_body_handles.insert(node_id.clone(), handle);
+                                    log::info!(
+                                        "[Editor] Created capsule body for node={} (r={}, hh={})",
+                                        node_id, cfg.radius, cfg.half_height
+                                    );
+                                }
+                                Err(e) => {
+                                    log::error!("[Editor] Failed to create capsule body: {e}");
+                                }
+                            }
+                            self.state.character_controller_cache.insert(node_id.clone(), cfg);
+                        }
                     } else {
+                        // 从物理场景移除刚体
+                        if let Some(handle) = self.state.cc_body_handles.remove(&node_id) {
+                            self.physics.remove_body(handle);
+                        }
                         self.state.character_controller_cache.remove(&node_id);
+                        log::info!("[Editor] ToggleCharacterController: node={}, enabled=false", node_id);
                     }
-                    log::info!("[Editor] ToggleCharacterController: node={}, enabled={}", node_id, enabled);
                 }
                 EditorAction::ModifyAnimationMarker { clip_index, time, name, remove } => {
                     self.handle_modify_animation_marker(clip_index, time, name, remove);

@@ -9,6 +9,7 @@
 use crate::editor_mode::EditorMode;
 use crate::panel_layer::{PanelLayer, PanelLayerManager};
 use physics_manager::BodySnapshot;
+use physics_manager::BodyHandle;
 use std::collections::{HashMap, HashSet};
 
 // ---------------------------------------------------------------------------
@@ -138,6 +139,8 @@ pub struct EditorState {
     pub navmesh_component_cache: HashMap<String, scene::manifest::NavMeshComponentDef>,
     /// 角色控制器配置缓存 (entity_id → CharacterControllerConfig)
     pub character_controller_cache: HashMap<String, CharacterControllerConfig>,
+    /// 角色控制器物理刚体句柄缓存 (entity_id → BodyHandle)
+    pub cc_body_handles: HashMap<String, BodyHandle>,
     /// 实体名称缓存 (entity_id → name)，用于 Inspector 即时编辑
     pub name_cache: HashMap<String, String>,
     /// 拥有 Mesh 组件的实体集合，用于 Inspector 判断是否显示 Mesh Renderer
@@ -180,6 +183,7 @@ impl EditorState {
             physics_component_cache: HashMap::new(),
             navmesh_component_cache: HashMap::new(),
             character_controller_cache: HashMap::new(),
+            cc_body_handles: HashMap::new(),
             name_cache: HashMap::new(),
             mesh_entities: HashSet::new(),
             pending_transform: None,

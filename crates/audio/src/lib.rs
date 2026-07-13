@@ -22,6 +22,104 @@ pub use rodio_backend::{RodioBackend, RodioSound, AttenuationParams, DEFAULT_ROL
 pub use rodio_backend::compute_attenuation;
 
 // ---------------------------------------------------------------------------
+// 3D 空间化参数
+// ---------------------------------------------------------------------------
+
+/// 头部半径（米），用于计算双耳时间差（ITD）。
+const HEAD_RADIUS_M: f32 = 0.0875;
+
+/// 声速（m/s）。
+const SPEED_OF_SOUND: f32 = 343.0;
+
+/// 双耳空间化参数：左右耳的音量差和延迟差。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SpatialParams {
+    /// 左耳音量增益（0.0 ~ 1.0）。
+    pub left_gain: f32,
+    /// 右耳音量增益（0.0 ~ 1.0）。
+    pub right_gain: f32,
+    /// 左耳延迟（秒），ITD 简化模型。
+    pub left_delay_s: f32,
+    /// 右耳延迟（秒），ITD 简化模型。
+    pub right_delay_s: f32,
+}
+
+/// 计算双耳空间化参数。
+///
+/// - `listener_pos`：听者位置（世界坐标）。
+/// - `listener_forward`：听者前方向（单位向量）。
+/// - `source_pos`：声源位置（世界坐标）。
+///
+/// 返回 [`SpatialParams`]，包含：
+/// - 左右耳音量差（ILD）：基于声源相对听者的水平角度。
+/// - 左右耳延迟差（ITD）：简化 Woodworth 模型。
+pub fn compute_spatial_params(
+    listener_pos: [f32; 3],
+    listener_forward: [f32; 3],
+    source_pos: [f32; 3],
+) -> SpatialParams {
+    // 声源相对听者的方向向量
+    let dx = source_pos[0] - listener_pos[0];
+    let dy = source_pos[1] - listener_pos[1];
+    let dz = source_pos[2] - listener_pos[2];
+    let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+
+    // 零距离 / 声源在听者位置：等量双耳
+    if dist < 1e-6 {
+        return SpatialParams {
+            left_gain: 1.0,
+            right_gain: 1.0,
+            left_delay_s: 0.0,
+            right_delay_s: 0.0,
+        };
+    }
+
+    // 归一化方向
+    let inv_dist = 1.0 / dist;
+    let dir_x = dx * inv_dist;
+    let _dir_y = dy * inv_dist;
+    let dir_z = dz * inv_dist;
+
+    // 听者右方向 = forward × up（假设 up = (0,1,0)，右 = (fz, 0, -fx)）
+    // forward = (fx, fy, fz), up = (0, 1, 0)
+    // right = forward × up = (fy*0 - fz*1, fz*0 - fx*0, fx*1 - fy*0) = (-fz, 0, fx)
+    let fwd_x = listener_forward[0];
+    let fwd_z = listener_forward[2];
+    let right_x = -fwd_z;
+    let right_z = fwd_x;
+    let right_len = (right_x * right_x + right_z * right_z).sqrt();
+
+    // 声源方向在水平面上的投影与右方向的点积 = sin(azimuth)
+    let sin_azimuth = if right_len > 1e-6 {
+        (dir_x * right_x + dir_z * right_z) / right_len
+    } else {
+        0.0
+    };
+    let sin_azimuth = sin_azimuth.clamp(-1.0, 1.0);
+
+    // ILD：简化模型，右耳音量 = 0.5 + 0.5 * sin_azimuth，左耳反之
+    let right_gain = (0.5 + 0.5 * sin_azimuth).clamp(0.0, 1.0);
+    let left_gain = (0.5 - 0.5 * sin_azimuth).clamp(0.0, 1.0);
+
+    // ITD：Woodworth 简化模型
+    // delay = head_radius / speed_of_sound * (azimuth + sin(azimuth))
+    // 用 sin_azimuth 近似 azimuth
+    let azimuth = sin_azimuth.asin();
+    let itd = HEAD_RADIUS_M / SPEED_OF_SOUND * (azimuth + sin_azimuth);
+
+    // 正值 = 声源在右侧，右耳延迟为正（声波先到左耳）
+    let left_delay_s = (itd.max(0.0)) as f32;
+    let right_delay_s = ((-itd).max(0.0)) as f32;
+
+    SpatialParams {
+        left_gain,
+        right_gain,
+        left_delay_s,
+        right_delay_s,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 通用数据
 // ---------------------------------------------------------------------------
 
@@ -474,5 +572,48 @@ mod tests {
         let sys = AudioSystem::with_null();
         assert!((sys.rolloff_factor() - DEFAULT_ROLLOFF_FACTOR).abs() < 1e-6);
         assert!((sys.max_distance() - DEFAULT_MAX_DISTANCE).abs() < 1e-6);
+    }
+
+    #[test]
+    fn spatial_params_source_at_listener_is_centered() {
+        let sp = compute_spatial_params([0.0; 3], [0.0, 0.0, -1.0], [0.0; 3]);
+        assert!((sp.left_gain - 1.0).abs() < 1e-6);
+        assert!((sp.right_gain - 1.0).abs() < 1e-6);
+        assert!((sp.left_delay_s).abs() < 1e-6);
+        assert!((sp.right_delay_s).abs() < 1e-6);
+    }
+
+    #[test]
+    fn spatial_params_source_on_right_favors_right_ear() {
+        // 听者朝 -z，声源在 +x 方向
+        let sp = compute_spatial_params(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0],
+            [5.0, 0.0, 0.0],
+        );
+        assert!(sp.right_gain > sp.left_gain, "right={:.3} left={:.3}", sp.right_gain, sp.left_gain);
+        assert!(sp.right_delay_s >= 0.0);
+    }
+
+    #[test]
+    fn spatial_params_source_on_left_favors_left_ear() {
+        let sp = compute_spatial_params(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0],
+            [-5.0, 0.0, 0.0],
+        );
+        assert!(sp.left_gain > sp.right_gain, "left={:.3} right={:.3}", sp.left_gain, sp.right_gain);
+    }
+
+    #[test]
+    fn spatial_params_source_straight_ahead_is_balanced() {
+        let sp = compute_spatial_params(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0],
+            [0.0, 0.0, -5.0],
+        );
+        assert!((sp.left_gain - sp.right_gain).abs() < 0.05);
+        assert!(sp.left_delay_s.abs() < 1e-4);
+        assert!(sp.right_delay_s.abs() < 1e-4);
     }
 }

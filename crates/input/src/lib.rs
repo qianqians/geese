@@ -86,6 +86,17 @@ pub enum GamepadAxis {
 // 事件
 // ---------------------------------------------------------------------------
 
+/// 触摸点信息。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TouchPoint {
+    /// 触摸点唯一 ID。
+    pub id: u64,
+    /// 触摸位置 x。
+    pub x: f32,
+    /// 触摸位置 y。
+    pub y: f32,
+}
+
 /// 输入事件。所有 backend 把原生事件翻译成这种枚举送进 [`InputState`]。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum InputEvent {
@@ -104,6 +115,14 @@ pub enum InputEvent {
     GamepadAxisChanged { id: u32, axis: GamepadAxis, value: f32 },
     /// 窗口失焦时 backend 应发出，以便上层清空按键状态防止「卡键」。
     FocusLost,
+    /// 触摸开始。
+    TouchStart { id: u64, x: f32, y: f32 },
+    /// 触摸移动。
+    TouchMove { id: u64, x: f32, y: f32 },
+    /// 触摸结束。
+    TouchEnd { id: u64 },
+    /// 触摸取消（系统手势抢占等）。
+    TouchCancel { id: u64 },
 }
 
 // ---------------------------------------------------------------------------
@@ -130,6 +149,9 @@ pub struct InputState {
 
     gamepad_axes: HashMap<(u32, GamepadAxis), f32>,
     gamepad_buttons_down: HashSet<(u32, GamepadButton)>,
+
+    /// 当前活跃触摸点。
+    active_touches: Vec<TouchPoint>,
 }
 
 impl InputState {
@@ -196,6 +218,19 @@ impl InputState {
                 self.keys_down.clear();
                 self.mouse_buttons_down.clear();
                 self.gamepad_buttons_down.clear();
+                self.active_touches.clear();
+            }
+            InputEvent::TouchStart { id, x, y } => {
+                self.active_touches.push(TouchPoint { id, x, y });
+            }
+            InputEvent::TouchMove { id, x, y } => {
+                if let Some(tp) = self.active_touches.iter_mut().find(|t| t.id == id) {
+                    tp.x = x;
+                    tp.y = y;
+                }
+            }
+            InputEvent::TouchEnd { id } | InputEvent::TouchCancel { id } => {
+                self.active_touches.retain(|t| t.id != id);
             }
         }
     }
@@ -242,6 +277,21 @@ impl InputState {
 
     pub fn is_gamepad_button_down(&self, id: u32, button: GamepadButton) -> bool {
         self.gamepad_buttons_down.contains(&(id, button))
+    }
+
+    /// 返回当前活跃触摸点列表。
+    pub fn active_touches(&self) -> &[TouchPoint] {
+        &self.active_touches
+    }
+
+    /// 根据 ID 获取触摸点。
+    pub fn touch(&self, id: u64) -> Option<&TouchPoint> {
+        self.active_touches.iter().find(|t| t.id == id)
+    }
+
+    /// 当前活跃触摸数量。
+    pub fn touch_count(&self) -> usize {
+        self.active_touches.len()
     }
 }
 

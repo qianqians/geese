@@ -1,6 +1,8 @@
 pub mod cluster;
 pub mod common;
+pub mod decal;
 pub mod deferred_plus;
+pub mod fog;
 pub mod forward_plus;
 pub mod graph;
 pub mod grid;
@@ -21,8 +23,11 @@ pub mod shader_graph;
 pub mod shadow;
 pub mod shadow_pass;
 pub mod skinning;
+pub mod reflection_probe;
+pub mod water;
 pub mod wgpu_ibl_baker;
 pub mod wgpu_renderer;
+pub mod sprite;
 
 pub use cluster::{
     ClusterUniform, CLUSTER_DEPTH_SLICES, CLUSTER_TILES_X, CLUSTER_TILES_Y, TOTAL_CLUSTERS,
@@ -66,5 +71,21 @@ pub use wgpu_renderer::{WgpuSceneRenderer, WgpuSceneRendererDescriptor};
 
 pub use lines::{LineRenderer, LineVertex};
 
+pub use fog::{FogRenderer, FogSettings, FogUniform};
+
+pub use water::{WaterRenderer, WaterSettings, WaterUniform, WaterVertex};
+
+pub use decal::{
+    Decal, DecalProjection, DecalSystem, DepthTestResult, DEFAULT_MAX_DECALS,
+    decal_world_matrix, depth_test_decal, project_decal,
+};
+
+pub use reflection_probe::{
+    CubemapHandle, ProbeInfluence, ReflectionProbe, ReflectionProbeSystem, ReflectionProbeUniform,
+    MAX_REFLECTION_PROBES,
+};
+
 /// Re-export wgpu so downstream crates (editor, etc.) share the same version.
 pub use wgpu;
+
+pub use sprite::{Sprite, SpriteBatch, SpriteCameraUniform, SpriteRenderer, SpriteVertex};

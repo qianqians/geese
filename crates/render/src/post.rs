@@ -15,7 +15,7 @@ pub enum PostEffect {
     /// 时序抗锯齿，jitter_strength 通常 1.0。
     Taa { jitter_strength: f32, feedback: f32 },
     /// 屏幕空间环境光遮蔽 (SSAO/HBAO)。
-    Ssao { radius: f32, bias: f32 },
+    Ssao { radius: f32, bias: f32, intensity: f32 },
     /// 屏幕空间反射 (SSR)。
     Ssr { max_steps: u32, stride: f32 },
     /// 景深 (Depth of Field)。
@@ -31,7 +31,10 @@ impl PostEffect {
     }
     pub fn taa() -> Self { Self::Taa { jitter_strength: 1.0, feedback: 0.9 } }
     pub fn ssao(radius: f32, bias: f32) -> Self {
-        Self::Ssao { radius: radius.max(0.0), bias }
+        Self::Ssao { radius: radius.max(0.0), bias, intensity: 1.0 }
+    }
+    pub fn ssao_with_intensity(radius: f32, bias: f32, intensity: f32) -> Self {
+        Self::Ssao { radius: radius.max(0.0), bias, intensity: intensity.clamp(0.0, 2.0) }
     }
     pub fn ssr(max_steps: u32, stride: f32) -> Self {
         Self::Ssr { max_steps: max_steps.min(256), stride: stride.max(0.0) }
@@ -68,11 +71,13 @@ pub struct PostUniform {
     pub params: [f32; 4],
     /// x = taa_jitter_x, y = taa_jitter_y, z = frame_index, w = enabled_mask
     pub frame: [f32; 4],
+    /// x = ssr_intensity, y = ssr_max_steps, z = ssr_stride, w = reserved
+    pub extra: [f32; 4],
 }
 
 impl Default for PostUniform {
     fn default() -> Self {
-        Self { params: [1.0, 1.0, 0.0, 0.9], frame: [0.0, 0.0, 0.0, 0.0] }
+        Self { params: [1.0, 1.0, 0.0, 0.9], frame: [0.0, 0.0, 0.0, 0.0], extra: [0.0; 4] }
     }
 }
 
@@ -128,16 +133,33 @@ pub fn build_post_uniform(chain: &PostChain, frame_index: u64) -> PostUniform {
                 u.frame[1] = (jy - 0.5) * jitter_strength;
                 mask |= EffectMask::TAA;
             }
-            PostEffect::Ssao { .. } => {
+            PostEffect::Ssao { intensity, .. } => {
+                // Pack SSAO intensity into integer part of params[3],
+                // preserving fractional digits set by DoF/MotionBlur.
+                let frac = u.params[3] - u.params[3].floor();
+                u.params[3] = intensity + frac;
                 mask |= EffectMask::SSAO;
             }
-            PostEffect::Ssr { .. } => {
+            PostEffect::Ssr { max_steps, stride } => {
+                u.extra[0] = 1.0; // ssr_intensity (default full)
+                u.extra[1] = max_steps as f32;
+                u.extra[2] = stride;
                 mask |= EffectMask::SSR;
             }
-            PostEffect::DepthOfField { .. } => {
+            PostEffect::DepthOfField { aperture, .. } => {
+                // Pack DoF strength (aperture×10, max 9) into first decimal of params[3].
+                // params[3] = SSAO_int + DoF_val/10 + MB_val/100
+                let ssao_mb = u.params[3];
+                let base = (ssao_mb * 10.0).floor() / 10.0; // keep SSAO int + existing MB digit
+                let dof_val = (aperture * 10.0).min(9.0);
+                u.params[3] = base + dof_val / 10.0;
                 mask |= EffectMask::DOF;
             }
-            PostEffect::MotionBlur { .. } => {
+            PostEffect::MotionBlur { intensity } => {
+                // Pack MotionBlur strength into second decimal of params[3].
+                let base = (u.params[3] * 100.0).floor() / 100.0; // keep up to 2 decimals
+                let mb_val = (intensity * 10.0).floor().min(9.0);
+                u.params[3] = base + mb_val / 100.0;
                 mask |= EffectMask::MOTION_BLUR;
             }
         }

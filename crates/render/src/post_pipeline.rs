@@ -1,4 +1,4 @@
-//! 4.7 后处理 GPU 管线：ACES Tonemap + Bloom 全屏 pass。
+//! 4.7 后处理 GPU 管线：ACES Tonemap + Bloom + SSAO + SSR 全屏 pass。
 //!
 //! `PostProcessPipeline` 不侵入 `ScenePipeline` trait。调用方在 `pipeline.render()`
 //! 之后手动调用 `post.process()`。
@@ -8,11 +8,14 @@
 use crate::post::{EffectMask, PostUniform};
 use bytemuck::{Pod, Zeroable};
 use std::num::NonZeroU64;
-use std::sync::atomic::{AtomicBool, Ordering};
 use wgpu::util::DeviceExt;
 
 const POST_TONEMAP_WGSL: &str = include_str!("../shaders/post_tonemap.wgsl");
 const POST_BLOOM_WGSL: &str = include_str!("../shaders/post_bloom.wgsl");
+const POST_SSAO_WGSL: &str = include_str!("../shaders/post_ssao.wgsl");
+const POST_SSR_WGSL: &str = include_str!("../shaders/post_ssr.wgsl");
+const POST_DOF_WGSL: &str = include_str!("../shaders/post_dof.wgsl");
+const POST_MOTION_BLUR_WGSL: &str = include_str!("../shaders/post_motion_blur.wgsl");
 
 /// 后处理管线：持 HDR 中间纹理 + ping-pong 纹理 + uniform buffer + render pipeline。
 ///
@@ -41,6 +44,22 @@ pub struct PostProcessPipeline {
     tonemap_pipeline: wgpu::RenderPipeline,
     bloom_downsample_pipeline: wgpu::RenderPipeline,
     bloom_upsample_pipeline: wgpu::RenderPipeline,
+
+    // SSAO
+    ssao_pipeline: wgpu::RenderPipeline,
+    ssao_output: wgpu::TextureView,
+
+    // SSR
+    ssr_pipeline: wgpu::RenderPipeline,
+    ssr_output: wgpu::TextureView,
+
+    // DoF
+    dof_pipeline: wgpu::RenderPipeline,
+    dof_output: wgpu::TextureView,
+
+    // Motion Blur
+    motion_blur_pipeline: wgpu::RenderPipeline,
+    motion_blur_output: wgpu::TextureView,
 }
 
 /// Uniform data matching WGSL `PostUniformData` (std140-compatible).
@@ -49,6 +68,7 @@ pub struct PostProcessPipeline {
 struct PostUniformData {
     params: [f32; 4],
     frame: [f32; 4],
+    extra: [f32; 4],
 }
 
 impl From<PostUniform> for PostUniformData {
@@ -56,6 +76,7 @@ impl From<PostUniform> for PostUniformData {
         Self {
             params: u.params,
             frame: u.frame,
+            extra: u.extra,
         }
     }
 }
@@ -142,6 +163,18 @@ impl PostProcessPipeline {
         let bloom_a = create_hdr_texture_view(device, hdr_format, half_w, half_h);
         let bloom_b = create_hdr_texture_view(device, hdr_format, half_w, half_h);
 
+        // ---- SSAO output texture (full-res) ----
+        let ssao_output = create_hdr_texture_view(device, hdr_format, width, height);
+
+        // ---- SSR output texture (full-res) ----
+        let ssr_output = create_hdr_texture_view(device, hdr_format, width, height);
+
+        // ---- DoF output texture (full-res) ----
+        let dof_output = create_hdr_texture_view(device, hdr_format, width, height);
+
+        // ---- Motion Blur output texture (full-res) ----
+        let motion_blur_output = create_hdr_texture_view(device, hdr_format, width, height);
+
         // ---- pipelines ----
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("post pipeline layout"),
@@ -157,13 +190,29 @@ impl PostProcessPipeline {
             label: Some("post bloom shader"),
             source: wgpu::ShaderSource::Wgsl(POST_BLOOM_WGSL.into()),
         });
+        let ssao_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("post ssao shader"),
+            source: wgpu::ShaderSource::Wgsl(POST_SSAO_WGSL.into()),
+        });
+        let ssr_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("post ssr shader"),
+            source: wgpu::ShaderSource::Wgsl(POST_SSR_WGSL.into()),
+        });
+        let dof_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("post dof shader"),
+            source: wgpu::ShaderSource::Wgsl(POST_DOF_WGSL.into()),
+        });
+        let motion_blur_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("post motion blur shader"),
+            source: wgpu::ShaderSource::Wgsl(POST_MOTION_BLUR_WGSL.into()),
+        });
 
         let tonemap_pipeline = create_post_pipeline(
             device,
             &pipeline_layout,
             &tonemap_shader,
             "fs_tonemap",
-            hdr_format,
+            color_format,
         );
         let bloom_downsample_pipeline = create_post_pipeline(
             device,
@@ -177,6 +226,34 @@ impl PostProcessPipeline {
             &pipeline_layout,
             &bloom_shader,
             "fs_bloom_upsample",
+            hdr_format,
+        );
+        let ssao_pipeline = create_post_pipeline(
+            device,
+            &pipeline_layout,
+            &ssao_shader,
+            "fs_ssao",
+            hdr_format,
+        );
+        let ssr_pipeline = create_post_pipeline(
+            device,
+            &pipeline_layout,
+            &ssr_shader,
+            "fs_ssr",
+            hdr_format,
+        );
+        let dof_pipeline = create_post_pipeline(
+            device,
+            &pipeline_layout,
+            &dof_shader,
+            "fs_dof",
+            hdr_format,
+        );
+        let motion_blur_pipeline = create_post_pipeline(
+            device,
+            &pipeline_layout,
+            &motion_blur_shader,
+            "fs_motion_blur",
             hdr_format,
         );
 
@@ -242,6 +319,14 @@ impl PostProcessPipeline {
             tonemap_pipeline,
             bloom_downsample_pipeline,
             bloom_upsample_pipeline,
+            ssao_pipeline,
+            ssao_output,
+            ssr_pipeline,
+            ssr_output,
+            dof_pipeline,
+            dof_output,
+            motion_blur_pipeline,
+            motion_blur_output,
         }
     }
 
@@ -259,6 +344,10 @@ impl PostProcessPipeline {
         self.bloom_a_height = half_h;
         self.bloom_b_width = half_w;
         self.bloom_b_height = half_h;
+        self.ssao_output = create_hdr_texture_view(device, hdr_format, width, height);
+        self.ssr_output = create_hdr_texture_view(device, hdr_format, width, height);
+        self.dof_output = create_hdr_texture_view(device, hdr_format, width, height);
+        self.motion_blur_output = create_hdr_texture_view(device, hdr_format, width, height);
 
         self.bloom_downsample_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("post bloom downsample bind group (resized)"),
@@ -317,7 +406,7 @@ impl PostProcessPipeline {
     /// `input_view` 是主渲染管线输出的 HDR/SDR 颜色纹理视图。
     /// `output_view` 是最终输出目标（通常是 surface texture view）。
     ///
-    /// 效果链顺序: Bloom (downsample → upsample) → Tonemap
+    /// 效果链顺序: SSAO → SSR → DoF → MotionBlur → Bloom → Tonemap
     pub fn process(
         &self,
         device: &wgpu::Device,
@@ -331,30 +420,11 @@ impl PostProcessPipeline {
 
         let mask = EffectMask::from_bits_truncate(uniform.frame[3].to_bits());
 
-        // Warn once for post effects that have no GPU implementation yet.
-        static WARNED_SSAO: AtomicBool = AtomicBool::new(false);
-        static WARNED_SSR: AtomicBool = AtomicBool::new(false);
-        static WARNED_DOF: AtomicBool = AtomicBool::new(false);
-        static WARNED_MOTION_BLUR: AtomicBool = AtomicBool::new(false);
-
-        if mask.contains(EffectMask::SSAO) && !WARNED_SSAO.swap(true, Ordering::Relaxed) {
-            log::warn!("SSAO effect is not yet implemented (no GPU shader); effect will be skipped.");
-        }
-        if mask.contains(EffectMask::SSR) && !WARNED_SSR.swap(true, Ordering::Relaxed) {
-            log::warn!("SSR effect is not yet implemented (no GPU shader); effect will be skipped.");
-        }
-        if mask.contains(EffectMask::DOF) && !WARNED_DOF.swap(true, Ordering::Relaxed) {
-            log::warn!("Depth of Field effect is not yet implemented (no GPU shader); effect will be skipped.");
-        }
-        if mask.contains(EffectMask::MOTION_BLUR) && !WARNED_MOTION_BLUR.swap(true, Ordering::Relaxed) {
-            log::warn!("Motion Blur effect is not yet implemented (no GPU shader); effect will be skipped.");
-        }
-
-        // ---- 1. Bloom downsample: input → bloom_a ----
-        if mask.contains(EffectMask::BLOOM) {
-            // Create a temporary bind group for input → bloom_a
-            let downsample_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("post bloom downsample input bg"),
+        // ---- 0. SSAO: input_view → ssao_output ----
+        // 当 SSAO 启用时，先对场景颜色做环境光遮蔽处理，后续 Bloom/Tonemap 读取 ssao_output。
+        let effective_input: &wgpu::TextureView = if mask.contains(EffectMask::SSAO) {
+            let ssao_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("post ssao bg"),
                 layout: &self.bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
@@ -372,6 +442,206 @@ impl PostProcessPipeline {
                     wgpu::BindGroupEntry {
                         binding: 3,
                         resource: wgpu::BindingResource::TextureView(input_view),
+                    },
+                ],
+            });
+
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("post ssao pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &self.ssao_output,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+                pass.set_pipeline(&self.ssao_pipeline);
+                pass.set_bind_group(0, &ssao_bg, &[]);
+                pass.draw(0..3, 0..1);
+            }
+            &self.ssao_output
+        } else {
+            input_view
+        };
+
+        // ---- 0.5 SSR: effective_input → ssr_output ----
+        // 当 SSR 启用时，在 SSAO 之后、Bloom 之前做屏幕空间反射。
+        let effective_input: &wgpu::TextureView = if mask.contains(EffectMask::SSR) {
+            let ssr_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("post ssr bg"),
+                layout: &self.bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.uniform_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(effective_input),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(effective_input),
+                    },
+                ],
+            });
+
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("post ssr pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &self.ssr_output,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+                pass.set_pipeline(&self.ssr_pipeline);
+                pass.set_bind_group(0, &ssr_bg, &[]);
+                pass.draw(0..3, 0..1);
+            }
+            &self.ssr_output
+        } else {
+            effective_input
+        };
+
+        // ---- 0.6 DoF: effective_input → dof_output ----
+        // 当 DoF 启用时，基于颜色梯度估算散焦，对场景做景深模糊。
+        let effective_input: &wgpu::TextureView = if mask.contains(EffectMask::DOF) {
+            let dof_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("post dof bg"),
+                layout: &self.bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.uniform_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(effective_input),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(effective_input),
+                    },
+                ],
+            });
+
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("post dof pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &self.dof_output,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+                pass.set_pipeline(&self.dof_pipeline);
+                pass.set_bind_group(0, &dof_bg, &[]);
+                pass.draw(0..3, 0..1);
+            }
+            &self.dof_output
+        } else {
+            effective_input
+        };
+
+        // ---- 0.7 MotionBlur: effective_input → motion_blur_output ----
+        // 当 MotionBlur 启用时，基于亮度梯度估算运动方向并做运动模糊。
+        let effective_input: &wgpu::TextureView = if mask.contains(EffectMask::MOTION_BLUR) {
+            let mb_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("post motion blur bg"),
+                layout: &self.bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.uniform_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(effective_input),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(effective_input),
+                    },
+                ],
+            });
+
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("post motion blur pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &self.motion_blur_output,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+                pass.set_pipeline(&self.motion_blur_pipeline);
+                pass.set_bind_group(0, &mb_bg, &[]);
+                pass.draw(0..3, 0..1);
+            }
+            &self.motion_blur_output
+        } else {
+            effective_input
+        };
+
+        // ---- 1. Bloom downsample: effective_input → bloom_b ----
+        if mask.contains(EffectMask::BLOOM) {
+            // Create a temporary bind group for effective_input → bloom_b
+            let downsample_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("post bloom downsample input bg"),
+                layout: &self.bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.uniform_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(effective_input),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(effective_input),
                     },
                 ],
             });
@@ -418,8 +688,8 @@ impl PostProcessPipeline {
             }
         }
 
-        // ---- 3. Tonemap: (input + bloom) → output ----
-        // input_view is bound to binding 1; bloom_a is bound to binding 3.
+        // ---- 3. Tonemap: (effective_input + bloom) → output ----
+        // effective_input is bound to binding 1; bloom_a is bound to binding 3.
         // The tonemap shader composites input + bloom when BLOOM mask bit is set.
         let tonemap_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("post tonemap bg"),
@@ -431,7 +701,7 @@ impl PostProcessPipeline {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(input_view),
+                    resource: wgpu::BindingResource::TextureView(effective_input),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
@@ -442,7 +712,7 @@ impl PostProcessPipeline {
                     resource: wgpu::BindingResource::TextureView(if mask.contains(EffectMask::BLOOM) {
                         &self.bloom_a
                     } else {
-                        input_view
+                        effective_input
                     }),
                 },
             ],

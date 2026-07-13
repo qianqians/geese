@@ -6,6 +6,7 @@
 //! - `TerrainStreamer`：按相机位置 + 半径决定 tile 加/卸（不读盘，调用方注入 Loader）
 //! - `TileCoord`：tile 坐标 `(x, z)`
 //! - `compute_lod()`：geo-clipmap 风格 LOD 选择（按距离换算 mip level）
+//! - `TerrainSplatting` / `SplatLayer`：多层纹理 splatting（基于高度/坡度/权重图）
 //!
 //! 真实磁盘 IO / 网络流式留待接入时实现。
 
@@ -13,9 +14,11 @@ use std::collections::{HashMap, HashSet};
 
 pub mod mesh_builder;
 pub mod gpu_renderer;
+pub mod splatting;
 
 pub use mesh_builder::{TerrainMesher, TerrainVertex};
 pub use gpu_renderer::{GpuTerrainRenderer, TerrainCameraUniform, TileUniformData};
+pub use splatting::{SplatLayer, TerrainSplatting};
 
 /// 单个高度图。坐标 (i, j)，i ∈ [0,width)，j ∈ [0,height)。
 pub struct Heightmap {

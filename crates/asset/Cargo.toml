@@ -13,12 +13,13 @@ walkdir = "2"
 tokio = { version = "1", features = ["rt", "sync"] }
 vfs = { path = "../vfs", optional = true }
 notify = { version = "7", optional = true }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"], optional = true }
 
 [features]
 default = []
 hot-reload = ["notify"]
 vfs-integration = ["vfs"]
-cooking = []
+cooking = ["image"]
 
 [dev-dependencies]
 tempfile = "3"

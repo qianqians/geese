@@ -30,6 +30,7 @@ struct VertexOutput {
     @location(0) world_pos: vec3f,
     @location(1) normal: vec3f,
     @location(2) uv: vec2f,
+    @location(3) splat_weights: vec4f,
 };
 
 @vertex
@@ -37,6 +38,7 @@ fn vs_main(
     @location(0) in_pos: vec3f,
     @location(1) in_normal: vec3f,
     @location(2) in_uv: vec2f,
+    @location(3) in_splat_weights: vec4f,
 ) -> VertexOutput {
     let world_pos = vec3f(
         in_pos.x + u_tile.world_offset.x,
@@ -48,6 +50,7 @@ fn vs_main(
     out.world_pos = world_pos;
     out.normal = in_normal;
     out.uv = in_uv;
+    out.splat_weights = in_splat_weights;
     return out;
 }
 
@@ -59,11 +62,21 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let ambient = 0.3;
     let diffuse = ndotl * 0.7;
 
-    // Height-based color: low = green, high = rock
-    let height = in.world_pos.y;
-    let low_color = vec3f(0.2, 0.5, 0.15);
-    let high_color = vec3f(0.4, 0.35, 0.3);
-    let color = mix(low_color, high_color, smoothstep(2.0, 15.0, height));
+    // Splatting: 4 层程序化颜色混合（后续可替换为纹理采样）
+    // Layer 0: 草地 (低海拔, 平坦)
+    let layer0_color = vec3f(0.2, 0.5, 0.15);
+    // Layer 1: 岩石 (高海拔)
+    let layer1_color = vec3f(0.4, 0.35, 0.3);
+    // Layer 2: 雪地 (高海拔, 平坦)
+    let layer2_color = vec3f(0.9, 0.92, 0.95);
+    // Layer 3: 峭壁 (陡坡)
+    let layer3_color = vec3f(0.35, 0.3, 0.25);
+
+    let w = in.splat_weights;
+    let color = layer0_color * w.x
+              + layer1_color * w.y
+              + layer2_color * w.z
+              + layer3_color * w.w;
 
     let lit = color * (ambient + diffuse);
     return vec4f(lit, 1.0);
@@ -282,7 +295,7 @@ impl GpuTerrainRenderer {
         cell_size: f32,
         lod: u8,
     ) {
-        let (vertices, indices) = TerrainMesher::generate_mesh(&tile.heightmap, cell_size, lod);
+        let (vertices, indices) = TerrainMesher::generate_mesh(&tile.heightmap, cell_size, lod, None);
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("terrain vertex buffer"),
@@ -391,7 +404,8 @@ mod tests {
 
     #[test]
     fn camera_uniform_size() {
-        assert_eq!(std::mem::size_of::<TerrainCameraUniform>(), 192);
+        // mat4x4 (64) + mat4x4 (64) + vec4 (16) = 144 bytes
+        assert_eq!(std::mem::size_of::<TerrainCameraUniform>(), 144);
     }
 
     #[test]

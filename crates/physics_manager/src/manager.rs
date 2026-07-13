@@ -296,6 +296,48 @@ impl PhysicsManager {
         &mut self.world
     }
 
+    // -------------------------------------------------------------------
+    // Dynamic body creation / removal
+    // -------------------------------------------------------------------
+
+    /// Create a dynamic capsule body in the managed scene.
+    ///
+    /// Returns the [`BodyHandle`] that can later be passed to
+    /// [`remove_body`](Self::remove_body) or query methods.
+    pub fn create_capsule_body(
+        &mut self,
+        position: [f32; 3],
+        half_height: f32,
+        radius: f32,
+    ) -> Result<BodyHandle, String> {
+        let scene = self
+            .world
+            .scene_mut(self.scene_id)
+            .ok_or_else(|| "physics scene not available".to_string())?;
+        let desc = BodyDesc {
+            kind: BodyKind::Dynamic,
+            position: physics::math::iso_from_parts(
+                (position[0], position[1], position[2]),
+                (0.0, 0.0, 0.0, 1.0),
+            ),
+            can_sleep: false,
+            ccd_enabled: true,
+            ..Default::default()
+        };
+        let shape = ShapeDesc::Capsule {
+            half_height,
+            radius,
+        };
+        scene.add_body(desc, shape).map(|(h, _)| h)
+    }
+
+    /// Remove a body from the managed scene.
+    pub fn remove_body(&mut self, handle: BodyHandle) {
+        if let Some(scene) = self.world.scene_mut(self.scene_id) {
+            scene.remove_body(handle);
+        }
+    }
+
     /// Access the local physics world.
     pub fn world(&self) -> &PhysicsWorld {
         &self.world

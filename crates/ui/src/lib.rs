@@ -21,6 +21,8 @@
 //! 3. 重新导出 egui 高频符号，免去上层依赖两套 crate 的麻烦。
 
 // 重新导出 egui 高频符号，业务层无需直接 `use egui::*;`
+pub mod game_ui;
+
 pub use egui;
 pub use egui::{Color32, FullOutput, Pos2, RawInput, Rect as EguiRect};
 

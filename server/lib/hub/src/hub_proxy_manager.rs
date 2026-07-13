@@ -40,8 +40,8 @@ pub async fn entry_direct_hub_server(
     let value = match _service.acquire_lock(lock_key.clone(), 3, None).await {
         Ok(v) => v,
         Err(e) => {
-            warn!("Failed to acquire lock for hub '{}': {}", _hub_name, e);
-            String::new()
+            error!("Failed to acquire lock for hub '{}': {}", _hub_name, e);
+            return;
         }
     };
     if let Some(_hubproxy) = _conn_mgr_handle.get_hub_proxy(&_hub_name) {
@@ -103,8 +103,8 @@ pub async fn entry_hub_service(
             let value = match _service.acquire_lock(lock_key.clone(), 3, None).await {
                 Ok(v) => v,
                 Err(e) => {
-                    warn!("Failed to acquire lock for service '{}': {}", service.id, e);
-                    String::new()
+                    error!("Failed to acquire lock for service '{}': {}", service.id, e);
+                    continue;
                 }
             };
             if let Some(_hubproxy) = _conn_mgr_handle.get_hub_proxy(&service.id) {

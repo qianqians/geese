@@ -10,6 +10,27 @@ use thrift::transport::{TIoChannel, TBufferChannel};
 use tracing::{trace, error};
 use mongodb::bson::{doc, Document};
 
+/// Macro that extracts the common pattern shared by most `do_*` methods:
+/// trace log → downcast ev_data → call mongo operation → build callback → serialize & send.
+///
+/// `$ev_ident` is bound to the downcasted event data for use in `$op`.
+/// `$res_ident` is bound to the operation result for use in `$cb`.
+macro_rules! execute_db_operation {
+    ($self_:expr, $context:expr, $ev_type:ty, $ev_ident:ident, $op:expr, $res_ident:ident, $cb:expr) => {{
+        trace!("begin {}", $context);
+        let $ev_ident = match $self_.ev_data.as_any().downcast_ref::<$ev_type>() {
+            None => {
+                error!("{} ev_data downcast failed!", $context);
+                return;
+            }
+            Some(ev) => ev,
+        };
+        let $res_ident = $op;
+        let cb = $cb;
+        $self_.serialize_and_send(&cb, 16384, $context).await;
+    }};
+}
+
 use proto::hub::{
     DbCallback, 
     AckGetGuid, 
@@ -193,41 +214,23 @@ impl DBEvent {
         let _ = p_send.send(&rd.write_bytes()).await;
     }
 
-    async fn do_get_guid(&mut self, mongo_proxy:&mut MongoProxy) {
+    async fn do_get_guid(&mut self, mongo_proxy: &mut MongoProxy) {
         trace!("begin do_get_guid");
         let guid = mongo_proxy.get_guid(self.db.to_string(), self.collection.to_string()).await;
         let cb = DbCallback::GetGuid(AckGetGuid::new(self.callback_id.to_string(), guid));
         self.serialize_and_send(&cb, 16384, "do_get_guid").await;
     }
 
-    async fn do_create_object(&mut self, mongo_proxy:&mut MongoProxy){
-        trace!("begin do_create_object");
-        let p_ev_data = self.ev_data.as_any().downcast_ref::<DBEvCreateObject>();
-        let ev_data = match p_ev_data {
-            None => {
-                error!("do_create_object p_ev_data is null!");
-                return;
-            },
-            Some(p) => p
-        };
-        let result = mongo_proxy.save(self.db.to_string(), self.collection.to_string(), &ev_data.object_info).await;
-        let cb = DbCallback::CreateObject(AckCreateObject::new(self.callback_id.to_string(), result));
-        self.serialize_and_send(&cb, 16384, "do_create_object").await;
+    async fn do_create_object(&mut self, mongo_proxy: &mut MongoProxy) {
+        execute_db_operation!(self, "do_create_object", DBEvCreateObject,
+            ev_data, mongo_proxy.save(self.db.to_string(), self.collection.to_string(), &ev_data.object_info).await,
+            result, DbCallback::CreateObject(AckCreateObject::new(self.callback_id.to_string(), result)));
     }
 
-    async fn do_updata_object(&mut self, mongo_proxy:&mut MongoProxy) {
-        trace!("begin do_updata_object");
-        let p_ev_data = self.ev_data.as_any().downcast_ref::<DBEvUpdataObject>();
-        let ev_data = match p_ev_data {
-            None => {
-                error!("do_updata_object p_ev_data is null!");
-                return;
-            },
-            Some(p) => p
-        };
-        let result = mongo_proxy.update(self.db.to_string(), self.collection.to_string(), &ev_data.query_info, &ev_data.updata_info, ev_data.upsert).await;
-        let cb = DbCallback::UpdataObject(AckUpdataObject::new(self.callback_id.to_string(), result));
-        self.serialize_and_send(&cb, 16384, "do_updata_object").await;
+    async fn do_updata_object(&mut self, mongo_proxy: &mut MongoProxy) {
+        execute_db_operation!(self, "do_updata_object", DBEvUpdataObject,
+            ev_data, mongo_proxy.update(self.db.to_string(), self.collection.to_string(), &ev_data.query_info, &ev_data.updata_info, ev_data.upsert).await,
+            result, DbCallback::UpdataObject(AckUpdataObject::new(self.callback_id.to_string(), result)));
     }
 
     async fn do_find_and_modify(&mut self, mongo_proxy:&mut MongoProxy) {
@@ -259,19 +262,10 @@ impl DBEvent {
         self.serialize_and_send(&cb, wsize, "do_find_and_modify").await;
     }
 
-    async fn do_remove_object(&mut self, mongo_proxy:&mut MongoProxy) {
-        trace!("begin do_remove_object");
-        let p_ev_data = self.ev_data.as_any().downcast_ref::<DBEvRemoveObject>();
-        let ev_data = match p_ev_data {
-            None => {
-                error!("do_remove_object p_ev_data is null!");
-                return;
-            },
-            Some(p) => p
-        };
-        let result = mongo_proxy.remove(self.db.to_string(), self.collection.to_string(), &ev_data.query_info).await;
-        let cb = DbCallback::RemoveObject(AckRemoveObject::new(self.callback_id.to_string(), result));
-        self.serialize_and_send(&cb, 16384, "do_remove_object").await;
+    async fn do_remove_object(&mut self, mongo_proxy: &mut MongoProxy) {
+        execute_db_operation!(self, "do_remove_object", DBEvRemoveObject,
+            ev_data, mongo_proxy.remove(self.db.to_string(), self.collection.to_string(), &ev_data.query_info).await,
+            result, DbCallback::RemoveObject(AckRemoveObject::new(self.callback_id.to_string(), result)));
     }
 
     async fn do_get_object_info(&mut self, mongo_proxy:&mut MongoProxy) {
@@ -326,19 +320,10 @@ impl DBEvent {
         }
     }
 
-    async fn do_get_object_count(&mut self, mongo_proxy:&mut MongoProxy) {
-        trace!("begin do_get_object_count");
-        let p_ev_data = self.ev_data.as_any().downcast_ref::<DBEvGetObjectCount>();
-        let ev_data = match p_ev_data {
-            None => {
-                error!("do_get_object_count p_ev_data is null!");
-                return;
-            },
-            Some(p) => p
-        };
-        let count = mongo_proxy.count(self.db.to_string(), self.collection.to_string(), &ev_data.query_info).await;
-        let cb = DbCallback::GetObjectCount(AckGetObjectCount::new(self.callback_id.to_string(), count));
-        self.serialize_and_send(&cb, 16384, "do_get_object_count").await;
+    async fn do_get_object_count(&mut self, mongo_proxy: &mut MongoProxy) {
+        execute_db_operation!(self, "do_get_object_count", DBEvGetObjectCount,
+            ev_data, mongo_proxy.count(self.db.to_string(), self.collection.to_string(), &ev_data.query_info).await,
+            result, DbCallback::GetObjectCount(AckGetObjectCount::new(self.callback_id.to_string(), result)));
     }
 
     pub async fn do_event(&mut self, mongo_proxy:&mut MongoProxy) {
