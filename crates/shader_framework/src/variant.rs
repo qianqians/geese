@@ -617,6 +617,7 @@ impl VariantManager {
                     ty,
                     id: i as u32,
                     default_value: Some(value.to_wgsl_override_default()),
+                    is_const: false,
                 }
             })
             .collect()

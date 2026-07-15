@@ -41,13 +41,20 @@ pub struct ComputeEntryPointDef {
     pub local_vars: Vec<(String, WgslType, Option<String>)>,
 }
 
-/// Pipeline-overridable constant.
+/// Pipeline-overridable constant or compile-time `const`.
+///
+/// When `is_const` is `true`, the generator emits a WGSL `const` declaration
+/// (evaluable at shader-creation time, usable as array sizes, etc.).
+/// When `false`, it emits a pipeline-overridable `@id(N) override` declaration.
 #[derive(Debug, Clone)]
 pub struct ConstantDef {
     pub name: String,
     pub ty: WgslType,
     pub id: u32,
     pub default_value: Option<String>,
+    /// If `true`, generate `const NAME: TYPE = VALUE;`.
+    /// If `false`, generate `@id(N) override NAME: TYPE = VALUE;`.
+    pub is_const: bool,
 }
 
 /// Global variable (non-binding, e.g. `var<private>`).
@@ -219,7 +226,7 @@ impl WgslGenerator {
             .join("\n")
     }
 
-    /// Generate pipeline-overridable constants.
+    /// Generate pipeline-overridable constants and/or compile-time `const` declarations.
     pub fn generate_constants(&self, constants: &[ConstantDef]) -> String {
         constants
             .iter()
@@ -228,13 +235,22 @@ impl WgslGenerator {
                     Some(v) => format!(" = {}", v),
                     None => String::new(),
                 };
-                format!(
-                    "@id({}) override {}: {}{};",
-                    c.id,
-                    c.name,
-                    c.ty.to_wgsl(),
-                    default
-                )
+                if c.is_const {
+                    format!(
+                        "const {}: {}{};",
+                        c.name,
+                        c.ty.to_wgsl(),
+                        default
+                    )
+                } else {
+                    format!(
+                        "@id({}) override {}: {}{};",
+                        c.id,
+                        c.name,
+                        c.ty.to_wgsl(),
+                        default
+                    )
+                }
             })
             .collect::<Vec<_>>()
             .join("\n")
@@ -756,12 +772,14 @@ mod tests {
             ty: WgslType::F32,
             id: 0,
             default_value: Some("0.5".into()),
+            is_const: false,
         });
         builder.add_constant(ConstantDef {
             name: "max_lights".into(),
             ty: WgslType::U32,
             id: 1,
             default_value: Some("16u".into()),
+            is_const: false,
         });
         builder.compute_entry("cs_main", [1, 1, 1], WgslFragment::new("let x = 0u;"));
         let shader = builder.build();
@@ -770,6 +788,33 @@ mod tests {
         let wgsl = generator.generate(&shader).unwrap();
         assert!(wgsl.contains("@id(0) override roughness_override: f32 = 0.5;"));
         assert!(wgsl.contains("@id(1) override max_lights: u32 = 16u;"));
+    }
+
+    #[test]
+    fn test_generate_const_declaration() {
+        let generator = WgslGenerator::new();
+        let constants = vec![
+            ConstantDef {
+                name: "TOTAL_CLUSTERS".into(),
+                ty: WgslType::U32,
+                id: 0,
+                default_value: Some("1024u".into()),
+                is_const: true,
+            },
+            ConstantDef {
+                name: "PI".into(),
+                ty: WgslType::F32,
+                id: 1,
+                default_value: Some("3.14159".into()),
+                is_const: true,
+            },
+        ];
+        let wgsl = generator.generate_constants(&constants);
+        assert!(wgsl.contains("const TOTAL_CLUSTERS: u32 = 1024u;"));
+        assert!(wgsl.contains("const PI: f32 = 3.14159;"));
+        // Must NOT contain @id or override for is_const: true
+        assert!(!wgsl.contains("@id("));
+        assert!(!wgsl.contains("override"));
     }
 
     #[test]
@@ -1021,6 +1066,7 @@ mod tests {
             ty: WgslType::F32,
             id: 5,
             default_value: None,
+            is_const: false,
         }];
         let wgsl = generator.generate_constants(&constants);
         assert_eq!(wgsl, "@id(5) override threshold: f32;");
@@ -1073,6 +1119,7 @@ mod tests {
             ty: WgslType::F32,
             id: 0,
             default_value: Some("1.0".into()),
+            is_const: false,
         });
         builder.add_struct(StructDef {
             name: "MyStruct".into(),

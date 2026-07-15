@@ -9,7 +9,7 @@ cgmath = "0.18"
 wgpu = "22.1"
 log = "0.4"
 config = { path = "../config" }
-shader_framework = { path = "../shader_framework" }
+shader_framework = { path = "../shader_framework", optional = true }
 
 [features]
 default = []
@@ -18,4 +18,4 @@ instancing = []
 lod = []
 hi-z-occlusion = []
 particles = []
-use-shader-framework = []
+use-shader-framework = ["dep:shader_framework"]

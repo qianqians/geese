@@ -25,6 +25,17 @@ use shader_framework::compose::{ShaderComposer, ShaderModule, ShaderModuleBuilde
 use shader_framework::core::*;
 use shader_framework::generator::{ConstantDef, WgslGenerator};
 
+/// Maximum number of lights supported by the PBR shader.
+///
+/// **Coupling**: This value MUST stay in sync with:
+/// - `crates/render/src/light.rs` → `MAX_LIGHTS` (the CPU-side GPU buffer layout)
+/// - The `MAX_LIGHTS` `ConstantDef` declared in [`pbr_common_module`] below
+///   (which uses this constant as its default value)
+///
+/// If any of these drift apart the GPU buffer layout and the WGSL struct
+/// definition will silently disagree, causing rendering corruption.
+pub const MAX_LIGHTS_SHADER: u32 = 32;
+
 // ─── pbr_common module ──────────────────────────────────────────────────────
 
 /// Build the `pbr_common` library module.
@@ -42,54 +53,63 @@ pub fn pbr_common_module() -> ShaderModule {
             ty: WgslType::F32,
             id: 0,
             default_value: Some("3.14159265359".into()),
+            is_const: true,
         })
         .constant(ConstantDef {
             name: "MAX_LIGHTS".into(),
             ty: WgslType::U32,
             id: 1,
-            default_value: Some("32u".into()),
+            default_value: Some(format!("{MAX_LIGHTS_SHADER}u").into()),
+            is_const: true,
         })
         .constant(ConstantDef {
             name: "TOTAL_CLUSTERS".into(),
             ty: WgslType::U32,
             id: 2,
             default_value: Some("1024u".into()),
+            is_const: true,
         })
         .constant(ConstantDef {
             name: "CLUSTER_TILES_X".into(),
             ty: WgslType::U32,
             id: 3,
             default_value: Some("8u".into()),
+            is_const: true,
         })
         .constant(ConstantDef {
             name: "CLUSTER_TILES_Y".into(),
             ty: WgslType::U32,
             id: 4,
             default_value: Some("8u".into()),
+            is_const: true,
         })
         .constant(ConstantDef {
             name: "CLUSTER_DEPTH_SLICES".into(),
             ty: WgslType::U32,
             id: 5,
             default_value: Some("16u".into()),
+            is_const: true,
         })
         .constant(ConstantDef {
             name: "LIGHT_TYPE_DIRECTIONAL".into(),
             ty: WgslType::F32,
             id: 6,
             default_value: Some("0.0".into()),
+            is_const: true,
         })
         .constant(ConstantDef {
             name: "LIGHT_TYPE_POINT".into(),
             ty: WgslType::F32,
             id: 7,
             default_value: Some("1.0".into()),
+            is_const: true,
         })
         .constant(ConstantDef {
             name: "LIGHT_TYPE_SPOT".into(),
             ty: WgslType::F32,
             id: 8,
             default_value: Some("2.0".into()),
+            is_const: true,
         })
         // ── Structs ─────────────────────────────────────────────────────────
         .struct_def(StructDef {
@@ -151,10 +171,12 @@ pub fn pbr_common_module() -> ShaderModule {
                     attributes: vec![],
                 },
                 StructField {
+                    // Array size uses MAX_LIGHTS_SHADER — must match light.rs::MAX_LIGHTS
+                    // and the MAX_LIGHTS ConstantDef default_value above.
                     name: "lights".into(),
                     ty: WgslType::Array(
                         Box::new(WgslType::Struct("Light".into())),
-                        Some(32),
+                        Some(MAX_LIGHTS_SHADER),
                     ),
                     attributes: vec![],
                 },
@@ -622,5 +644,117 @@ mod tests {
         assert!(wgsl.contains("fn shade_light"));
         assert!(wgsl.contains("@vertex"));
         assert!(wgsl.contains("@fragment"));
+    }
+
+    /// Verify that the WGSL generated from `pbr_common_module()` is
+    /// semantically equivalent to the hand-written `pbr_common.wgsl`.
+    ///
+    /// We compare the *vocabulary* (struct names, function signatures,
+    /// constant names) rather than a byte-for-byte diff, since whitespace
+    /// and formatting naturally differ between generated and handwritten code.
+    ///
+    /// Note: We do NOT run the original `.wgsl` through the naga parser
+    /// because it is a library module with no entry points — the WGSL
+    /// spec requires at least one entry point for standalone validation.
+    #[test]
+    fn generated_wgsl_semantically_equivalent_to_original() {
+        let wgsl = generate_pbr_common_wgsl();
+
+        // ── All struct definitions must be present ──────────────────────
+        for struct_name in &[
+            "Camera",
+            "Light",
+            "LightStorage",
+            "ClusterUniform",
+            "MaterialUniform",
+        ] {
+            assert!(
+                wgsl.contains(&format!("struct {struct_name}")),
+                "Missing struct {struct_name} in generated WGSL"
+            );
+        }
+
+        // ── All function signatures must be present ─────────────────────
+        for fn_name in &[
+            "material_has_texture",
+            "distribution_ggx",
+            "geometry_schlick_ggx",
+            "geometry_smith",
+            "fresnel_schlick",
+            "attenuation_inverse_square",
+            "spot_cone_attenuation",
+            "shade_light",
+            "cluster_index_from_screen",
+            "linearize_depth",
+        ] {
+            assert!(
+                wgsl.contains(&format!("fn {fn_name}")),
+                "Missing function {fn_name} in generated WGSL"
+            );
+        }
+
+        // ── All named constants must be present ─────────────────────────
+        for const_name in &[
+            "PI",
+            "MAX_LIGHTS",
+            "TOTAL_CLUSTERS",
+            "CLUSTER_TILES_X",
+            "CLUSTER_TILES_Y",
+            "CLUSTER_DEPTH_SLICES",
+            "LIGHT_TYPE_DIRECTIONAL",
+            "LIGHT_TYPE_POINT",
+            "LIGHT_TYPE_SPOT",
+        ] {
+            assert!(
+                wgsl.contains(const_name),
+                "Missing constant {const_name} in generated WGSL"
+            );
+        }
+
+        // ── LightStorage array size must reference MAX_LIGHTS_SHADER ────
+        // The generated WGSL should contain the literal array size that
+        // matches our Rust constant.
+        assert!(
+            wgsl.contains(&format!("array<Light, {MAX_LIGHTS_SHADER}>")),
+            "LightStorage.lights array size does not match MAX_LIGHTS_SHADER ({MAX_LIGHTS_SHADER})"
+        );
+
+        // ── Cross-check: original .wgsl has same vocabulary ─────────────
+        // include_str! bakes the file into the test binary at compile time,
+        // so a missing file is a compile error — no runtime I/O needed.
+        let original = include_str!("../shaders/pbr_common.wgsl");
+
+        for struct_name in &[
+            "Camera",
+            "Light",
+            "LightStorage",
+            "ClusterUniform",
+            "MaterialUniform",
+        ] {
+            assert!(
+                original.contains(&format!("struct {struct_name}")),
+                "Original pbr_common.wgsl is missing struct {struct_name} \
+                 — metadata may be out of sync"
+            );
+        }
+
+        for fn_name in &[
+            "material_has_texture",
+            "distribution_ggx",
+            "geometry_schlick_ggx",
+            "geometry_smith",
+            "fresnel_schlick",
+            "attenuation_inverse_square",
+            "spot_cone_attenuation",
+            "shade_light",
+            "cluster_index_from_screen",
+            "linearize_depth",
+        ] {
+            assert!(
+                original.contains(&format!("fn {fn_name}")),
+                "Original pbr_common.wgsl is missing fn {fn_name} \
+                 — metadata may be out of sync"
+            );
+        }
     }
 }

@@ -19,6 +19,7 @@ use crate::profiler::GpuProfiler;
 #[cfg(feature = "instancing")]
 use crate::common::InstanceData;
 
+#[cfg(not(feature = "use-shader-framework"))]
 const PBR_COMMON: &str = include_str!("../shaders/pbr_common.wgsl");
 const FORWARD_PLUS_WGSL: &str = include_str!("../shaders/forward_plus.wgsl");
 const CLUSTER_CULLING_WGSL: &str = include_str!("../shaders/cluster_culling.wgsl");

@@ -1219,6 +1219,7 @@ mod tests {
                 ty: WgslType::F32,
                 id: 0,
                 default_value: Some("1.0".into()),
+                is_const: false,
             })
             .global_var(GlobalVarDef {
                 name: "temp".into(),
@@ -1275,6 +1276,7 @@ mod tests {
                 ty: WgslType::F32,
                 id: 0,
                 default_value: None,
+                is_const: false,
             })
             .with_global_var(GlobalVarDef {
                 name: "g".into(),

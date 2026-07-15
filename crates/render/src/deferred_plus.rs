@@ -13,6 +13,7 @@ use crate::pipeline::{RenderingPath, ScenePipeline, ScenePipelineDescriptor};
 use crate::shadow::{CascadeConfig, CsmUniform};
 use crate::{Light, MaterialLibrary, RenderQueue};
 
+#[cfg(not(feature = "use-shader-framework"))]
 const PBR_COMMON: &str = include_str!("../shaders/pbr_common.wgsl");
 const DEFERRED_GEOMETRY_WGSL: &str = include_str!("../shaders/deferred_geometry.wgsl");
 const DEFERRED_LIGHTING_WGSL: &str = include_str!("../shaders/deferred_lighting.wgsl");
