@@ -361,7 +361,7 @@ fn test_variant_workflow() {
         let variant = mgr.get_or_create("PBRBase", key, &composer).unwrap();
         assert!(!variant.wgsl_source.is_empty());
         assert!(
-            variant.wgsl_source.contains("override @id("),
+            variant.wgsl_source.contains("@id("),
             "Missing override declarations for variant {}",
             key
         );

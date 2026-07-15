@@ -99,8 +99,22 @@ impl DeferredPlusPipeline {
         debug_assert_eq!(descriptor.rendering_path, RenderingPath::DeferredPlus);
 
         // ---- shaders ----
+        #[cfg(feature = "use-shader-framework")]
+        let pbr_common_generated = crate::shader_library::generate_pbr_common_wgsl();
+
+        #[cfg(feature = "use-shader-framework")]
+        let geometry_src = format!("{pbr_common_generated}\n{DEFERRED_GEOMETRY_WGSL}");
+        #[cfg(not(feature = "use-shader-framework"))]
         let geometry_src = format!("{PBR_COMMON}\n{DEFERRED_GEOMETRY_WGSL}");
+
+        #[cfg(feature = "use-shader-framework")]
+        let lighting_src = format!("{pbr_common_generated}\n{DEFERRED_LIGHTING_WGSL}");
+        #[cfg(not(feature = "use-shader-framework"))]
         let lighting_src = format!("{PBR_COMMON}\n{DEFERRED_LIGHTING_WGSL}");
+
+        #[cfg(feature = "use-shader-framework")]
+        let culling_src = format!("{pbr_common_generated}\n{CLUSTER_CULLING_WGSL}");
+        #[cfg(not(feature = "use-shader-framework"))]
         let culling_src = format!("{PBR_COMMON}\n{CLUSTER_CULLING_WGSL}");
 
         let geometry_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {

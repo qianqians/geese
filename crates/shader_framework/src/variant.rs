@@ -1180,7 +1180,7 @@ mod tests {
         let variant = mgr.get_or_create("simple", &key, &composer).unwrap();
         let wgsl = &variant.wgsl_source;
 
-        assert!(wgsl.contains("override @id("), "Missing override declarations in:\n{}", wgsl);
+        assert!(wgsl.contains("@id("), "Missing override declarations in:\n{}", wgsl);
         assert!(wgsl.contains("SKINNING"), "Missing SKINNING constant in:\n{}", wgsl);
         assert!(wgsl.contains("MAX_LIGHTS"), "Missing MAX_LIGHTS constant in:\n{}", wgsl);
     }

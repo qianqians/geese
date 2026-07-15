@@ -229,7 +229,7 @@ impl WgslGenerator {
                     None => String::new(),
                 };
                 format!(
-                    "override @id({}) {}: {}{};",
+                    "@id({}) override {}: {}{};",
                     c.id,
                     c.name,
                     c.ty.to_wgsl(),
@@ -768,8 +768,8 @@ mod tests {
 
         let generator = WgslGenerator::new();
         let wgsl = generator.generate(&shader).unwrap();
-        assert!(wgsl.contains("override @id(0) roughness_override: f32 = 0.5;"));
-        assert!(wgsl.contains("override @id(1) max_lights: u32 = 16u;"));
+        assert!(wgsl.contains("@id(0) override roughness_override: f32 = 0.5;"));
+        assert!(wgsl.contains("@id(1) override max_lights: u32 = 16u;"));
     }
 
     #[test]
@@ -1023,7 +1023,7 @@ mod tests {
             default_value: None,
         }];
         let wgsl = generator.generate_constants(&constants);
-        assert_eq!(wgsl, "override @id(5) threshold: f32;");
+        assert_eq!(wgsl, "@id(5) override threshold: f32;");
     }
 
     #[test]
