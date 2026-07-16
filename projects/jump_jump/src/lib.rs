@@ -182,7 +182,6 @@ fn run(game_module: &str, py: Python<'_>) -> PyResult<()> {
                 let now = Instant::now();
                 let dt = (now - last_frame).as_secs_f32().min(0.1);
                 last_frame = now;
-                input_state.begin_frame();
 
                 let physics_scene = physics.scene_mut(physics_scene_id).unwrap();
 
@@ -237,6 +236,8 @@ fn run(game_module: &str, py: Python<'_>) -> PyResult<()> {
                         Err(wgpu::SurfaceError::Timeout) => {}
                     }
                 }
+                // 帧末清空瞬时输入状态（事件在下一帧 winit 分发时重新累积）
+                input_state.begin_frame();
                 frame_index = frame_index.wrapping_add(1);
             }
             _ => {}

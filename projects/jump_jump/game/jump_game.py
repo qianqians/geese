@@ -127,13 +127,13 @@ class JumpGame:
 
         # ── 4. 玩家 ──
         player_y = PLAYER_HALF_HEIGHT + PLAYER_RADIUS + start_half[1]
-        self.player_body_handle, self.player_node_index = bridge.create_player(
+        self.player_body_handle, _ = bridge.create_player(
             0.0, player_y, 0.0, PLAYER_HALF_HEIGHT, PLAYER_RADIUS)
 
-        # 玩家可视网格
+        # 玩家可视网格（用渲染节点索引同步位置）
         ps = PLAYER_RADIUS * 2.0
         ph = PLAYER_HALF_HEIGHT * 2.0 + PLAYER_RADIUS * 2.0
-        bridge.scene_add_dynamic_with_material(
+        _, self.player_node_index = bridge.scene_add_dynamic_with_material(
             self._player_mesh_idx, 1,
             0.0, player_y, 0.0, ps, ph, ps)
 
