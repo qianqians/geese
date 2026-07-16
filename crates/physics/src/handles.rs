@@ -16,7 +16,7 @@ pub struct BodyHandle {
 }
 
 impl BodyHandle {
-    pub(crate) fn new(scene: SceneId, inner: rp::RigidBodyHandle) -> Self {
+    pub fn new(scene: SceneId, inner: rp::RigidBodyHandle) -> Self {
         Self { scene, inner }
     }
 
@@ -37,7 +37,7 @@ pub struct ColliderHandle {
 }
 
 impl ColliderHandle {
-    pub(crate) fn new(scene: SceneId, inner: rp::ColliderHandle) -> Self {
+    pub fn new(scene: SceneId, inner: rp::ColliderHandle) -> Self {
         Self { scene, inner }
     }
 

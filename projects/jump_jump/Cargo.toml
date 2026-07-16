@@ -1,0 +1,29 @@
+[package]
+name = "jump_jump"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "jump_jump"
+crate-type = ["cdylib"]
+
+[dependencies]
+cgmath = "0.18"
+wgpu = "22.1"
+winit = "0.30"
+env_logger = "0.11"
+log = "0.4"
+pollster = "0.3"
+uuid = { version = "1.3.3", features = ["v4"] }
+pyo3 = { version = "0.26.0", features = ["extension-module"] }
+
+# 引擎内部 crates
+py_engine = { path = "../../crates/py_engine" }
+render = { path = "../../crates/render" }
+physics = { path = "../../crates/physics" }
+camera = { path = "../../crates/camera" }
+scene = { path = "../../crates/scene" }
+input = { path = "../../crates/input" }
+config = { path = "../../crates/config" }
+avatar = { path = "../../crates/avatar" }
+math = { path = "../../crates/math" }

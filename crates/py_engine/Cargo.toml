@@ -1,0 +1,20 @@
+[package]
+name = "py_engine"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "py_engine"
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.26.0", features = ["extension-module"] }
+scene = { path = "../scene" }
+physics = { path = "../physics" }
+input = { path = "../input" }
+camera = { path = "../camera" }
+render = { path = "../render" }
+avatar = { path = "../avatar" }
+cgmath = "0.18"
+slotmap = "1"
+rapier3d = "0.32"
