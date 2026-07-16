@@ -14,6 +14,7 @@ path = "src/main.rs"
 [features]
 default = []
 python-scripting = []
+python-runtime = ["pyo3", "py_engine"]
 
 [dependencies]
 winit = "0.30"
@@ -37,6 +38,10 @@ asset = { path = "../asset" }
 math = { path = "../math" }
 config = { path = "../config" }
 avatar = { path = "../avatar" }
+
+# Feature-gated (python-runtime)
+pyo3 = { version = "0.26.0", features = ["extension-module"], optional = true }
+py_engine = { path = "../py_engine", optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 winit = { version = "0.30", features = ["android-native-activity"] }

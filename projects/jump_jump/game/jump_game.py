@@ -88,9 +88,26 @@ class JumpGame:
             return
         self._initialized = True
 
+        # ── 材质定义（原来在 Rust scene_builder.rs 中）──
+        self._mat_ground = bridge.material_create("ground", 0.35, 0.35, 0.38, 0.0, 0.8)
+        self._mat_player = bridge.material_create("player", 1.0, 0.85, 0.1, 0.0, 0.6)
+        self._mat_plat_blue = bridge.material_create("platform_blue", 0.2, 0.5, 0.9, 0.0, 0.7)
+        self._mat_plat_red = bridge.material_create("platform_red", 0.9, 0.25, 0.25, 0.0, 0.7)
+        self._mat_plat_green = bridge.material_create("platform_green", 0.25, 0.7, 0.35, 0.0, 0.7)
+        self._mat_plat_purple = bridge.material_create("platform_purple", 0.6, 0.3, 0.8, 0.0, 0.7)
+        self._mat_plat_orange = bridge.material_create("platform_orange", 1.0, 0.55, 0.1, 0.0, 0.7)
+        self._platform_materials = [
+            self._mat_plat_blue, self._mat_plat_red, self._mat_plat_green,
+            self._mat_plat_purple, self._mat_plat_orange
+        ]
+
+        # ── 初始灯光 ──
+        bridge.light_set_ambient(0.12, 0.12, 0.15)
+        bridge.light_add_directional(-0.3, -1.0, -0.5, 1.0, 0.95, 0.85, 1.2)
+
         # 预构建常用网格
-        self._ground_mesh_idx = bridge.build_cube(1.0, 1.0, 1.0, 0)
-        self._player_mesh_idx = bridge.build_cube(1.0, 1.0, 1.0, 1)
+        self._ground_mesh_idx = bridge.build_cube(1.0, 1.0, 1.0, self._mat_ground)
+        self._player_mesh_idx = bridge.build_cube(1.0, 1.0, 1.0, self._mat_player)
 
         # ── 1. 地面 ──
         ground_bh, _ = bridge.physics_add_body(
@@ -98,7 +115,7 @@ class JumpGame:
             "cuboid", {"hx": GROUND_HALF_SIZE, "hy": GROUND_HALF_HEIGHT, "hz": GROUND_HALF_SIZE},
         )
         ground_eid = bridge.scene_add_static_with_material(
-            self._ground_mesh_idx, 0,
+            self._ground_mesh_idx, self._mat_ground,
             0.0, GROUND_Y, 0.0,
             GROUND_HALF_SIZE * 2.0, GROUND_HALF_HEIGHT * 2.0, GROUND_HALF_SIZE * 2.0,
         )
@@ -111,7 +128,7 @@ class JumpGame:
         # ── 2. 起始平台 ──
         start_half = (PLATFORM_BASE_HALF_SIZE, PLATFORM_HALF_HEIGHT, PLATFORM_BASE_HALF_SIZE)
         start_mesh = bridge.build_cube(
-            start_half[0] * 2, start_half[1] * 2, start_half[2] * 2, 2)
+            start_half[0] * 2, start_half[1] * 2, start_half[2] * 2, self._mat_plat_blue)
         start_bh, start_eid = self._add_platform(bridge, start_mesh, (0, 0, 0), start_half)
         self.platforms.append(Platform(start_bh, start_eid, 0, 0, 0, *start_half))
 
@@ -120,7 +137,7 @@ class JumpGame:
         next_pos = (0.0, 0.0, dist)
         next_half = self._random_platform_size()
         next_mesh = bridge.build_cube(
-            next_half[0] * 2, next_half[1] * 2, next_half[2] * 2, 3)
+            next_half[0] * 2, next_half[1] * 2, next_half[2] * 2, self._mat_plat_red)
         next_bh, next_eid = self._add_platform(bridge, next_mesh, next_pos, next_half)
         self.platforms.append(Platform(next_bh, next_eid, *next_pos, *next_half))
         self.last_platform_center = next_pos
@@ -134,7 +151,7 @@ class JumpGame:
         ps = PLAYER_RADIUS * 2.0
         ph = PLAYER_HALF_HEIGHT * 2.0 + PLAYER_RADIUS * 2.0
         _, self.player_node_index = bridge.scene_add_dynamic_with_material(
-            self._player_mesh_idx, 1,
+            self._player_mesh_idx, self._mat_player,
             0.0, player_y, 0.0, ps, ph, ps)
 
         bridge.scene_update_transforms()
@@ -146,6 +163,7 @@ class JumpGame:
 
     def update(self, bridge, dt: float):
         self._ensure_init(bridge)
+        self._update_lighting(bridge)
 
         if self.game_over:
             if bridge.input_key_pressed("R"):
@@ -287,7 +305,7 @@ class JumpGame:
 
         mesh = bridge.build_cube(
             scaled[0] * 2, scaled[1] * 2, scaled[2] * 2,
-            random.randint(2, 6))
+            random.choice(self._platform_materials))
 
         eid = bridge.scene_add_static(
             mesh,
@@ -316,7 +334,7 @@ class JumpGame:
         # 重建起始平台
         start_half = (PLATFORM_BASE_HALF_SIZE, PLATFORM_HALF_HEIGHT, PLATFORM_BASE_HALF_SIZE)
         start_mesh = bridge.build_cube(
-            start_half[0] * 2, start_half[1] * 2, start_half[2] * 2, 2)
+            start_half[0] * 2, start_half[1] * 2, start_half[2] * 2, self._mat_plat_blue)
         start_bh, start_eid = self._add_platform(bridge, start_mesh, (0, 0, 0), start_half)
         self.platforms.append(Platform(start_bh, start_eid, 0, 0, 0, *start_half))
 
@@ -326,7 +344,7 @@ class JumpGame:
         next_pos = (0.0, 0.0, dist)
         next_half = self._random_platform_size()
         next_mesh = bridge.build_cube(
-            next_half[0] * 2, next_half[1] * 2, next_half[2] * 2, 3)
+            next_half[0] * 2, next_half[1] * 2, next_half[2] * 2, self._mat_plat_red)
         next_bh, next_eid = self._add_platform(bridge, next_mesh, next_pos, next_half)
         self.platforms.append(Platform(next_bh, next_eid, *next_pos, *next_half))
 
@@ -347,6 +365,25 @@ class JumpGame:
         self.request_restart = False
         self.grounded_was = False
         self.grounded = False
+
+        # 重置灯光为正常状态
+        bridge.light_clear()
+        bridge.light_set_ambient(0.12, 0.12, 0.15)
+        bridge.light_add_directional(-0.3, -1.0, -0.5, 1.0, 0.95, 0.85, 1.2)
+
+    # ────────────────────────────────────────────────────────
+    # 灯光管理
+    # ────────────────────────────────────────────────────────
+
+    def _update_lighting(self, bridge):
+        """根据游戏状态更新灯光。"""
+        bridge.light_clear()
+        if self.game_over:
+            bridge.light_set_ambient(0.18, 0.06, 0.06)
+            bridge.light_add_directional(-0.3, -1.0, -0.5, 0.7, 0.3, 0.3, 0.9)
+        else:
+            bridge.light_set_ambient(0.12, 0.12, 0.15)
+            bridge.light_add_directional(-0.3, -1.0, -0.5, 1.0, 0.95, 0.85, 1.2)
 
     # ────────────────────────────────────────────────────────
     # 辅助
@@ -376,3 +413,17 @@ class JumpGame:
         px, py, pz = bridge.physics_get_position(self.player_body_handle)
         frac = self.charge_power / MAX_CHARGE if self.is_charging else 0.0
         return (frac, self.game_over, px, py, pz, self.score)
+
+
+# ════════════════════════════════════════════════════════════════
+# 启动入口
+# ════════════════════════════════════════════════════════════════
+if __name__ == "__main__":
+    game = JumpGame()
+
+    def on_update(bridge):
+        game.update(bridge)
+        return game._state(bridge)
+
+    import geese_game
+    geese_game.run_loop(on_update)

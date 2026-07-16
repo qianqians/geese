@@ -3,6 +3,7 @@
 //! 本 crate 只提供**机制**（Scene / Physics / Input / Camera 桥接），
 //! 不包含任何游戏特定逻辑。具体游戏通过 Python 脚本调用这些 API 实现。
 
+use std::f32::consts::PI;
 use std::sync::Mutex;
 
 use cgmath::{Point3, Quaternion, Vector3};
@@ -12,14 +13,14 @@ use pyo3::types::PyDict;
 use slotmap::Key;
 
 use avatar::{SceneNode, Transform};
-use camera::Camera;
+use camera::{Camera, CameraMode};
 use input::{InputState, KeyCode};
 use physics::handles::{BodyHandle, SceneId};
 use physics::math::{Iso3, Quat, Vec3};
 use physics::scene::PhysicsScene;
 use physics::shapes::ShapeDesc;
 use physics::world::{BodyDesc, BodyKind};
-use render::{MeshFlags, ModelMesh, Vertex};
+use render::{AlphaMode, Light, Material, MeshFlags, ModelMesh, Vertex};
 use scene::Scene;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -40,6 +41,39 @@ fn get_mesh(idx: usize) -> Result<ModelMesh, String> {
     reg.get(idx)
         .cloned()
         .ok_or_else(|| format!("Mesh index {idx} out of range"))
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 全局材质注册表
+// ═══════════════════════════════════════════════════════════════════════════
+
+static MATERIAL_REGISTRY: Mutex<Vec<Material>> = Mutex::new(Vec::new());
+
+fn register_material(mat: Material) -> usize {
+    let mut reg = MATERIAL_REGISTRY.lock().unwrap();
+    let idx = reg.len();
+    reg.push(mat);
+    idx
+}
+
+/// 获取全局材质库（供运行时初始化场景材质）。
+pub fn get_material_library() -> render::MaterialLibrary {
+    let reg = MATERIAL_REGISTRY.lock().unwrap();
+    render::MaterialLibrary {
+        materials: reg.clone(),
+        textures: vec![],
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 全局光源注册表
+// ═══════════════════════════════════════════════════════════════════════════
+
+static LIGHTS: Mutex<(Vec<Light>, [f32; 3])> = Mutex::new((Vec::new(), [0.12, 0.12, 0.15]));
+
+/// 获取当前灯光配置（供运行时渲染循环读取）。
+pub fn get_lights() -> (Vec<Light>, [f32; 3]) {
+    LIGHTS.lock().unwrap().clone()
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -126,6 +160,55 @@ fn parse_key_code(name: &str) -> PyResult<KeyCode> {
         "LeftShift" => Ok(KeyCode::LeftShift),
         "LeftCtrl" => Ok(KeyCode::LeftCtrl),
         "LeftAlt" => Ok(KeyCode::LeftAlt),
+        // 扩展字母键
+        "B" => Ok(KeyCode::B),
+        "C" => Ok(KeyCode::C),
+        "F" => Ok(KeyCode::F),
+        "G" => Ok(KeyCode::G),
+        "H" => Ok(KeyCode::H),
+        "I" => Ok(KeyCode::I),
+        "J" => Ok(KeyCode::J),
+        "K" => Ok(KeyCode::K),
+        "L" => Ok(KeyCode::L),
+        "M" => Ok(KeyCode::M),
+        "N" => Ok(KeyCode::N),
+        "O" => Ok(KeyCode::O),
+        "P" => Ok(KeyCode::P),
+        "T" => Ok(KeyCode::T),
+        "U" => Ok(KeyCode::U),
+        "V" => Ok(KeyCode::V),
+        "X" => Ok(KeyCode::X),
+        "Y" => Ok(KeyCode::Y),
+        "Z" => Ok(KeyCode::Z),
+        // 数字键
+        "1" => Ok(KeyCode::Num1),
+        "2" => Ok(KeyCode::Num2),
+        "3" => Ok(KeyCode::Num3),
+        "4" => Ok(KeyCode::Num4),
+        "5" => Ok(KeyCode::Num5),
+        "6" => Ok(KeyCode::Num6),
+        "7" => Ok(KeyCode::Num7),
+        "8" => Ok(KeyCode::Num8),
+        "9" => Ok(KeyCode::Num9),
+        "0" => Ok(KeyCode::Num0),
+        // 功能键
+        "F1" => Ok(KeyCode::F1),
+        "F2" => Ok(KeyCode::F2),
+        "F3" => Ok(KeyCode::F3),
+        "F4" => Ok(KeyCode::F4),
+        "F5" => Ok(KeyCode::F5),
+        "F6" => Ok(KeyCode::F6),
+        "F7" => Ok(KeyCode::F7),
+        "F8" => Ok(KeyCode::F8),
+        "F9" => Ok(KeyCode::F9),
+        "F10" => Ok(KeyCode::F10),
+        "F11" => Ok(KeyCode::F11),
+        "F12" => Ok(KeyCode::F12),
+        // 其他控制键
+        "Backspace" => Ok(KeyCode::Backspace),
+        "RightShift" => Ok(KeyCode::RightShift),
+        "RightCtrl" => Ok(KeyCode::RightCtrl),
+        "RightAlt" => Ok(KeyCode::RightAlt),
         _ => Err(PyRuntimeError::new_err(format!("Unknown key: {name}"))),
     }
 }
@@ -458,6 +541,125 @@ impl EngineBridge {
         let mesh = build_cube_mesh(sx, sy, sz, material_index);
         register_mesh(mesh)
     }
+
+    /// 构建 XZ 平面网格（4 顶点），注册到全局网格表。返回网格索引。
+    #[staticmethod]
+    fn build_plane(sx: f32, sz: f32, material_index: usize) -> usize {
+        let mesh = build_plane_mesh(sx, sz, material_index);
+        register_mesh(mesh)
+    }
+
+    /// 构建 UV 球体网格，注册到全局网格表。返回网格索引。
+    #[staticmethod]
+    fn build_sphere(radius: f32, segments: u32, material_index: usize) -> usize {
+        let mesh = build_sphere_mesh(radius, segments, material_index);
+        register_mesh(mesh)
+    }
+
+    /// 构建圆柱体网格（含顶底盖），注册到全局网格表。返回网格索引。
+    #[staticmethod]
+    fn build_cylinder(radius: f32, height: f32, segments: u32, material_index: usize) -> usize {
+        let mesh = build_cylinder_mesh(radius, height, segments, material_index);
+        register_mesh(mesh)
+    }
+
+    // ── 材质创建 ────────────────────────────────────────────
+
+    /// 创建 PBR 材质并添加到场景材质库。返回材质索引。
+    fn material_create(
+        &self,
+        name: &str,
+        r: f32, g: f32, b: f32,
+        metallic: f32,
+        roughness: f32,
+    ) -> usize {
+        let mat = Material {
+            name: Some(name.to_string()),
+            base_color_factor: [r, g, b, 1.0],
+            metallic_factor: metallic,
+            roughness_factor: roughness,
+            emissive_factor: [0.0, 0.0, 0.0],
+            alpha_mode: AlphaMode::Opaque,
+            alpha_cutoff: 0.5,
+            base_color_texture: None,
+            normal_texture: None,
+            metallic_roughness_texture: None,
+            occlusion_texture: None,
+            emissive_texture: None,
+            double_sided: false,
+            custom_shader: None,
+        };
+        // 同时注册到全局材质表和场景材质库
+        let idx = register_material(mat.clone());
+        unsafe {
+            self.scene().materials.materials.push(mat);
+        }
+        idx
+    }
+
+    // ── 光源管理（静态方法，操作全局 LIGHTS 注册表）──────────
+
+    /// 添加平行光到全局光源列表。
+    #[staticmethod]
+    fn light_add_directional(
+        dx: f32, dy: f32, dz: f32,
+        r: f32, g: f32, b: f32,
+        intensity: f32,
+    ) {
+        let mut store = LIGHTS.lock().unwrap();
+        store.0.push(Light::directional([dx, dy, dz], [r, g, b], intensity));
+    }
+
+    /// 清空全局光源列表。
+    #[staticmethod]
+    fn light_clear() {
+        let mut store = LIGHTS.lock().unwrap();
+        store.0.clear();
+    }
+
+    /// 设置全局环境光。
+    #[staticmethod]
+    fn light_set_ambient(r: f32, g: f32, b: f32) {
+        let mut store = LIGHTS.lock().unwrap();
+        store.1 = [r, g, b];
+    }
+
+    // ── 物理配置 ──────────────────────────────────────────
+
+    /// 设置物理场景重力。
+    fn physics_set_gravity(&self, x: f32, y: f32, z: f32) {
+        unsafe {
+            self.physics().set_gravity(Vec3::new(x, y, z));
+        }
+    }
+
+    // ── 摄像机增强 ──────────────────────────────────────────
+
+    /// 设置轨道摄像机参数。
+    fn camera_set_orbit(
+        &self,
+        yaw: f32, pitch: f32,
+        fx: f32, fy: f32, fz: f32,
+        distance: f32,
+    ) {
+        unsafe {
+            self.camera().set_mode(CameraMode::Orbit {
+                yaw,
+                pitch,
+                focal_point: Point3::new(fx, fy, fz),
+                distance,
+                min_distance: 1.0,
+                max_distance: 200.0,
+            });
+        }
+    }
+
+    /// 设置摄像机视场角（度）。
+    fn camera_set_fov(&self, fov_degrees: f32) {
+        unsafe {
+            self.camera().fov = fov_degrees;
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -522,6 +724,261 @@ fn build_cube_mesh(sx: f32, sy: f32, sz: f32, material_index: usize) -> ModelMes
         0,1,2, 0,2,3,  4,5,6, 4,6,7,  8,9,10, 8,10,11,
         12,13,14, 12,14,15,  16,17,18, 16,18,19,  20,21,22, 20,22,23,
     ];
+
+    let mut mesh = ModelMesh::new();
+    mesh.vertices = vertices;
+    mesh.indices = indices;
+    mesh.material = Some(render::MaterialHandle(material_index));
+    mesh.flags = MeshFlags {
+        has_normals: true,
+        has_uv0: true,
+        has_tangents: true,
+        has_skin: false,
+    };
+    mesh
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// XZ 平面网格构建
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn build_plane_mesh(sx: f32, sz: f32, material_index: usize) -> ModelMesh {
+    let hx = sx * 0.5;
+    let hz = sz * 0.5;
+
+    let vertices = vec![
+        Vertex {
+            position: Point3::new(-hx, 0.0, -hz),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+            uv: cgmath::Vector2::new(0.0, 0.0),
+            tangent: [1.0, 0.0, 0.0, 1.0],
+            joints: [0; 4],
+            weights: [1.0, 0.0, 0.0, 0.0],
+        },
+        Vertex {
+            position: Point3::new(hx, 0.0, -hz),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+            uv: cgmath::Vector2::new(sx, 0.0),
+            tangent: [1.0, 0.0, 0.0, 1.0],
+            joints: [0; 4],
+            weights: [1.0, 0.0, 0.0, 0.0],
+        },
+        Vertex {
+            position: Point3::new(hx, 0.0, hz),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+            uv: cgmath::Vector2::new(sx, sz),
+            tangent: [1.0, 0.0, 0.0, 1.0],
+            joints: [0; 4],
+            weights: [1.0, 0.0, 0.0, 0.0],
+        },
+        Vertex {
+            position: Point3::new(-hx, 0.0, hz),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+            uv: cgmath::Vector2::new(0.0, sz),
+            tangent: [1.0, 0.0, 0.0, 1.0],
+            joints: [0; 4],
+            weights: [1.0, 0.0, 0.0, 0.0],
+        },
+    ];
+
+    let indices = vec![0, 1, 2, 0, 2, 3];
+
+    let mut mesh = ModelMesh::new();
+    mesh.vertices = vertices;
+    mesh.indices = indices;
+    mesh.material = Some(render::MaterialHandle(material_index));
+    mesh.flags = MeshFlags {
+        has_normals: true,
+        has_uv0: true,
+        has_tangents: true,
+        has_skin: false,
+    };
+    mesh
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UV 球体网格构建
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn build_sphere_mesh(radius: f32, segments: u32, material_index: usize) -> ModelMesh {
+    let rings = segments;
+    let sectors = segments;
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+
+    for ring in 0..=rings {
+        let v = ring as f32 / rings as f32;
+        let phi = v * PI; // 0..PI
+        for sector in 0..=sectors {
+            let u = sector as f32 / sectors as f32;
+            let theta = u * 2.0 * PI; // 0..2PI
+
+            let x = radius * phi.sin() * theta.cos();
+            let y = radius * phi.cos();
+            let z = radius * phi.sin() * theta.sin();
+
+            let nx = phi.sin() * theta.cos();
+            let ny = phi.cos();
+            let nz = phi.sin() * theta.sin();
+
+            // tangent along theta direction
+            let tx = -theta.sin();
+            let tz = theta.cos();
+
+            vertices.push(Vertex {
+                position: Point3::new(x, y, z),
+                normal: Vector3::new(nx, ny, nz),
+                uv: cgmath::Vector2::new(u, v),
+                tangent: [tx, 0.0, tz, 1.0],
+                joints: [0; 4],
+                weights: [1.0, 0.0, 0.0, 0.0],
+            });
+        }
+    }
+
+    let stride = sectors + 1;
+    for ring in 0..rings {
+        for sector in 0..sectors {
+            let i0 = ring * stride + sector;
+            let i1 = i0 + 1;
+            let i2 = (ring + 1) * stride + sector;
+            let i3 = i2 + 1;
+            indices.push(i0);
+            indices.push(i2);
+            indices.push(i1);
+            indices.push(i1);
+            indices.push(i2);
+            indices.push(i3);
+        }
+    }
+
+    let mut mesh = ModelMesh::new();
+    mesh.vertices = vertices;
+    mesh.indices = indices;
+    mesh.material = Some(render::MaterialHandle(material_index));
+    mesh.flags = MeshFlags {
+        has_normals: true,
+        has_uv0: true,
+        has_tangents: true,
+        has_skin: false,
+    };
+    mesh
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 圆柱体网格构建（含顶底盖）
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn build_cylinder_mesh(
+    radius: f32, height: f32, segments: u32, material_index: usize,
+) -> ModelMesh {
+    let half_h = height * 0.5;
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+
+    // 侧面顶点
+    for i in 0..=segments {
+        let u = i as f32 / segments as f32;
+        let theta = u * 2.0 * PI;
+        let x = radius * theta.cos();
+        let z = radius * theta.sin();
+        let nx = theta.cos();
+        let nz = theta.sin();
+
+        // 底部顶点
+        vertices.push(Vertex {
+            position: Point3::new(x, -half_h, z),
+            normal: Vector3::new(nx, 0.0, nz),
+            uv: cgmath::Vector2::new(u, 0.0),
+            tangent: [-theta.sin(), 0.0, theta.cos(), 1.0],
+            joints: [0; 4],
+            weights: [1.0, 0.0, 0.0, 0.0],
+        });
+        // 顶部顶点
+        vertices.push(Vertex {
+            position: Point3::new(x, half_h, z),
+            normal: Vector3::new(nx, 0.0, nz),
+            uv: cgmath::Vector2::new(u, 1.0),
+            tangent: [-theta.sin(), 0.0, theta.cos(), 1.0],
+            joints: [0; 4],
+            weights: [1.0, 0.0, 0.0, 0.0],
+        });
+    }
+
+    // 侧面索引
+    for i in 0..segments {
+        let base = i * 2;
+        let b0 = base;
+        let t0 = base + 1;
+        let b1 = base + 2;
+        let t1 = base + 3;
+        indices.push(b0);
+        indices.push(b1);
+        indices.push(t0);
+        indices.push(t0);
+        indices.push(b1);
+        indices.push(t1);
+    }
+
+    // 顶盖
+    let top_center_idx = vertices.len() as u32;
+    vertices.push(Vertex {
+        position: Point3::new(0.0, half_h, 0.0),
+        normal: Vector3::new(0.0, 1.0, 0.0),
+        uv: cgmath::Vector2::new(0.5, 0.5),
+        tangent: [1.0, 0.0, 0.0, 1.0],
+        joints: [0; 4],
+        weights: [1.0, 0.0, 0.0, 0.0],
+    });
+    let top_ring_start = vertices.len() as u32;
+    for i in 0..=segments {
+        let theta = (i as f32 / segments as f32) * 2.0 * PI;
+        let x = radius * theta.cos();
+        let z = radius * theta.sin();
+        vertices.push(Vertex {
+            position: Point3::new(x, half_h, z),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+            uv: cgmath::Vector2::new(theta.cos() * 0.5 + 0.5, theta.sin() * 0.5 + 0.5),
+            tangent: [1.0, 0.0, 0.0, 1.0],
+            joints: [0; 4],
+            weights: [1.0, 0.0, 0.0, 0.0],
+        });
+    }
+    for i in 0..segments {
+        indices.push(top_center_idx);
+        indices.push(top_ring_start + i);
+        indices.push(top_ring_start + i + 1);
+    }
+
+    // 底盖
+    let bot_center_idx = vertices.len() as u32;
+    vertices.push(Vertex {
+        position: Point3::new(0.0, -half_h, 0.0),
+        normal: Vector3::new(0.0, -1.0, 0.0),
+        uv: cgmath::Vector2::new(0.5, 0.5),
+        tangent: [1.0, 0.0, 0.0, 1.0],
+        joints: [0; 4],
+        weights: [1.0, 0.0, 0.0, 0.0],
+    });
+    let bot_ring_start = vertices.len() as u32;
+    for i in 0..=segments {
+        let theta = (i as f32 / segments as f32) * 2.0 * PI;
+        let x = radius * theta.cos();
+        let z = radius * theta.sin();
+        vertices.push(Vertex {
+            position: Point3::new(x, -half_h, z),
+            normal: Vector3::new(0.0, -1.0, 0.0),
+            uv: cgmath::Vector2::new(theta.cos() * 0.5 + 0.5, theta.sin() * 0.5 + 0.5),
+            tangent: [1.0, 0.0, 0.0, 1.0],
+            joints: [0; 4],
+            weights: [1.0, 0.0, 0.0, 0.0],
+        });
+    }
+    for i in 0..segments {
+        indices.push(bot_center_idx);
+        indices.push(bot_ring_start + i + 1);
+        indices.push(bot_ring_start + i);
+    }
 
     let mut mesh = ModelMesh::new();
     mesh.vertices = vertices;

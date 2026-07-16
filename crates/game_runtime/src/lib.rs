@@ -5,6 +5,9 @@
 
 pub mod script_host;
 
+#[cfg(feature = "python-runtime")]
+pub mod python_runtime;
+
 #[cfg(target_os = "ios")]
 pub mod ios;
 
