@@ -1065,29 +1065,29 @@ fn group_instanced_commands(
     }
 
     let mut grouped: Vec<WgpuRenderCommand> = Vec::with_capacity(commands.len());
-    let mut batch_start: usize = 0;
 
-    for i in 1..=commands.len() {
-        let flush = i == commands.len() || commands[i].mesh_key != commands[batch_start].mesh_key;
-        if flush {
-            let batch_size = i - batch_start;
-            if batch_size == 1 {
-                // 单实例：保持原样
-                grouped.push(commands.swap_remove(batch_start));
-            } else {
-                // 多实例：合并为一条 instanced 命令
-                let mut base = commands.swap_remove(batch_start);
-                // 收集 batch 中剩余命令的 model 矩阵
-                let mut models = base.instance_models;
-                for _ in 1..batch_size {
-                    let cmd = commands.swap_remove(batch_start);
-                    models.extend(cmd.instance_models);
-                }
-                base.instance_count = models.len() as u32;
-                base.instance_models = models;
-                grouped.push(base);
+    while !commands.is_empty() {
+        let mesh_key = commands[0].mesh_key;
+        let mut batch_size: usize = 1;
+        while batch_size < commands.len() && commands[batch_size].mesh_key == mesh_key {
+            batch_size += 1;
+        }
+
+        if batch_size == 1 {
+            // 单实例：保持原样
+            grouped.push(commands.swap_remove(0));
+        } else {
+            // 多实例：合并为一条 instanced 命令
+            let mut base = commands.swap_remove(0);
+            // 收集 batch 中剩余命令的 model 矩阵
+            let mut models = base.instance_models;
+            for _ in 1..batch_size {
+                let cmd = commands.swap_remove(0);
+                models.extend(cmd.instance_models);
             }
-            batch_start = i;
+            base.instance_count = models.len() as u32;
+            base.instance_models = models;
+            grouped.push(base);
         }
     }
 

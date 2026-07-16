@@ -34,11 +34,11 @@ fn vs_fullscreen(@builtin(vertex_index) vi: u32) -> VertexOutput {
 
 // ACES filmic tonemap (Krzysztof Narkowicz simplified fit)
 fn aces_tonemap(x: f32) -> f32 {
-    const a = 2.51;
-    const b = 0.03;
-    const c = 2.43;
-    const d = 0.59;
-    const e = 0.14;
+    let a = 2.51;
+    let b = 0.03;
+    let c = 2.43;
+    let d = 0.59;
+    let e = 0.14;
     let num = x * (a * x + b);
     let den = x * (c * x + d) + e;
     return clamp(num / den, 0.0, 1.0);

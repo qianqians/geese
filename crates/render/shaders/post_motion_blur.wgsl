@@ -103,7 +103,7 @@ fn fs_motion_blur(in: VertexOutput) -> @location(0) vec4f {
 
     // 混合：运动越强模糊越多
     let blend = clamp(motion_mag * mb_strength * 3.0, 0.0, 1.0);
-    let final = mix(color.rgb, result, blend);
+    let final_color = mix(color.rgb, result, blend);
 
-    return vec4f(final, color.a);
+    return vec4f(final_color, color.a);
 }

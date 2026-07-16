@@ -296,6 +296,10 @@ impl PostProcessPipeline {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&sampler),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&bloom_b),
+                },
             ],
         });
 

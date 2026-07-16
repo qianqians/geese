@@ -70,7 +70,7 @@ fn fs_dof(in: VertexOutput) -> @location(0) vec4f {
 
     // 在较大邻域内计算亮度梯度（作为深度变化的代理）
     var gradient: f32 = 0.0;
-    let grad_offsets = array<vec2f, 8>(
+    var grad_offsets = array<vec2f, 8>(
         vec2f(-3.0, 0.0), vec2f(3.0, 0.0),
         vec2f(0.0, -3.0), vec2f(0.0, 3.0),
         vec2f(-2.0, -2.0), vec2f(2.0, -2.0),

@@ -52,7 +52,7 @@ fn enabled_mask() -> u32 {
 
 // 螺旋核采样方向（16 个均匀分布的半球投影方向）
 const KERNEL_SIZE: u32 = 16u;
-const KERNEL: array<vec2f, 16> = array<vec2f, 16>(
+var<private> KERNEL: array<vec2f, 16> = array<vec2f, 16>(
     vec2f( 0.5381,  0.1856),
     vec2f( 0.1379,  0.6968),
     vec2f( 0.6852, -0.3995),

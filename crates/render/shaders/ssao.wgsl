@@ -21,7 +21,7 @@ struct SsaoParams {
 
 // 随机采样方向（16 个半球方向）
 const SAMPLE_COUNT: u32 = 16u;
-const SAMPLES: array<vec3<f32>, 16> = array<vec3<f32>, 16>(
+var<private> SAMPLES: array<vec3<f32>, 16> = array<vec3<f32>, 16>(
     vec3<f32>( 0.5381,  0.1856,  0.4319),
     vec3<f32>( 0.1379,  0.6968,  0.2987),
     vec3<f32>( 0.6852, -0.3995,  0.2356),

@@ -37,7 +37,7 @@ struct Particle {
 @group(1) @binding(0) var<storage, read> particle_buffer: array<Particle>;
 
 // Quad vertices in local space (XY plane, camera-facing after billboard transform)
-const QUAD_VERTICES: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
+var<private> QUAD_VERTICES: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
     vec2<f32>(-1.0, -1.0),
     vec2<f32>( 1.0, -1.0),
     vec2<f32>(-1.0,  1.0),
@@ -46,7 +46,7 @@ const QUAD_VERTICES: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
     vec2<f32>( 1.0,  1.0),
 );
 
-const QUAD_UVS: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
+var<private> QUAD_UVS: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
     vec2<f32>(0.0, 0.0),
     vec2<f32>(1.0, 0.0),
     vec2<f32>(0.0, 1.0),

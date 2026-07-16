@@ -55,17 +55,16 @@ fn cluster_aabb(tile_x: u32, tile_y: u32, slice_idx: u32) -> Aabb {
     let ndc_near = zf * (z_near_vs - z_near) / (z_near_vs * (zf - z_near));
     let ndc_far  = zf * (z_far_vs  - z_near) / (z_far_vs  * (zf - z_near));
 
-    // 8 个 NDC 角点
-    let corners = array<vec4<f32>, 8>(
-        vec4<f32>(ndc_min_x, ndc_min_y, ndc_near, 1.0),
-        vec4<f32>(ndc_max_x, ndc_min_y, ndc_near, 1.0),
-        vec4<f32>(ndc_min_x, ndc_max_y, ndc_near, 1.0),
-        vec4<f32>(ndc_max_x, ndc_max_y, ndc_near, 1.0),
-        vec4<f32>(ndc_min_x, ndc_min_y, ndc_far,  1.0),
-        vec4<f32>(ndc_max_x, ndc_min_y, ndc_far,  1.0),
-        vec4<f32>(ndc_min_x, ndc_max_y, ndc_far,  1.0),
-        vec4<f32>(ndc_max_x, ndc_max_y, ndc_far,  1.0),
-    );
+    // 8 个 NDC 角点（显式声明 + 逐元素赋值，避免 var + array constructor 的 naga 兼容性问题）
+    var corners: array<vec4<f32>, 8>;
+    corners[0] = vec4<f32>(ndc_min_x, ndc_min_y, ndc_near, 1.0);
+    corners[1] = vec4<f32>(ndc_max_x, ndc_min_y, ndc_near, 1.0);
+    corners[2] = vec4<f32>(ndc_min_x, ndc_max_y, ndc_near, 1.0);
+    corners[3] = vec4<f32>(ndc_max_x, ndc_max_y, ndc_near, 1.0);
+    corners[4] = vec4<f32>(ndc_min_x, ndc_min_y, ndc_far,  1.0);
+    corners[5] = vec4<f32>(ndc_max_x, ndc_min_y, ndc_far,  1.0);
+    corners[6] = vec4<f32>(ndc_min_x, ndc_max_y, ndc_far,  1.0);
+    corners[7] = vec4<f32>(ndc_max_x, ndc_max_y, ndc_far,  1.0);
 
     // 变换到 world-space 并取 min/max
     var aabb: Aabb;

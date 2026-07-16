@@ -61,12 +61,12 @@ fn fs_bloom_upsample(in: VertexOutput) -> @location(0) vec4f {
 
     // 9-tap tent filter
     var result = vec3f(0.0);
-    let offsets = array(
+    var offsets = array(
         vec2f(-1.0, -1.0), vec2f(0.0, -1.0), vec2f(1.0, -1.0),
         vec2f(-1.0, 0.0),  vec2f(0.0, 0.0),  vec2f(1.0, 0.0),
         vec2f(-1.0, 1.0),  vec2f(0.0, 1.0),  vec2f(1.0, 1.0),
     );
-    let weights = array(
+    var weights = array(
         0.0625, 0.125, 0.0625,
         0.125,  0.25,  0.125,
         0.0625, 0.125, 0.0625,
