@@ -1,0 +1,31 @@
+//! 空玩家控制器桩（空项目模板）。
+//!
+//! 自由摄像机模式下不需要角色移动逻辑，
+//! 此模块仅提供摄像机位置输出，供 game_runtime 集成使用。
+
+use cgmath::Point3;
+
+/// 空玩家控制器（桩）。
+///
+/// 在自由摄像机模式下，玩家位置固定为原点。
+/// 摄像机通过 `FreeCamera::handle_input` 自行处理飞行移动。
+pub struct EmptyPlayer {
+    /// 玩家位置（固定为原点附近）
+    pub position: Point3<f32>,
+    /// 玩家朝向（yaw 弧度）
+    pub yaw: f32,
+}
+
+impl EmptyPlayer {
+    pub fn new(position: Point3<f32>) -> Self {
+        Self {
+            position,
+            yaw: 0.0,
+        }
+    }
+
+    /// 空实现：自由模式下不处理玩家移动。
+    pub fn update(&mut self, _dt: f32) {
+        // 空项目：不处理重力、移动等
+    }
+}

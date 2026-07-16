@@ -525,6 +525,18 @@ pub fn all_templates() -> Vec<ProjectTemplate> {
 fn empty_template_files() -> Vec<TemplateFile> {
     vec![
         TemplateFile {
+            relative_path: "src/camera.rs".into(),
+            content: include_str!("../templates/empty_camera.rs.txt").to_string(),
+        },
+        TemplateFile {
+            relative_path: "src/player.rs".into(),
+            content: include_str!("../templates/empty_player.rs.txt").to_string(),
+        },
+        TemplateFile {
+            relative_path: "src/scene_builder.rs".into(),
+            content: include_str!("../templates/scene_builder.rs.txt").to_string(),
+        },
+        TemplateFile {
             relative_path: "assets/scenes/default.scene.json".into(),
             content: scene_json_content("空项目".into(), &empty_objects()),
         },
@@ -582,6 +594,10 @@ fn topdown_template_files() -> Vec<TemplateFile> {
         TemplateFile {
             relative_path: "src/player.rs".into(),
             content: include_str!("../templates/td_player.rs.txt").to_string(),
+        },
+        TemplateFile {
+            relative_path: "src/scene_builder.rs".into(),
+            content: include_str!("../templates/scene_builder.rs.txt").to_string(),
         },
         TemplateFile {
             relative_path: "assets/scenes/default.scene.json".into(),
@@ -688,14 +704,18 @@ log = "0.4"
 pollster = "0.3"
 serde = {{ version = "1.0", features = ["derive"] }}
 serde_json = "1.0"
-geese_game = {{ path = "../crates/game_runtime" }}
+# 注意：path 相对于引擎根，若项目不在 projects/ 下请手动调整
+geese_game = {{ package = "game_runtime", path = "../../crates/game_runtime" }}
+# 取消注释以下依赖以启用脚手架模块（camera/player/scene_builder）：
+# render = {{ path = "../../crates/render" }}
+# input = {{ path = "../../crates/input" }}
 
 "#
     )
 }
 
 /// 生成 main.rs 模板内容。
-pub fn main_rs_content(template: &ProjectTemplate) -> String {
+pub fn main_rs_content(template: &ProjectTemplate, project_name: &str) -> String {
     let camera_type = match template.camera_config.camera_type {
         CameraType::Empty => "Free",
         CameraType::FirstPerson => "FirstPerson",
@@ -703,11 +723,27 @@ pub fn main_rs_content(template: &ProjectTemplate) -> String {
         CameraType::TopDown => "TopDown",
     };
 
-    let has_camera_player = template.files.iter().any(|f| f.relative_path == "src/camera.rs");
-    let mod_decls = if has_camera_player {
-        "mod camera;\nmod player;\n"
+    let has_camera = template.files.iter().any(|f| f.relative_path == "src/camera.rs");
+    let has_player = template.files.iter().any(|f| f.relative_path == "src/player.rs");
+    let has_scene_builder = template.files.iter().any(|f| f.relative_path == "src/scene_builder.rs");
+
+    // 生成注释行而非 mod 声明：这些模块是脚手架示例代码，
+    // run_event_loop 当前自包含不使用它们，注释掉可避免编译错误（无需 input/render 依赖）。
+    let mod_decls = if has_camera || has_player || has_scene_builder {
+        let mut s = String::from("// 以下模块为脚手架示例代码，默认不编译。\n");
+        if has_camera {
+            s.push_str("// mod camera;        // 取消注释以启用自定义摄像机\n");
+        }
+        if has_player {
+            s.push_str("// mod player;        // 取消注释以启用角色控制器\n");
+        }
+        if has_scene_builder {
+            s.push_str("// mod scene_builder; // 取消注释以启用程序化场景构建\n");
+        }
+        s.push_str("// 启用后需在 [dependencies] 中添加 render 和 input 的 path 依赖。\n");
+        s
     } else {
-        ""
+        String::new()
     };
 
     format!(
@@ -716,8 +752,7 @@ pub fn main_rs_content(template: &ProjectTemplate) -> String {
 //! 模板类型：{template_name}
 //! 摄像机：{camera_type}
 
-{mod_decls}
-use geese_game::run_event_loop;
+{mod_decls}use geese_game::run_event_loop;
 use winit::event_loop::EventLoop;
 use winit::window::WindowAttributes;
 
@@ -744,14 +779,14 @@ fn main() {{
     run_event_loop(event_loop, window, &project_dir, &scene_file);
 }}
 "#,
-        project_name = "{{project_name}}",
+        project_name = project_name,
         template_name = template.name,
         camera_type = camera_type,
     )
 }
 
 /// 生成 project.toml 配置文件内容。
-pub fn project_config_content(template: &ProjectTemplate) -> String {
+pub fn project_config_content(template: &ProjectTemplate, project_name: &str) -> String {
     let cam = &template.camera_config;
     let player = &template.player_config;
     let cam_type_str = match cam.camera_type {
@@ -759,6 +794,22 @@ pub fn project_config_content(template: &ProjectTemplate) -> String {
         CameraType::FirstPerson => "FirstPerson",
         CameraType::ThirdPerson => "ThirdPerson",
         CameraType::TopDown => "TopDown",
+    };
+
+    // 生成 input_mappings 条目（空模板则不生成该段）
+    let mappings = if template.input_mappings.is_empty() {
+        String::new()
+    } else {
+        template
+            .input_mappings
+            .iter()
+            .map(|m| {
+                format!(
+                    "\n[[input_mappings]]\naction = \"{}\"\nkey = \"{}\"\n",
+                    m.action, m.key
+                )
+            })
+            .collect::<String>()
     };
 
     format!(
@@ -785,10 +836,8 @@ jump_impulse = {jump_impulse}
 capsule_radius = {capsule_radius}
 capsule_height = {capsule_height}
 mouse_sensitivity = {mouse_sensitivity}
-
-[[input_mappings]]
-"#,
-        project_name = "{{project_name}}",
+{mappings}"#,
+        project_name = project_name,
         template_id = template.id,
         cam_type = cam_type_str,
         fov = cam.fov,
@@ -804,5 +853,6 @@ mouse_sensitivity = {mouse_sensitivity}
         capsule_radius = player.capsule_radius,
         capsule_height = player.capsule_height,
         mouse_sensitivity = player.mouse_sensitivity,
+        mappings = mappings,
     )
 }

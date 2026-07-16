@@ -1,0 +1,143 @@
+//! 自由摄像机（空项目模板）。
+//!
+//! 不绑定角色，自由飞行浏览场景：
+//! - 右键拖拽：旋转视角（yaw/pitch）
+//! - 中键拖拽：平移摄像机
+//! - 滚轮：缩放（调整距离/速度）
+//! - WASD：自由飞行移动
+
+use cgmath::{InnerSpace, Matrix4, Point3, Rad, Vector3};
+use input::{InputState, KeyCode, MouseButton};
+
+/// 自由摄像机控制器（编辑器/空项目默认）。
+pub struct FreeCamera {
+    /// 摄像机世界位置
+    pub position: Point3<f32>,
+    /// 偏航角（绕 Y 轴，弧度）
+    pub yaw: f32,
+    /// 俯仰角（弧度），限制在 ±89°
+    pub pitch: f32,
+    /// 视场角（度）
+    pub fov: f32,
+    /// 近裁剪面
+    pub z_near: f32,
+    /// 远裁剪面
+    pub z_far: f32,
+    /// 旋转灵敏度
+    pub rotate_sensitivity: f32,
+    /// 平移灵敏度
+    pub pan_sensitivity: f32,
+    /// 飞行移动速度
+    pub fly_speed: f32,
+}
+
+impl FreeCamera {
+    pub fn new(fov: f32, z_near: f32, z_far: f32) -> Self {
+        Self {
+            position: Point3::new(0.0, 5.0, 10.0),
+            yaw: 0.0,
+            pitch: -0.3,
+            fov,
+            z_near,
+            z_far,
+            rotate_sensitivity: 0.003,
+            pan_sensitivity: 0.01,
+            fly_speed: 8.0,
+        }
+    }
+
+    /// 处理输入（鼠标旋转、平移、缩放、WASD 飞行）。
+    /// `dt`: 帧时间间隔（秒）。
+    pub fn handle_input(&mut self, input: &InputState, dt: f32) {
+        // 右键拖拽：旋转
+        if input.is_mouse_down(MouseButton::Right) {
+            let (dx, dy) = input.mouse_delta();
+            self.yaw -= dx * self.rotate_sensitivity;
+            self.pitch -= dy * self.rotate_sensitivity;
+            let max_pitch = 89.0_f32.to_radians();
+            self.pitch = self.pitch.clamp(-max_pitch, max_pitch);
+        }
+
+        // 中键拖拽：平移
+        if input.is_mouse_down(MouseButton::Middle) {
+            let (dx, dy) = input.mouse_delta();
+            let right = self.right();
+            let up = self.up();
+            self.position -= right * dx * self.pan_sensitivity;
+            self.position += up * dy * self.pan_sensitivity;
+        }
+
+        // 滚轮：沿视线方向前后移动
+        let (_scroll_x, scroll_y) = input.scroll_delta();
+        if scroll_y != 0.0 {
+            self.position += self.look_direction() * scroll_y * 2.0;
+        }
+
+        // WASD：自由飞行
+        let mut move_dir = Vector3::new(0.0, 0.0, 0.0);
+        if input.is_key_down(KeyCode::W) {
+            move_dir += self.forward();
+        }
+        if input.is_key_down(KeyCode::S) {
+            move_dir -= self.forward();
+        }
+        if input.is_key_down(KeyCode::A) {
+            move_dir -= self.right();
+        }
+        if input.is_key_down(KeyCode::D) {
+            move_dir += self.right();
+        }
+        if input.is_key_down(KeyCode::Q) {
+            move_dir -= Vector3::new(0.0, 1.0, 0.0);
+        }
+        if input.is_key_down(KeyCode::E) {
+            move_dir += Vector3::new(0.0, 1.0, 0.0);
+        }
+
+        if move_dir.magnitude2() > 0.0 {
+            move_dir = move_dir.normalize();
+        }
+        self.position += move_dir * self.fly_speed * dt;
+    }
+
+    /// 前方向量（水平面投影）。
+    pub fn forward(&self) -> Vector3<f32> {
+        Vector3::new(self.yaw.sin(), 0.0, -self.yaw.cos())
+    }
+
+    /// 右方向量（水平面投影）。
+    pub fn right(&self) -> Vector3<f32> {
+        Vector3::new(self.yaw.cos(), 0.0, self.yaw.sin())
+    }
+
+    /// 上方向量。
+    pub fn up(&self) -> Vector3<f32> {
+        Vector3::new(0.0, 1.0, 0.0)
+    }
+
+    /// 视线方向（含 pitch）。
+    pub fn look_direction(&self) -> Vector3<f32> {
+        Vector3::new(
+            self.yaw.cos() * self.pitch.cos(),
+            self.pitch.sin(),
+            -self.yaw.sin() * self.pitch.cos(),
+        )
+        .normalize()
+    }
+
+    /// 构建视图矩阵。
+    pub fn view_matrix(&self) -> Matrix4<f32> {
+        let target = self.position + self.look_direction();
+        Matrix4::look_at_rh(self.position, target, self.up())
+    }
+
+    /// 构建透视投影矩阵。
+    pub fn projection_matrix(&self, aspect_ratio: f32) -> Matrix4<f32> {
+        cgmath::perspective(
+            Rad(self.fov.to_radians()),
+            aspect_ratio,
+            self.z_near,
+            self.z_far,
+        )
+    }
+}

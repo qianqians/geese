@@ -80,9 +80,9 @@ impl FpsPlayer {
 
     /// 每帧物理更新。
     /// `dt`: 帧时间间隔（秒），`gravity`: 重力加速度。
-    pub fn update(&mut self, dt: f32, _gravity: f32) {
+    pub fn update(&mut self, dt: f32, gravity: f32) {
         // 应用重力
-        self.velocity.y -= 9.81 * dt;
+        self.velocity.y -= gravity * dt;
 
         // 更新位置
         self.position.x += self.velocity.x * dt;

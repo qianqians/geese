@@ -105,12 +105,28 @@ pub fn create_cube_mesh(sx: f32, sy: f32, sz: f32) -> ModelMesh {
         [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0],
     ];
 
+    #[rustfmt::skip]
+    let tangents: [[f32; 4]; 24] = [
+        // 前面 (+Z): U 沿 +X
+        [1.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0],
+        // 后面 (-Z): U 沿 -X
+        [-1.0, 0.0, 0.0, 1.0], [-1.0, 0.0, 0.0, 1.0], [-1.0, 0.0, 0.0, 1.0], [-1.0, 0.0, 0.0, 1.0],
+        // 右面 (+X): U 沿 -Z
+        [0.0, 0.0, -1.0, 1.0], [0.0, 0.0, -1.0, 1.0], [0.0, 0.0, -1.0, 1.0], [0.0, 0.0, -1.0, 1.0],
+        // 左面 (-X): U 沿 +Z
+        [0.0, 0.0, 1.0, 1.0], [0.0, 0.0, 1.0, 1.0], [0.0, 0.0, 1.0, 1.0], [0.0, 0.0, 1.0, 1.0],
+        // 顶面 (+Y): U 沿 +X
+        [1.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0],
+        // 底面 (-Y): U 沿 +X
+        [1.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0],
+    ];
+
     let vertices: Vec<Vertex> = (0..24)
         .map(|i| Vertex {
             position: Point3::new(positions[i][0], positions[i][1], positions[i][2]),
             normal: Vector3::new(normals[i][0], normals[i][1], normals[i][2]),
             uv: Vector2::new(uvs[i][0], uvs[i][1]),
-            tangent: [1.0, 0.0, 0.0, 1.0],
+            tangent: tangents[i],
             joints: [0, 0, 0, 0],
             weights: [1.0, 0.0, 0.0, 0.0],
         })
@@ -154,6 +170,7 @@ pub fn create_default_material(name: &str, color: (f32, f32, f32)) -> Material {
         occlusion_texture: None,
         emissive_texture: None,
         double_sided: false,
+        custom_shader: None,
     }
 }
 

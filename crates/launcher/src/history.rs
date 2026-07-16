@@ -74,7 +74,7 @@ impl ProjectHistory {
         // 获取当前时间戳
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         // 插入到列表开头

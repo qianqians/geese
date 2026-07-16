@@ -197,8 +197,10 @@ impl Launcher {
                             egui::ScrollArea::vertical()
                                 .max_height(320.0)
                                 .show(ui, |ui| {
-                                    for project in self.project_history.projects.clone().iter() {
-                                        self.show_history_entry(ui, project);
+                                    let count = self.project_history.projects.len();
+                                    for i in 0..count {
+                                        let project = self.project_history.projects[i].clone();
+                                        self.show_history_entry(ui, &project);
                                     }
                                 });
                         }
@@ -534,6 +536,12 @@ impl Launcher {
             return;
         }
 
+        if let Err(e) = validate_project_name(name) {
+            self.status_message = Some(e);
+            self.is_error = true;
+            return;
+        }
+
         let full_path = format!("{}/{}", base_path, name);
 
         match self.generate_project(template, name, &full_path) {
@@ -559,7 +567,7 @@ impl Launcher {
         }
     }
 
-    /// 执行工程生成。
+    /// 执行工程生成（暂存-提交模式，失败时自动回滚）。
     fn generate_project(
         &self,
         template: &ProjectTemplate,
@@ -568,67 +576,110 @@ impl Launcher {
     ) -> Result<(), String> {
         use std::fs;
 
-        // 检查目标目录不存在
         let target = std::path::Path::new(full_path);
         if target.exists() {
             return Err(format!("目录已存在: {}", full_path));
         }
 
-        // 创建目录结构
-        let dirs = [
-            format!("{full_path}"),
-            format!("{full_path}/src"),
-            format!("{full_path}/assets"),
-            format!("{full_path}/assets/scenes"),
-            format!("{full_path}/config"),
-        ];
-
-        for dir in &dirs {
-            fs::create_dir_all(dir).map_err(|e| format!("创建目录失败 {}: {}", dir, e))?;
+        // 1. 在同父目录下创建暂存目录
+        let parent = target.parent().unwrap_or(std::path::Path::new("."));
+        let staging = parent.join(format!(".{}.tmp", name));
+        if staging.exists() {
+            let _ = fs::remove_dir_all(&staging);
         }
 
-        // 替换变量的辅助函数
-        let replace_vars = |content: &str| -> String {
-            content
-                .replace("{{project_name}}", name)
-                .replace("{{camera_fov}}", &template.camera_config.fov.to_string())
-                .replace("{{player_height}}", &template.player_config.capsule_height.to_string())
+        // 2. 所有文件写入暂存目录
+        let write_all = |staging_path: &std::path::Path| -> Result<(), String> {
+            let staging_str = staging_path.display().to_string();
+
+            // 创建目录结构
+            let dirs = ["", "/src", "/assets", "/assets/scenes", "/config"];
+            for d in &dirs {
+                fs::create_dir_all(format!("{}{}", staging_str, d))
+                    .map_err(|e| format!("创建目录失败: {}", e))?;
+            }
+
+            // 替换变量的辅助函数
+            let replace_vars = |content: &str| -> String {
+                content
+                    .replace("{{project_name}}", name)
+                    .replace("{{camera_fov}}", &template.camera_config.fov.to_string())
+                    .replace("{{player_height}}", &template.player_config.capsule_height.to_string())
+            };
+
+            // 生成 Cargo.toml
+            let cargo_path = format!("{}/Cargo.toml", staging_str);
+            let cargo_content = templates::cargo_toml_content(name);
+            Self::write_file_static(&cargo_path, &replace_vars(&cargo_content))?;
+
+            // 生成 main.rs
+            let main_path = format!("{}/src/main.rs", staging_str);
+            let main_content = templates::main_rs_content(template, name);
+            Self::write_file_static(&main_path, &replace_vars(&main_content))?;
+
+            // 生成 project.toml 配置
+            let config_path = format!("{}/config/project.toml", staging_str);
+            let config_content = templates::project_config_content(template, name);
+            Self::write_file_static(&config_path, &replace_vars(&config_content))?;
+
+            // 生成模板特定文件
+            for file in &template.files {
+                let file_path = format!("{}/{}", staging_str, file.relative_path);
+                if let Some(parent) = std::path::Path::new(&file_path).parent() {
+                    fs::create_dir_all(parent)
+                        .map_err(|e| format!("创建目录失败 {:?}: {}", parent, e))?;
+                }
+                Self::write_file_static(&file_path, &replace_vars(&file.content))?;
+            }
+
+            Ok(())
         };
 
-        // 生成 Cargo.toml
-        let cargo_path = format!("{full_path}/Cargo.toml");
-        let cargo_content = templates::cargo_toml_content(name);
-        self.write_file(&cargo_path, &replace_vars(&cargo_content))?;
-
-        // 生成 main.rs
-        let main_path = format!("{full_path}/src/main.rs");
-        let main_content = templates::main_rs_content(template);
-        self.write_file(&main_path, &replace_vars(&main_content))?;
-
-        // 生成 project.toml 配置
-        let config_path = format!("{full_path}/config/project.toml");
-        let config_content = templates::project_config_content(template);
-        self.write_file(&config_path, &replace_vars(&config_content))?;
-
-        // 生成模板特定文件（camera.rs, player.rs）
-        for file in &template.files {
-            let file_path = format!("{full_path}/{}", file.relative_path);
-            // 确保父目录存在
-            if let Some(parent) = std::path::Path::new(&file_path).parent() {
-                fs::create_dir_all(parent)
-                    .map_err(|e| format!("创建目录失败 {:?}: {}", parent, e))?;
-            }
-            self.write_file(&file_path, &replace_vars(&file.content))?;
+        // 3. 写入暂存目录
+        if let Err(e) = write_all(&staging) {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(e);
         }
 
-        Ok(())
+        // 4. 原子 rename：暂存目录 → 目标目录（失败时回退到递归拷贝）
+        match fs::rename(&staging, target) {
+            Ok(()) => Ok(()),
+            Err(_) => {
+                // rename 可能因跨卷/路径过长/AV锁定失败，回退到递归拷贝
+                let result = Self::move_dir_recursive(&staging, target);
+                let _ = fs::remove_dir_all(&staging);
+                result.map_err(|e| format!("提交失败(rename回退拷贝): {}", e))
+            }
+        }
     }
 
-    fn write_file(&self, path: &str, content: &str) -> Result<(), String> {
+    /// 静态文件写入（用于 generate_project 闭包内部）。
+    fn write_file_static(path: &str, content: &str) -> Result<(), String> {
         let mut file =
             std::fs::File::create(path).map_err(|e| format!("创建文件失败 {}: {}", path, e))?;
         file.write_all(content.as_bytes())
             .map_err(|e| format!("写入文件失败 {}: {}", path, e))?;
+        Ok(())
+    }
+
+    /// 递归移动目录（rename 失败时的回退方案：逐文件拷贝后删除源）。
+    fn move_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<(), String> {
+        use std::fs;
+        if !src.exists() {
+            return Err(format!("源目录不存在: {}", src.display()));
+        }
+        fs::create_dir_all(dst).map_err(|e| format!("创建目标目录失败: {}", e))?;
+        for entry in fs::read_dir(src).map_err(|e| format!("读取源目录失败: {}", e))? {
+            let entry = entry.map_err(|e| format!("读取目录项失败: {}", e))?;
+            let path = entry.path();
+            let dst_path = dst.join(entry.file_name());
+            if path.is_dir() {
+                Self::move_dir_recursive(&path, &dst_path)?;
+            } else {
+                fs::copy(&path, &dst_path)
+                    .map_err(|e| format!("拷贝文件失败 {:?}: {}", path, e))?;
+            }
+        }
         Ok(())
     }
 
@@ -678,6 +729,26 @@ impl Launcher {
     }
 }
 
+/// 校验项目名称是否符合 Cargo 命名规范。
+fn validate_project_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("项目名称不能为空".into());
+    }
+    if name.len() > 64 {
+        return Err("项目名称不能超过 64 字符".into());
+    }
+    // 必须 ASCII 字母开头
+    let first = name.chars().next().unwrap();
+    if !first.is_ascii_alphabetic() {
+        return Err("项目名称必须以字母开头".into());
+    }
+    // 仅允许 ASCII 字母数字 + _ + -
+    if name.chars().any(|c| !c.is_ascii_alphanumeric() && c != '_' && c != '-') {
+        return Err("项目名称只能包含字母、数字、下划线和连字符".into());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -705,9 +776,9 @@ mod tests {
     fn generate_project_rejects_existing_dir() {
         let launcher = Launcher::new();
         let template = &launcher.templates[0];
-        // 试图覆盖现有目录应返回错误
-        let result = launcher.generate_project(template, "test", "/tmp");
-        // /tmp 总是存在，所以应返回错误
+        // 试图覆盖现有目录应返回错误：temp_dir 始终存在
+        let tmp = std::env::temp_dir();
+        let result = launcher.generate_project(template, "test", tmp.to_str().unwrap());
         assert!(result.is_err());
     }
 
@@ -753,7 +824,7 @@ mod tests {
             empty.camera_config.camera_type,
             crate::templates::CameraType::Empty
         );
-        assert!(empty.files.len() == 1); // only scene.json
+        assert!(empty.files.len() == 4); // camera.rs, player.rs, scene_builder.rs, scene.json
         assert!(empty.input_mappings.is_empty());
     }
 
@@ -767,6 +838,77 @@ mod tests {
         assert!(td.camera_config.follow_offset.1 > 10.0, "camera should be above");
         assert!(td.camera_config.follow_offset.2 > 10.0, "camera should be behind (isometric)");
         assert_eq!(td.player_config.jump_impulse, 0.0, "top-down has no jump");
-        assert!(td.files.len() >= 2);
+        assert!(td.files.len() >= 3);
+    }
+
+    // -----------------------------------------------------------------------
+    // 新增测试
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn scene_builder_mod_in_main_rs() {
+        let fps = templates::fps_template();
+        let main_rs = templates::main_rs_content(&fps, "TestGame");
+        assert!(
+            main_rs.contains("// mod scene_builder;"),
+            "FPS main.rs should contain commented scene_builder module"
+        );
+
+        let tp = templates::third_person_template();
+        let main_rs = templates::main_rs_content(&tp, "TestGame");
+        assert!(
+            main_rs.contains("// mod scene_builder;"),
+            "ThirdPerson main.rs should contain commented scene_builder module"
+        );
+    }
+
+    #[test]
+    fn validate_project_name_rejects_invalid() {
+        assert!(validate_project_name("").is_err());
+        assert!(validate_project_name("123game").is_err()); // 数字开头
+        assert!(validate_project_name("测试项目").is_err()); // 含中文
+        assert!(validate_project_name("my game").is_err()); // 含空格
+        assert!(validate_project_name("a".repeat(65).as_str()).is_err()); // 超长
+    }
+
+    #[test]
+    fn validate_project_name_accepts_valid() {
+        assert!(validate_project_name("MyGame").is_ok());
+        assert!(validate_project_name("my-game").is_ok());
+        assert!(validate_project_name("game_01").is_ok());
+        assert!(validate_project_name("A").is_ok());
+    }
+
+    #[test]
+    fn topdown_has_scene_builder() {
+        let td = templates::topdown_template();
+        let has_sb = td.files.iter().any(|f| f.relative_path == "src/scene_builder.rs");
+        assert!(has_sb, "TopDown template should include scene_builder.rs");
+    }
+
+    #[test]
+    fn empty_has_all_modules() {
+        let empty = templates::empty_template();
+        let paths: Vec<&str> = empty.files.iter().map(|f| f.relative_path.as_str()).collect();
+        assert!(paths.contains(&"src/camera.rs"), "empty template should have camera.rs");
+        assert!(paths.contains(&"src/player.rs"), "empty template should have player.rs");
+        assert!(paths.contains(&"src/scene_builder.rs"), "empty template should have scene_builder.rs");
+        assert!(paths.contains(&"assets/scenes/default.scene.json"), "empty template should have scene.json");
+        assert!(empty.files.len() >= 4);
+    }
+
+    #[test]
+    fn generate_project_rollback_on_error() {
+        // 使用一个已存在的目录 → 应返回错误，且不留下暂存目录
+        let launcher = Launcher::new();
+        let template = &launcher.templates[0]; // empty
+
+        let tmp = std::env::temp_dir();
+        let result = launcher.generate_project(template, "test_rollback", tmp.to_str().unwrap());
+        assert!(result.is_err());
+
+        // 验证暂存目录不存在
+        let staging = tmp.join(".test_rollback.tmp");
+        assert!(!staging.exists(), "Staging directory should not exist after rollback");
     }
 }
