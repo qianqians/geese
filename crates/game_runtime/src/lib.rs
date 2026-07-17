@@ -589,3 +589,70 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
 
     run_event_loop(event_loop, window, &project_dir, &scene_file);
 }
+
+// ---------------------------------------------------------------------------
+// C FFI 入口（供 ctypes / --direct 模式调用）
+// ---------------------------------------------------------------------------
+
+/// C-compatible entry point for launching a Python game via ctypes.
+///
+/// This function initialises the CPython interpreter (via pyo3), adds
+/// `<project_path>/game` to `sys.path`, and then delegates to
+/// [`python_runtime::run_game`].
+///
+/// # Safety
+/// All pointer parameters must be valid, NUL-terminated UTF-8 strings.
+#[cfg(feature = "python-runtime")]
+#[unsafe(no_mangle)]
+pub extern "C" fn run_game_rust(
+    project_path: *const std::ffi::c_char,
+    module_name: *const std::ffi::c_char,
+    class_name: *const std::ffi::c_char,
+    title: *const std::ffi::c_char,
+    width: i32,
+    height: i32,
+) {
+    use std::ffi::CStr;
+    use pyo3::types::{PyAnyMethods, PyListMethods};
+
+    let project_path = unsafe { CStr::from_ptr(project_path) }
+        .to_str().expect("project_path is not valid UTF-8");
+    let module_name = unsafe { CStr::from_ptr(module_name) }
+        .to_str().expect("module_name is not valid UTF-8");
+    let class_name = unsafe { CStr::from_ptr(class_name) }
+        .to_str().expect("class_name is not valid UTF-8");
+    let title = unsafe { CStr::from_ptr(title) }
+        .to_str().expect("title is not valid UTF-8");
+
+    // Initialise the Python interpreter (safe to call multiple times).
+    pyo3::prepare_freethreaded_python();
+
+    // Add <project_path>/game to sys.path so the game module can be imported.
+    pyo3::Python::with_gil(|py| {
+        let sys = py.import("sys").expect("failed to import sys");
+        let path = sys
+            .getattr("path")
+            .expect("sys.path missing");
+        let path = path.downcast::<pyo3::types::PyList>()
+            .expect("sys.path is not a list");
+        let game_dir = format!(
+            "{}{}game",
+            project_path,
+            std::path::MAIN_SEPARATOR
+        );
+        path.insert(0, game_dir.as_str()).expect("failed to prepend to sys.path");
+    });
+
+    // Delegate to the full game runner.
+    pyo3::Python::with_gil(|py| {
+        python_runtime::run_game(
+            module_name,
+            class_name,
+            title,
+            width as u32,
+            height as u32,
+            py,
+        )
+        .expect("run_game failed");
+    });
+}

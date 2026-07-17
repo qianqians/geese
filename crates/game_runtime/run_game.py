@@ -7,7 +7,7 @@
     python run_game.py ../../projects/jump_jump jump_game --class JumpGame --title "跳一跳"
 """
 
-import sys, os, argparse, importlib.machinery, importlib.util
+import sys, os, argparse, importlib.machinery, importlib.util, ctypes
 
 
 def _die(msg: str):
@@ -32,6 +32,8 @@ def main():
     p.add_argument("--title", default=None, help="窗口标题 (默认使用模块名)")
     p.add_argument("--width", type=int, default=1280, help="窗口宽度 (默认 1280)")
     p.add_argument("--height", type=int, default=720, help="窗口高度 (默认 720)")
+    p.add_argument("--direct", action="store_true",
+                   help="直接加载模式：跳过 pyo3，直接加载 geese_game.dll 运行")
     args = p.parse_args()
 
     project_dir = os.path.abspath(args.project_dir)
@@ -40,13 +42,6 @@ def main():
     ext = ".dll" if sys.platform == "win32" else (
         ".dylib" if sys.platform == "darwin" else ".so"
     )
-
-    # Resolve py_engine DLL
-    py_engine_dll = os.environ.get("GEESE_ENGINE_PATH") or os.path.join(
-        engine_root, "crates", "py_engine", "target", "debug", "py_engine" + ext
-    )
-    if not os.path.isfile(py_engine_dll):
-        _die(f"[ERROR] py_engine not found: {py_engine_dll}")
 
     # Resolve geese_game DLL
     geese_game_dll = os.path.join(
@@ -59,32 +54,68 @@ def main():
     game_dir = os.path.join(project_dir, "game")
     sys.path.insert(0, os.path.normpath(game_dir))
 
-    # Register DLL search directories on Windows
-    if hasattr(os, "add_dll_directory"):
-        os.add_dll_directory(os.path.dirname(py_engine_dll))
-        os.add_dll_directory(os.path.dirname(geese_game_dll))
+    if args.direct:
+        # ── 直接加载模式：跳过 pyo3，直接通过 ctypes 调用 Rust ──
+        if hasattr(os, "add_dll_directory"):
+            os.add_dll_directory(os.path.dirname(geese_game_dll))
 
-    # Load native extension modules
-    _load_native("py_engine", py_engine_dll)
-    _load_native("geese_game", geese_game_dll)
+        lib = ctypes.CDLL(geese_game_dll)
 
-    # Auto-detect game class if not specified
-    import importlib as _il
+        run_game_rust = lib.run_game_rust
+        run_game_rust.argtypes = [
+            ctypes.c_char_p,  # project_path
+            ctypes.c_char_p,  # module_name
+            ctypes.c_char_p,  # class_name
+            ctypes.c_char_p,  # title
+            ctypes.c_int,     # width
+            ctypes.c_int,     # height
+        ]
+        run_game_rust.restype = None
 
-    game_mod = _il.import_module(args.game_module)
-    game_class = args.cls
-    if game_class is None:
-        for _n, _o in vars(game_mod).items():
-            if isinstance(_o, type) and hasattr(_o, "update"):
-                game_class = _n
-                break
-        else:
-            game_class = ""
+        game_class = args.cls or "JumpGame"
+        run_game_rust(
+            project_dir.encode(),
+            args.game_module.encode(),
+            game_class.encode(),
+            (args.title or args.game_module).encode(),
+            args.width,
+            args.height,
+        )
+    else:
+        # ── pyo3 模式 ──
+        # Resolve py_engine DLL
+        py_engine_dll = os.environ.get("GEESE_ENGINE_PATH") or os.path.join(
+            engine_root, "crates", "py_engine", "target", "debug", "py_engine" + ext
+        )
+        if not os.path.isfile(py_engine_dll):
+            _die(f"[ERROR] py_engine not found: {py_engine_dll}")
 
-    from geese_game import run_game
+        # Register DLL search directories on Windows
+        if hasattr(os, "add_dll_directory"):
+            os.add_dll_directory(os.path.dirname(py_engine_dll))
+            os.add_dll_directory(os.path.dirname(geese_game_dll))
 
-    run_game(args.game_module, game_class, args.title or args.game_module,
-             args.width, args.height)
+        # Load native extension modules
+        _load_native("py_engine", py_engine_dll)
+        _load_native("geese_game", geese_game_dll)
+
+        # Auto-detect game class if not specified
+        import importlib as _il
+
+        game_mod = _il.import_module(args.game_module)
+        game_class = args.cls
+        if game_class is None:
+            for _n, _o in vars(game_mod).items():
+                if isinstance(_o, type) and hasattr(_o, "update"):
+                    game_class = _n
+                    break
+            else:
+                game_class = ""
+
+        from geese_game import run_game
+
+        run_game(args.game_module, game_class, args.title or args.game_module,
+                 args.width, args.height)
 
 
 if __name__ == "__main__":
