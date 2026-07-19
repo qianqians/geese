@@ -1,0 +1,56 @@
+"""
+{{project_name}} - Python 游戏入口。
+
+这是一个 Python 游戏模板，使用 py_engine.EngineBridge 调用引擎 API。
+游戏逻辑在 update(bridge, dt) 方法中实现。
+
+运行方式：
+  1. 在编辑器中打开项目，按 Play 按钮启动游戏子进程
+  2. 或直接在终端运行：
+     python run_game.py <project_path> {{project_name}} --class {{project_name}}Game --title "{{project_name}}"
+"""
+
+import math
+
+
+class {{project_name}}Game:
+    """游戏主类。引擎每帧调用 update(bridge, dt)。"""
+
+    def __init__(self):
+        self._initialized = False
+
+    def _ensure_init(self, bridge):
+        """延迟初始化（首次 update 时调用，此时 bridge 可用）。"""
+        if self._initialized:
+            return
+        self._initialized = True
+
+        # 设置环境光
+        bridge.light_set_ambient(0.15, 0.15, 0.15)
+        bridge.light_add_directional(-0.3, -1.0, -0.5, 1.0, 0.95, 0.85, 1.0)
+
+        # 创建地面材质和网格
+        mat_ground = bridge.material_create("ground", 0.5, 0.5, 0.5, 0.0, 0.8)
+        ground_mesh = bridge.build_cube(1.0, 1.0, 1.0, mat_ground)
+        bridge.scene_add_static(ground_mesh, 0.0, -1.0, 0.0, 10.0, 0.2, 10.0)
+
+        bridge.scene_update_transforms()
+
+    def update(self, bridge, dt: float):
+        """每帧更新（由 Rust 主循环调用）。
+
+        Args:
+            bridge: EngineBridge 实例，提供引擎 API
+            dt: 帧时间间隔（秒）
+        """
+        self._ensure_init(bridge)
+
+        # TODO: 在这里实现你的游戏逻辑
+        # 常用 API：
+        #   bridge.input_key_pressed("Space")   — 检测按键
+        #   bridge.build_cube(w, h, d, mat_idx) — 创建网格
+        #   bridge.scene_add_static(...)         — 添加静态对象
+        #   bridge.create_player(...)            — 创建物理角色
+        #   bridge.physics_add_body(...)         — 添加物理刚体
+        #   bridge.physics_apply_impulse(...)    — 施加冲量
+        #   bridge.physics_step(dt)              — 物理步进

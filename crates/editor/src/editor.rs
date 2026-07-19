@@ -22,7 +22,7 @@ use crate::inspector::InspectorPanel;
 use crate::panel_layer::PanelLayer;
 use crate::panels::{EditorAction, EditorLayout, EditorPanel, EditorState};
 use crate::physics_debug::PhysicsDebugRenderer;
-use crate::play_mode::PlayMode;
+use crate::play_mode::{GameConfig, PlayMode};
 use crate::viewport::ViewportPanel;
 use std::process::Command;
 use asset::database::AssetDatabase;
@@ -48,6 +48,8 @@ pub struct Editor {
     pub command_history: CommandHistory,
     /// Play/Stop 模式管理器
     play_mode: PlayMode,
+    /// 引擎根目录路径（用于定位 run_game.py 等脚本）
+    engine_root: String,
     /// 层级面板
     hierarchy: HierarchyPanel,
     /// 3D 视口
@@ -111,6 +113,9 @@ impl Editor {
         let manifest_path = format!("{}/.scene.json", project_path);
         physics.load_scene(&manifest_path);
 
+        // 推导引擎根目录（从 project_path 向上查找含 crates/ 的目录）
+        let engine_root = find_engine_root(&project_path);
+
         // 初始化资源数据库（扫描 assets 目录，自动生成 .meta 文件）
         let asset_database = match AssetDatabase::open(&state.project_path) {
             Ok(db) => db,
@@ -124,6 +129,7 @@ impl Editor {
             state,
             command_history: CommandHistory::default(),
             play_mode: PlayMode::new(),
+            engine_root,
             hierarchy: HierarchyPanel::new(),
             viewport: {
                 let mut vp = ViewportPanel::new();
@@ -1356,11 +1362,67 @@ impl Editor {
             let manifest_path = format!("{}/.scene.json", self.state.project_path);
             self.physics.load_scene(&manifest_path);
 
+            // 检测是否为 Python 游戏项目，启动子进程
+            if let Some(game_config) = parse_game_config(&self.state.project_path) {
+                if game_config.game_type == "python" {
+                    self.play_mode.launch_game(
+                        &self.state.project_path,
+                        &self.engine_root,
+                        &game_config,
+                    );
+                }
+            }
+
             self.state.mode = EditorMode::Play;
             self.state.selected_entity = None;
             self.state.panel_layer.set_play_alpha();
         }
     }
+}
+
+/// 从项目路径向上推导引擎根目录。
+///
+/// 引擎根目录是包含 `crates/` 子目录的最近父目录。
+fn find_engine_root(project_path: &str) -> String {
+    let mut path = std::path::PathBuf::from(project_path);
+    // 规范化路径
+    if let Ok(canonical) = path.canonicalize() {
+        path = canonical;
+    }
+    loop {
+        if path.join("crates").is_dir() {
+            return path.to_string_lossy().into_owned();
+        }
+        if !path.pop() {
+            // 已到达根目录仍未找到，返回当前工作目录
+            return std::env::current_dir()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| ".".into());
+        }
+    }
+}
+
+/// 解析项目的 Python 游戏配置。
+///
+/// 读取 `{project_path}/config/project.toml`，提取 `[game]` 段。
+/// 若文件不存在或无 `[game]` 段，返回 `None`。
+fn parse_game_config(project_path: &str) -> Option<GameConfig> {
+    let config_path = std::path::Path::new(project_path)
+        .join("config")
+        .join("project.toml");
+
+    let content = std::fs::read_to_string(&config_path).ok()?;
+    let parsed: toml::Value = toml::from_str(&content).ok()?;
+
+    let game = parsed.get("game")?;
+    Some(GameConfig {
+        game_type: game.get("type")?.as_str()?.to_string(),
+        module: game.get("module")?.as_str()?.to_string(),
+        class_name: game.get("class_name")?.as_str()?.to_string(),
+        title: game.get("title")?.as_str()?.to_string(),
+        width: game.get("width")?.as_integer()? as u32,
+        height: game.get("height")?.as_integer()? as u32,
+    })
 }
 
 /// 递归复制目录。

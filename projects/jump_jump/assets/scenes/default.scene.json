@@ -1,0 +1,49 @@
+{
+  "environment": {
+    "ambient": [
+      0.12,
+      0.12,
+      0.15
+    ],
+    "directional_lights": [
+      {
+        "color": [
+          1.0,
+          0.95,
+          0.85
+        ],
+        "direction": [
+          -0.3,
+          -1.0,
+          -0.5
+        ],
+        "intensity": 1.2
+      }
+    ]
+  },
+  "models": [],
+  "name": "跳一跳",
+  "objects": [
+    {
+      "color": [
+        0.35,
+        0.35,
+        0.38
+      ],
+      "object_type": "plane",
+      "position": [
+        0.0,
+        -2.0,
+        0.0
+      ],
+      "scale": [
+        5.0,
+        1.0,
+        5.0
+      ],
+      "tag": null
+    }
+  ],
+  "spawn_points": [],
+  "version": "1.0"
+}

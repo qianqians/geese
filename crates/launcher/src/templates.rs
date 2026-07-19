@@ -513,9 +513,37 @@ pub fn topdown_template() -> ProjectTemplate {
     }
 }
 
+/// Python 游戏模板
+pub fn python_game_template() -> ProjectTemplate {
+    ProjectTemplate {
+        id: "python_game".into(),
+        name: "Python 游戏".into(),
+        description: "基于 Python 脚本的 3D 游戏模板。使用 py_engine.EngineBridge 调用引擎 API，适合快速原型和独立小游戏。".into(),
+        camera_config: CameraConfig {
+            camera_type: CameraType::Empty,
+            fov: 60.0,
+            z_near: 0.1,
+            z_far: 1000.0,
+            eye_height: 1.7,
+            follow_offset: (0.0, 5.0, 8.0),
+            follow_smooth: 0.1,
+        },
+        player_config: PlayerConfig::default(),
+        input_mappings: vec![],
+        objects: empty_objects(),
+        files: python_game_template_files(),
+    }
+}
+
 /// 所有可用模板
 pub fn all_templates() -> Vec<ProjectTemplate> {
-    vec![empty_template(), fps_template(), third_person_template(), topdown_template()]
+    vec![
+        empty_template(),
+        fps_template(),
+        third_person_template(),
+        topdown_template(),
+        python_game_template(),
+    ]
 }
 
 // ---------------------------------------------------------------------------
@@ -602,6 +630,19 @@ fn topdown_template_files() -> Vec<TemplateFile> {
         TemplateFile {
             relative_path: "assets/scenes/default.scene.json".into(),
             content: scene_json_content("TopDown".into(), &topdown_objects()),
+        },
+    ]
+}
+
+fn python_game_template_files() -> Vec<TemplateFile> {
+    vec![
+        TemplateFile {
+            relative_path: "assets/scenes/default.scene.json".into(),
+            content: scene_json_content("Python 游戏".into(), &empty_objects()),
+        },
+        TemplateFile {
+            relative_path: "game/__init__.py".into(),
+            content: include_str!("../templates/python_game_init.py.txt").to_string(),
         },
     ]
 }
@@ -812,6 +853,24 @@ pub fn project_config_content(template: &ProjectTemplate, project_name: &str) ->
             .collect::<String>()
     };
 
+    // Python 游戏模板额外生成 [game] 段
+    let game_section = if template.id == "python_game" {
+        format!(
+            r#"
+[game]
+type = "python"
+module = "{project_name}"
+class_name = "{project_name}Game"
+title = "{project_name}"
+width = 1280
+height = 720
+"#,
+            project_name = project_name,
+        )
+    } else {
+        String::new()
+    };
+
     format!(
         r#"# {project_name} 项目配置
 # 由 Geese Launcher 自动生成
@@ -820,7 +879,7 @@ pub fn project_config_content(template: &ProjectTemplate, project_name: &str) ->
 name = "{project_name}"
 template = "{template_id}"
 scene = "assets/scenes/default.scene.json"
-
+{game_section}
 [camera]
 type = "{cam_type}"
 fov = {fov}

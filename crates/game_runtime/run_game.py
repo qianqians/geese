@@ -44,9 +44,20 @@ def main():
     )
 
     # Resolve geese_game DLL
-    geese_game_dll = os.path.join(
-        script_dir, "target", "debug", "geese_game" + ext
-    )
+    # 优先查找：GEESE_GAME_DLL 环境变量
+    geese_game_dll = os.environ.get("GEESE_GAME_DLL", "")
+    if geese_game_dll and os.path.isfile(geese_game_dll):
+        pass  # 使用环境变量指定的路径
+    else:
+        # 回退：debug 构建输出目录
+        geese_game_dll = os.path.join(
+            script_dir, "target", "debug", "geese_game" + ext
+        )
+    if not os.path.isfile(geese_game_dll):
+        # 再回退：release 构建输出目录
+        geese_game_dll = os.path.join(
+            script_dir, "target", "release", "geese_game" + ext
+        )
     if not os.path.isfile(geese_game_dll):
         _die(f"[ERROR] geese_game not found: {geese_game_dll}")
 

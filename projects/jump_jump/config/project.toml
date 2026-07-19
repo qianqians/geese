@@ -1,0 +1,31 @@
+# jump_jump 项目配置
+# Python 游戏项目 — 编辑器可打开场景、资产，Play 按钮启动游戏子进程
+
+[project]
+name = "jump_jump"
+template = "python_game"
+scene = "assets/scenes/default.scene.json"
+
+[game]
+type = "python"
+module = "jump_game"
+class_name = "JumpGame"
+title = "跳一跳"
+width = 1280
+height = 720
+
+[camera]
+type = "Free"
+fov = 60
+z_near = 0.1
+z_far = 1000
+eye_height = 1.7
+follow_offset = [0, 3, 8]
+follow_smooth = 0.1
+
+[player]
+move_speed = 5
+jump_impulse = 8
+capsule_radius = 0.35
+capsule_height = 1.0
+mouse_sensitivity = 0.002
