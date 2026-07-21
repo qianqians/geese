@@ -288,7 +288,7 @@ impl CharacterControllerDef {
 /// 程序化内联对象定义（不依赖外部 glTF 文件）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SceneObjectDef {
-    /// 对象类型: "plane" | "cube"
+    /// 对象类型: "plane" | "cube" | "sphere" | "cylinder"
     pub object_type: String,
     /// 世界位置
     pub position: [f32; 3],

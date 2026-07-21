@@ -302,14 +302,16 @@ fn instantiate_procedural_mesh(
     parent_node_idx: Option<usize>,
 ) -> String {
     let mesh = match object_type {
-        "plane" => loader::create_plane_mesh_procedural(dimensions[0], dimensions[2]),
-        "cube" => loader::create_cube_mesh_procedural(dimensions[0], dimensions[1], dimensions[2]),
+        "plane" => crate::primitives::create_plane_mesh_procedural(dimensions[0], dimensions[2]),
+        "cube" => crate::primitives::create_cube_mesh_procedural(dimensions[0], dimensions[1], dimensions[2]),
+        "sphere" => crate::primitives::create_sphere_mesh_procedural(dimensions[0] * 0.5, 32, 16),
+        "cylinder" => crate::primitives::create_cylinder_mesh_procedural(dimensions[0] * 0.5, dimensions[1], 32),
         _ => {
             log::warn!(
                 "[prefab] unknown procedural type '{}', defaulting to cube",
                 object_type
             );
-            loader::create_cube_mesh_procedural(dimensions[0], dimensions[1], dimensions[2])
+            crate::primitives::create_cube_mesh_procedural(dimensions[0], dimensions[1], dimensions[2])
         }
     };
 

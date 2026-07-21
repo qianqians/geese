@@ -168,7 +168,7 @@ pub struct HierarchyPanel {
     /// 搜索文本
     search_text: String,
     /// 展开的节点集合
-    expanded: std::collections::HashSet<String>,
+    pub(crate) expanded: std::collections::HashSet<String>,
     /// 正在重命名的节点 (node_id, 当前编辑名称)
     renaming_node: Option<(String, String)>,
 }
@@ -481,6 +481,25 @@ impl HierarchyPanel {
                         // 展开父节点
                         self.expanded.insert(node_id.to_string());
                     }
+                    ui.menu_button("🔷 Create Primitive", |ui| {
+                        let parent = Some(node_id.to_string());
+                        if ui.button("Cube").clicked() {
+                            state.pending_actions.push(EditorAction::CreatePrimitive { kind: "cube".into(), position: [0.0, 0.0, 0.0], parent_node_id: parent.clone() });
+                            ui.close_menu();
+                        }
+                        if ui.button("Sphere").clicked() {
+                            state.pending_actions.push(EditorAction::CreatePrimitive { kind: "sphere".into(), position: [0.0, 0.0, 0.0], parent_node_id: parent.clone() });
+                            ui.close_menu();
+                        }
+                        if ui.button("Plane").clicked() {
+                            state.pending_actions.push(EditorAction::CreatePrimitive { kind: "plane".into(), position: [0.0, 0.0, 0.0], parent_node_id: parent.clone() });
+                            ui.close_menu();
+                        }
+                        if ui.button("Cylinder").clicked() {
+                            state.pending_actions.push(EditorAction::CreatePrimitive { kind: "cylinder".into(), position: [0.0, 0.0, 0.0], parent_node_id: parent });
+                            ui.close_menu();
+                        }
+                    });
                     ui.separator();
                     if ui.button("📦 Save as Prefab").clicked() {
                         ui.close_menu();

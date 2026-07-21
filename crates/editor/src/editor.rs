@@ -506,6 +506,27 @@ impl Editor {
                         self.command_history.redo(); ui.close_menu();
                     }
                 });
+                ui.menu_button("GameObject", |ui| {
+                    ui.menu_button("3D Object", |ui| {
+                        let parent = self.state.selected_entity.clone();
+                        if ui.button("Cube").clicked() {
+                            self.state.pending_actions.push(EditorAction::CreatePrimitive { kind: "cube".into(), position: [0.0, 0.0, 0.0], parent_node_id: parent.clone() });
+                            ui.close_menu();
+                        }
+                        if ui.button("Sphere").clicked() {
+                            self.state.pending_actions.push(EditorAction::CreatePrimitive { kind: "sphere".into(), position: [0.0, 0.0, 0.0], parent_node_id: parent.clone() });
+                            ui.close_menu();
+                        }
+                        if ui.button("Plane").clicked() {
+                            self.state.pending_actions.push(EditorAction::CreatePrimitive { kind: "plane".into(), position: [0.0, 0.0, 0.0], parent_node_id: parent.clone() });
+                            ui.close_menu();
+                        }
+                        if ui.button("Cylinder").clicked() {
+                            self.state.pending_actions.push(EditorAction::CreatePrimitive { kind: "cylinder".into(), position: [0.0, 0.0, 0.0], parent_node_id: parent });
+                            ui.close_menu();
+                        }
+                    });
+                });
                 ui.menu_button("View", |ui| {
                     let mut hv = self.state.panel_layer.is_visible(&PanelLayer::Hierarchy);
                     if ui.checkbox(&mut hv, "Hierarchy").clicked() { self.state.panel_layer.set_visible(PanelLayer::Hierarchy, hv); ui.close_menu(); }
@@ -951,6 +972,9 @@ impl Editor {
                 EditorAction::OpenBuildPanel => {
                     self.build_panel_visible = true;
                 }
+                EditorAction::CreatePrimitive { kind, position, parent_node_id } => {
+                    self.handle_create_primitive(&kind, position, parent_node_id);
+                }
             }
         }
     }
@@ -1193,6 +1217,70 @@ impl Editor {
                 eprintln!("[Editor] Failed to serialize prefab: {}", e);
             }
         }
+    }
+
+    /// 创建基础几何体（Cube/Sphere/Plane/Cylinder）并添加到场景和 Hierarchy。
+    fn handle_create_primitive(&mut self, kind: &str, position: [f32; 3], parent_node_id: Option<String>) {
+        let primitive_kind = match scene::primitives::primitive_kind_from_str(kind) {
+            Some(k) => k,
+            None => {
+                eprintln!("[Editor] Unknown primitive kind: {}", kind);
+                return;
+            }
+        };
+
+        let mut mesh = scene::primitives::create_primitive_mesh(primitive_kind);
+
+        // 创建默认 PBR 材质
+        let Some(ref mut scene) = self.scene else {
+            eprintln!("[Editor] No scene loaded, cannot create primitive");
+            return;
+        };
+        let material_idx = scene.materials.materials.len();
+        scene.materials.materials.push(scene::loader::create_pbr_material(kind, [0.8, 0.8, 0.8]));
+        mesh.material = Some(render::MaterialHandle(material_idx));
+
+        // 添加到场景
+        let translation = cgmath::Vector3::new(position[0], position[1], position[2]);
+        let rotation = cgmath::Quaternion::new(1.0, 0.0, 0.0, 0.0);
+        let scale = cgmath::Vector3::new(1.0, 1.0, 1.0);
+        let entity_id = scene.add_static_object(mesh, translation, rotation, scale);
+
+        // 生成节点名称
+        let name = match primitive_kind {
+            scene::primitives::PrimitiveKind::Cube => "Cube",
+            scene::primitives::PrimitiveKind::Sphere => "Sphere",
+            scene::primitives::PrimitiveKind::Plane => "Plane",
+            scene::primitives::PrimitiveKind::Cylinder => "Cylinder",
+        };
+
+        // 注册到 Hierarchy
+        self.hierarchy.tree_mut().add_node(SceneNodeData {
+            id: entity_id.clone(),
+            name: name.to_string(),
+            children: vec![],
+            parent: parent_node_id.clone(),
+            visible: true,
+            locked: false,
+            node_type: NodeType::Mesh,
+            asset_source_uuid: None,
+            prefab_ref_uuid: None,
+            physics: None,
+            navmesh: None,
+        });
+
+        // 更新缓存
+        self.state.transform_cache.insert(entity_id.clone(), (position, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]));
+        self.state.name_cache.insert(entity_id.clone(), name.to_string());
+        self.state.mesh_entities.insert(entity_id.clone());
+
+        // 展开父节点
+        if let Some(ref parent_id) = parent_node_id {
+            self.hierarchy.expanded.insert(parent_id.clone());
+        }
+
+        // 选中新实体
+        self.state.selected_entity = Some(entity_id);
     }
 
     /// 在指定位置实例化 Prefab（递归实例化所有子节点）。

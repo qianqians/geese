@@ -8,6 +8,7 @@ pub mod prefab_manifest;
 pub mod prefab_loader;
 pub mod avatar_manifest;
 pub mod loader;
+pub mod primitives;
 pub mod net;
 pub mod script;
 
@@ -26,6 +27,7 @@ pub use gameplay_physics::{CapsuleController, CharacterControllerType, Character
 #[cfg(feature = "navmesh")]
 pub use navmesh;
 pub use character_animation::{CharacterAnimationGraph, SpeedThresholds};
+pub use primitives::{PrimitiveKind, create_primitive_mesh};
 pub use script::ScriptComponent;
 
 use asset::load;

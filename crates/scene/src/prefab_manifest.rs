@@ -107,7 +107,7 @@ pub enum PrefabMeshDef {
     /// 程序化网格（plane / cube）
     #[serde(rename = "procedural")]
     Procedural {
-        /// 对象类型："plane" | "cube"
+        /// 对象类型："plane" | "cube" | "sphere" | "cylinder"
         object_type: String,
         /// RGB 颜色
         #[serde(default = "default_procedural_color")]

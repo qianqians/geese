@@ -8,10 +8,10 @@
 use std::io::Read;
 use std::path::Path;
 
-use cgmath::{Euler, Matrix4, Point3, Rad, SquareMatrix, Vector2, Vector3};
+use cgmath::{Euler, Matrix4, Point3, Rad, SquareMatrix, Vector3};
 use cgmath::Matrix;
 use math::AABB;
-use render::{Material, MaterialLibrary, MeshFlags, ModelMesh, Vertex, AlphaMode};
+use render::{Material, MaterialLibrary, ModelMesh, AlphaMode};
 use uuid::Uuid;
 
 use asset::database::AssetDatabase;
@@ -173,11 +173,19 @@ pub fn load_scene_from_manifest(
     for obj_def in &manifest.objects {
         let (mesh, color) = match obj_def.object_type.as_str() {
             "plane" => (
-                create_plane_mesh_procedural(obj_def.scale[0], obj_def.scale[2]),
+                crate::primitives::create_plane_mesh_procedural(obj_def.scale[0], obj_def.scale[2]),
                 obj_def.color,
             ),
             "cube" => (
-                create_cube_mesh_procedural(obj_def.scale[0], obj_def.scale[1], obj_def.scale[2]),
+                crate::primitives::create_cube_mesh_procedural(obj_def.scale[0], obj_def.scale[1], obj_def.scale[2]),
+                obj_def.color,
+            ),
+            "sphere" => (
+                crate::primitives::create_sphere_mesh_procedural(0.5, 32, 16),
+                obj_def.color,
+            ),
+            "cylinder" => (
+                crate::primitives::create_cylinder_mesh_procedural(0.5, 1.0, 32),
                 obj_def.color,
             ),
             _ => continue,
@@ -388,128 +396,7 @@ fn setup_environment(
     // 光源作为场景元数据，随 manifest 一起传递。
 }
 
-// ---------------------------------------------------------------------------
-// 程序化网格生成（plane / cube）
-// ---------------------------------------------------------------------------
-
-pub(crate) fn create_plane_mesh_procedural(size_x: f32, size_z: f32) -> ModelMesh {
-    let hx = size_x * 0.5;
-    let hz = size_z * 0.5;
-
-    let vertices = vec![
-        Vertex {
-            position: Point3::new(-hx, 0.0, -hz),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            uv: Vector2::new(0.0, 0.0),
-            tangent: [1.0, 0.0, 0.0, 1.0],
-            joints: [0, 0, 0, 0],
-            weights: [1.0, 0.0, 0.0, 0.0],
-        },
-        Vertex {
-            position: Point3::new(hx, 0.0, -hz),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            uv: Vector2::new(size_x, 0.0),
-            tangent: [1.0, 0.0, 0.0, 1.0],
-            joints: [0, 0, 0, 0],
-            weights: [1.0, 0.0, 0.0, 0.0],
-        },
-        Vertex {
-            position: Point3::new(hx, 0.0, hz),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            uv: Vector2::new(size_x, size_z),
-            tangent: [1.0, 0.0, 0.0, 1.0],
-            joints: [0, 0, 0, 0],
-            weights: [1.0, 0.0, 0.0, 0.0],
-        },
-        Vertex {
-            position: Point3::new(-hx, 0.0, hz),
-            normal: Vector3::new(0.0, 1.0, 0.0),
-            uv: Vector2::new(0.0, size_z),
-            tangent: [1.0, 0.0, 0.0, 1.0],
-            joints: [0, 0, 0, 0],
-            weights: [1.0, 0.0, 0.0, 0.0],
-        },
-    ];
-
-    let indices = vec![0, 1, 2, 0, 2, 3];
-
-    let mut mesh = ModelMesh::new();
-    mesh.vertices = vertices;
-    mesh.indices = indices;
-    mesh.flags = MeshFlags {
-        has_normals: true,
-        has_uv0: true,
-        has_tangents: true,
-        has_skin: false,
-    };
-    mesh
-}
-
-pub(crate) fn create_cube_mesh_procedural(sx: f32, sy: f32, sz: f32) -> ModelMesh {
-    let hx = sx * 0.5;
-    let hy = sy * 0.5;
-    let hz = sz * 0.5;
-
-    #[rustfmt::skip]
-    let positions = [
-        [-hx, -hy,  hz], [ hx, -hy,  hz], [ hx,  hy,  hz], [-hx,  hy,  hz], // +Z
-        [ hx, -hy, -hz], [-hx, -hy, -hz], [-hx,  hy, -hz], [ hx,  hy, -hz], // -Z
-        [ hx, -hy,  hz], [ hx, -hy, -hz], [ hx,  hy, -hz], [ hx,  hy,  hz], // +X
-        [-hx, -hy, -hz], [-hx, -hy,  hz], [-hx,  hy,  hz], [-hx,  hy, -hz], // -X
-        [-hx,  hy,  hz], [ hx,  hy,  hz], [ hx,  hy, -hz], [-hx,  hy, -hz], // +Y
-        [-hx, -hy, -hz], [ hx, -hy, -hz], [ hx, -hy,  hz], [-hx, -hy,  hz], // -Y
-    ];
-
-    #[rustfmt::skip]
-    let normals = [
-        [0.0,0.0,1.0],[0.0,0.0,1.0],[0.0,0.0,1.0],[0.0,0.0,1.0],
-        [0.0,0.0,-1.0],[0.0,0.0,-1.0],[0.0,0.0,-1.0],[0.0,0.0,-1.0],
-        [1.0,0.0,0.0],[1.0,0.0,0.0],[1.0,0.0,0.0],[1.0,0.0,0.0],
-        [-1.0,0.0,0.0],[-1.0,0.0,0.0],[-1.0,0.0,0.0],[-1.0,0.0,0.0],
-        [0.0,1.0,0.0],[0.0,1.0,0.0],[0.0,1.0,0.0],[0.0,1.0,0.0],
-        [0.0,-1.0,0.0],[0.0,-1.0,0.0],[0.0,-1.0,0.0],[0.0,-1.0,0.0],
-    ];
-
-    let uvs = [
-        [0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],
-        [0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],
-        [0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],
-        [0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],
-        [0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],
-        [0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],
-    ];
-
-    let vertices: Vec<Vertex> = (0..24)
-        .map(|i| Vertex {
-            position: Point3::new(positions[i][0], positions[i][1], positions[i][2]),
-            normal: Vector3::new(normals[i][0], normals[i][1], normals[i][2]),
-            uv: Vector2::new(uvs[i][0], uvs[i][1]),
-            tangent: [1.0, 0.0, 0.0, 1.0],
-            joints: [0, 0, 0, 0],
-            weights: [1.0, 0.0, 0.0, 0.0],
-        })
-        .collect();
-
-    #[rustfmt::skip]
-    let indices = vec![
-        0,1,2, 0,2,3, 4,5,6, 4,6,7,
-        8,9,10, 8,10,11, 12,13,14, 12,14,15,
-        16,17,18, 16,18,19, 20,21,22, 20,22,23,
-    ];
-
-    let mut mesh = ModelMesh::new();
-    mesh.vertices = vertices;
-    mesh.indices = indices;
-    mesh.flags = MeshFlags {
-        has_normals: true,
-        has_uv0: true,
-        has_tangents: true,
-        has_skin: false,
-    };
-    mesh
-}
-
-pub(crate) fn create_pbr_material(name: &str, color: [f32; 3]) -> Material {
+pub fn create_pbr_material(name: &str, color: [f32; 3]) -> Material {
     Material {
         name: Some(name.to_string()),
         base_color_factor: [color[0], color[1], color[2], 1.0],

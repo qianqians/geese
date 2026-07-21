@@ -81,6 +81,12 @@ pub enum EditorAction {
     ExportGameAndroid,
     /// 打开构建面板
     OpenBuildPanel,
+    /// 创建基础几何体
+    CreatePrimitive {
+        kind: String,
+        position: [f32; 3],
+        parent_node_id: Option<String>,
+    },
 }
 
 // ---------------------------------------------------------------------------
