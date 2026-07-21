@@ -25,12 +25,16 @@
   "name": "跳一跳",
   "objects": [
     {
+      "_comment": "地面平面 — 编辑器预览用。游戏运行时由 Python 端创建对应物理体（physics.body_kind: fixed），因为场景加载器当前不处理物理组件。",
       "color": [
         0.35,
         0.35,
         0.38
       ],
       "object_type": "plane",
+      "physics": {
+        "body_kind": "fixed"
+      },
       "position": [
         0.0,
         -2.0,
