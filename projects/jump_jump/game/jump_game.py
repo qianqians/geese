@@ -55,7 +55,7 @@ class JumpGame:
         self.request_restart = False
         self.grounded_was = False
         self.grounded = False
-        self.jump_direction_angle = 0.0
+        self.jump_direction_angle = math.pi
 
         # 玩家物理 / 节点
         self.player_body_handle = 0
@@ -177,7 +177,7 @@ class JumpGame:
 
         # ── 首个目标平台 ──
         dist = random.uniform(CFG.min_spawn_dist, CFG.max_spawn_dist)
-        next_pos = (0.0, 0.0, dist)
+        next_pos = (0.0, 0.0, -dist)
         next_half = self._random_platform_size()
         p2 = self._spawn_platform(
             bridge, next_pos, next_half, self._platform_materials[1])
@@ -349,7 +349,7 @@ class JumpGame:
             size[1],
             max(size[2] / math.sqrt(difficulty), 0.35),
         )
-        self.jump_direction_angle = random.uniform(-0.6, 0.6)
+        self.jump_direction_angle = random.uniform(math.pi - 0.6, math.pi + 0.6)
 
         plat = self._spawn_platform(
             bridge, next_center, scaled,
@@ -384,6 +384,7 @@ class JumpGame:
         self.request_restart = False
         self.grounded_was = False
         self.grounded = False
+        self.jump_direction_angle = math.pi
 
         # 重建平台 + 重置玩家（地面保留）
         self._build_gameplay_entities(bridge, create_player=False)
