@@ -161,6 +161,8 @@ pub struct AssetBrowser {
     search_text: String,
     /// 左侧文件夹面板宽度占比（0.0 ~ 1.0）
     folder_split_ratio: f32,
+    /// 导航后需要重新扫描的标志
+    path_dirty: bool,
 }
 
 impl AssetBrowser {
@@ -175,7 +177,18 @@ impl AssetBrowser {
             view_mode: ViewMode::Grid,
             search_text: String::new(),
             folder_split_ratio: 0.28,
+            path_dirty: false,
         }
+    }
+
+    /// 是否需要因导航变化而重新扫描。
+    pub fn needs_rescan(&self) -> bool {
+        self.path_dirty
+    }
+
+    /// 清除导航脏标志（在重新扫描后调用）。
+    pub fn clear_dirty(&mut self) {
+        self.path_dirty = false;
     }
 
     /// 从 AssetDatabase 扫描当前目录，填充 entries 并构建文件夹树。
@@ -222,6 +235,9 @@ impl AssetBrowser {
                     .to_string();
 
                 if name.starts_with('.') {
+                    continue;
+                }
+                if name.ends_with(".meta") {
                     continue;
                 }
 
@@ -377,6 +393,7 @@ impl AssetBrowser {
         self.current_path = path;
         self.search_text.clear();
         self.selected_index = None;
+        self.path_dirty = true;
     }
 
     /// 面包屑路径段。

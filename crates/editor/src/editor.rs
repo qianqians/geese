@@ -218,7 +218,7 @@ impl Editor {
         self.process_prefab_actions();
 
         // 1.5 资源数据库扫描
-        if self.asset_needs_scan {
+        if self.asset_needs_scan || self.asset_browser.needs_rescan() {
             let report = self.asset_database.refresh();
             if !report.errors.is_empty() {
                 for err in &report.errors {
@@ -230,6 +230,7 @@ impl Editor {
                 report.new_assets, report.removed, report.updated
             );
             self.asset_browser.scan_directory(&self.asset_database);
+            self.asset_browser.clear_dirty();
             self.asset_needs_scan = false;
         }
 
