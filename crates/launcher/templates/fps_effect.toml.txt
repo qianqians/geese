@@ -1,0 +1,37 @@
+# {{project_name}} — 默认 Effect 定义（FPS 第一人称）
+# 由 Geese Launcher 自动生成
+#
+# Forward+ PBR 管线 + 阴影 + Cluster Lighting（室内场景优化）。
+
+[effect]
+name = "{{project_name}}_fps"
+features = ["Lighting", "Shadows"]
+
+[[effect.passes]]
+name = "ShadowDepth"
+pass_type = "Shadow"
+shader = "ShadowDepth"
+enabled = true
+
+[[effect.passes]]
+name = "ForwardPBR"
+pass_type = "Geometry"
+shader = "ForwardPBR"
+enabled = true
+
+[effect.passes.features]
+LIGHTING = "true"
+SHADOWS = "true"
+CLUSTER_LIGHTING = "true"
+
+[[effect.parameters]]
+name = "cluster_tiles_x"
+value = { Int = 8 }
+
+[[effect.parameters]]
+name = "cluster_tiles_y"
+value = { Int = 8 }
+
+[[effect.parameters]]
+name = "cluster_depth_slices"
+value = { Int = 16 }

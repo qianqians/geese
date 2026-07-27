@@ -1,0 +1,24 @@
+# {{project_name}} — 默认 Effect 定义（空项目）
+# 由 Geese Launcher 自动生成
+#
+# 最小化 Forward+ PBR 管线，仅包含基础光照。
+# 可通过 EffectLoader::load_from_file() 加载并由 EffectCompiler 编译。
+
+[effect]
+name = "{{project_name}}_default"
+features = ["Lighting"]
+
+[[effect.passes]]
+name = "ForwardPBR"
+pass_type = "Geometry"
+shader = "ForwardPBR"
+enabled = true
+
+[effect.passes.features]
+LIGHTING = "true"
+
+[[effect.passes]]
+name = "ShadowDepth"
+pass_type = "Shadow"
+shader = "ShadowDepth"
+enabled = true

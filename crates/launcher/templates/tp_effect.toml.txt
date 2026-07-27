@@ -1,0 +1,33 @@
+# {{project_name}} — 默认 Effect 定义（第三人称）
+# 由 Geese Launcher 自动生成
+#
+# Forward+ PBR 管线 + 阴影 + 体积雾（开阔室外场景）。
+
+[effect]
+name = "{{project_name}}_third_person"
+features = ["Lighting", "Shadows", "Fog"]
+
+[[effect.passes]]
+name = "ShadowDepth"
+pass_type = "Shadow"
+shader = "ShadowDepth"
+enabled = true
+
+[[effect.passes]]
+name = "ForwardPBR"
+pass_type = "Geometry"
+shader = "ForwardPBR"
+enabled = true
+
+[effect.passes.features]
+LIGHTING = "true"
+SHADOWS = "true"
+FOG = "true"
+
+[[effect.parameters]]
+name = "fog_density"
+value = { Float = 0.005 }
+
+[[effect.parameters]]
+name = "fog_color"
+value = { String = "0.7,0.75,0.85" }

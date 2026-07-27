@@ -1,0 +1,194 @@
+//! {{project_name}} — Shader 模块注册表。
+//!
+//! 使用 shader_framework 的声明式 API 定义和组合项目所需的着色器模块。
+//! 通过 `EffectLoader` 加载 `assets/effects/default_effect.toml` 配置，
+//! 由 `EffectCompiler` 编译为可执行的 WGSL 管线。
+//!
+//! 架构：
+//! ```text
+//! shader_registry.rs（本文件）
+//!   └─ register_project_shaders() → ShaderComposer
+//!        ├─ ForwardPBR 模块（mixin pbr_common）
+//!        ├─ ShadowDepth 模块
+//!        └─ Unlit 模块（debug / 编辑器可视化）
+//!
+//! assets/effects/default_effect.toml
+//!   └─ EffectLoader → RenderEffect
+//!        └─ EffectCompiler::compile() → CompiledEffect
+//!             └─ 每个 Pass 的 WGSL 源码
+//! ```
+
+use shader_framework::compose::*;
+use shader_framework::core::*;
+use shader_framework::effect::*;
+use shader_framework::generator::*;
+use shader_framework::stream::presets;
+use std::path::Path;
+
+/// 创建预装载引擎公共库的 [`ShaderComposer`]。
+///
+/// 注册 `pbr_common` 公共模块（Camera / Light / Material 结构体 + PBR 函数），
+/// 后续项目 shader 可通过 `mixin("pbr_common")` 复用全部 PBR 计算逻辑。
+pub fn create_composer() -> ShaderComposer {
+    let mut composer = ShaderComposer::new();
+
+    // ── pbr_common 公共库 ─────────────────────────────────────────────
+    // 包含 Camera / Light / LightStorage / MaterialUniform 结构体，
+    // 以及 distribution_ggx / geometry_smith / fresnel_schlick / shade_light 等函数。
+    let pbr_common = ShaderModuleBuilder::new("pbr_common")
+        // 常量
+        .constant(ConstantDef {
+            name: "PI".into(),
+            ty: WgslType::F32,
+            id: 0,
+            default_value: Some("3.14159265359".into()),
+            is_const: true,
+        })
+        // Camera 结构体
+        .struct_def(StructDef {
+            name: "Camera".into(),
+            fields: vec![
+                StructField {
+                    name: "view_projection".into(),
+                    ty: WgslType::Mat4x4(WgslScalarType::F32),
+                    attributes: vec![],
+                },
+                StructField {
+                    name: "camera_position".into(),
+                    ty: WgslType::Vec4(WgslScalarType::F32),
+                    attributes: vec![],
+                },
+            ],
+        })
+        // MaterialUniform 结构体
+        .struct_def(StructDef {
+            name: "MaterialUniform".into(),
+            fields: vec![
+                StructField {
+                    name: "base_color_factor".into(),
+                    ty: WgslType::Vec4(WgslScalarType::F32),
+                    attributes: vec![],
+                },
+                StructField {
+                    name: "metallic_roughness".into(),
+                    ty: WgslType::Vec4(WgslScalarType::F32),
+                    attributes: vec![],
+                },
+                StructField {
+                    name: "emissive_alpha".into(),
+                    ty: WgslType::Vec4(WgslScalarType::F32),
+                    attributes: vec![],
+                },
+            ],
+        })
+        .build();
+
+    composer.register_module(pbr_common).expect("pbr_common 注册失败");
+    composer
+}
+
+/// 注册项目专属着色器模块。
+///
+/// 调用后 `composer` 中包含：
+/// - `pbr_common`（公共库，由 `create_composer` 注册）
+/// - `ForwardPBR`（前向 PBR 渲染）
+/// - `ShadowDepth`（阴影深度 pass）
+/// - `Unlit`（无光照 debug 着色器）
+pub fn register_project_shaders(composer: &mut ShaderComposer) {
+    // ── ForwardPBR ────────────────────────────────────────────────────
+    // 前向渲染 PBR 着色器：position + normal + uv 输入流，
+    // mixin pbr_common 获取全部 PBR 计算函数。
+    let forward_pbr = ShaderModuleBuilder::new("ForwardPBR")
+        .stream(presets::position())
+        .stream(presets::normal())
+        .stream(presets::uv(0))
+        .vertex_body(
+            "let model = object.model;\n\
+             let wp = model * vec4<f32>(input.position, 1.0);\n\
+             output.world_position = wp.xyz;\n\
+             output.world_normal = (model * vec4<f32>(input.normal, 0.0)).xyz;\n\
+             output.uv0 = input.uv;\n\
+             output.clip_position = camera.view_projection * wp;",
+        )
+        .fragment_body(
+            "let base_color = material.base_color_factor;\n\
+             let metallic = material.metallic_roughness.x;\n\
+             let roughness = material.metallic_roughness.y;\n\
+             let n = normalize(input.world_normal);\n\
+             let v = normalize(camera.camera_position.xyz - input.world_position);\n\
+             // 简化：使用 base_color 作为最终输出（完整 PBR 需遍历 lights）\n\
+             let ndotv = max(dot(n, v), 0.0);\n\
+             let fresnel = pow(1.0 - ndotv, 5.0);\n\
+             let color = base_color.rgb * (1.0 - metallic) + base_color.rgb * fresnel * 0.04;\n\
+             return vec4<f32>(color, base_color.a);",
+        )
+        .build();
+
+    composer.register_module(forward_pbr).expect("ForwardPBR 注册失败");
+
+    // ── ShadowDepth ───────────────────────────────────────────────────
+    // 阴影深度 pass：仅需 position 输入，输出裁剪空间深度。
+    let shadow_depth = ShaderModuleBuilder::new("ShadowDepth")
+        .stream(presets::position())
+        .vertex_body(
+            "let model = object.model;\n\
+             let wp = model * vec4<f32>(input.position, 1.0);\n\
+             output.clip_position = camera.view_projection * wp;",
+        )
+        .build();
+
+    composer.register_module(shadow_depth).expect("ShadowDepth 注册失败");
+
+    // ── Unlit ─────────────────────────────────────────────────────────
+    // 无光照 debug 着色器：直接输出 base_color，用于编辑器 gizmo / 调试可视化。
+    let unlit = ShaderModuleBuilder::new("Unlit")
+        .stream(presets::position())
+        .vertex_body(
+            "let model = object.model;\n\
+             let wp = model * vec4<f32>(input.position, 1.0);\n\
+             output.clip_position = camera.view_projection * wp;",
+        )
+        .fragment_body(
+            "return material.base_color_factor;",
+        )
+        .build();
+
+    composer.register_module(unlit).expect("Unlit 注册失败");
+}
+
+/// 从 TOML 文件加载并编译 Effect。
+///
+/// `effect_path` 通常为 `assets/effects/default_effect.toml`。
+/// 返回编译后的 [`CompiledEffect`]，其中每个 Pass 包含完整的 WGSL 源码。
+pub fn load_and_compile_effect(
+    composer: &ShaderComposer,
+    effect_path: &Path,
+) -> Result<CompiledEffect, String> {
+    let effect = EffectLoader::load_from_file(effect_path)
+        .map_err(|e| format!("加载 effect 失败: {e}"))?;
+
+    let compiler = EffectCompiler::new();
+    compiler
+        .validate_effect(&effect, composer)
+        .map_err(|e| format!("effect 校验失败: {e}"))?;
+
+    compiler
+        .compile(&effect, composer)
+        .map_err(|e| format!("effect 编译失败: {e}"))
+}
+
+/// 便捷函数：一步完成 shader 注册 + effect 加载编译。
+///
+/// 返回 `(ShaderComposer, CompiledEffect)`，后续可从 composer 中
+/// 按需编译其他 effect 或查询已注册模块。
+pub fn init_shader_pipeline(
+    project_dir: &Path,
+) -> Result<(ShaderComposer, CompiledEffect), String> {
+    let mut composer = create_composer();
+    register_project_shaders(&mut composer);
+
+    let effect_path = project_dir.join("assets/effects/default_effect.toml");
+    let compiled = load_and_compile_effect(&composer, &effect_path)?;
+
+    Ok((composer, compiled))
+}

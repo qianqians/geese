@@ -593,7 +593,7 @@ impl Launcher {
             let staging_str = staging_path.display().to_string();
 
             // 创建目录结构
-            let dirs = ["", "/src", "/assets", "/assets/scenes", "/config"];
+            let dirs = ["", "/src", "/assets", "/assets/scenes", "/assets/effects", "/config"];
             for d in &dirs {
                 fs::create_dir_all(format!("{}{}", staging_str, d))
                     .map_err(|e| format!("创建目录失败: {}", e))?;
@@ -757,7 +757,7 @@ mod tests {
     fn launcher_initial_state() {
         let launcher = Launcher::new();
         assert_eq!(launcher.page, LauncherPage::Home);
-        assert_eq!(launcher.templates.len(), 4);
+        assert_eq!(launcher.templates.len(), 5);
         assert_eq!(launcher.templates[0].id, "empty");
         assert_eq!(launcher.templates[1].id, "fps");
         assert_eq!(launcher.templates[2].id, "third_person");
@@ -824,7 +824,7 @@ mod tests {
             empty.camera_config.camera_type,
             crate::templates::CameraType::Empty
         );
-        assert!(empty.files.len() == 4); // camera.rs, player.rs, scene_builder.rs, scene.json
+        assert!(empty.files.len() == 6); // camera.rs, player.rs, scene_builder.rs, shader_registry.rs, effect.toml, scene.json
         assert!(empty.input_mappings.is_empty());
     }
 
@@ -850,15 +850,19 @@ mod tests {
         let fps = templates::fps_template();
         let main_rs = templates::main_rs_content(&fps, "TestGame");
         assert!(
-            main_rs.contains("// mod scene_builder;"),
-            "FPS main.rs should contain commented scene_builder module"
+            main_rs.contains("mod scene_builder;"),
+            "FPS main.rs should contain active scene_builder module"
+        );
+        assert!(
+            main_rs.contains("mod shader_registry;"),
+            "FPS main.rs should contain active shader_registry module"
         );
 
         let tp = templates::third_person_template();
         let main_rs = templates::main_rs_content(&tp, "TestGame");
         assert!(
-            main_rs.contains("// mod scene_builder;"),
-            "ThirdPerson main.rs should contain commented scene_builder module"
+            main_rs.contains("mod scene_builder;"),
+            "ThirdPerson main.rs should contain active scene_builder module"
         );
     }
 
@@ -893,8 +897,10 @@ mod tests {
         assert!(paths.contains(&"src/camera.rs"), "empty template should have camera.rs");
         assert!(paths.contains(&"src/player.rs"), "empty template should have player.rs");
         assert!(paths.contains(&"src/scene_builder.rs"), "empty template should have scene_builder.rs");
+        assert!(paths.contains(&"src/shader_registry.rs"), "empty template should have shader_registry.rs");
+        assert!(paths.contains(&"assets/effects/default_effect.toml"), "empty template should have effect.toml");
         assert!(paths.contains(&"assets/scenes/default.scene.json"), "empty template should have scene.json");
-        assert!(empty.files.len() >= 4);
+        assert!(empty.files.len() >= 6);
     }
 
     #[test]

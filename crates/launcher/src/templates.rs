@@ -565,6 +565,14 @@ fn empty_template_files() -> Vec<TemplateFile> {
             content: include_str!("../templates/scene_builder.rs.txt").to_string(),
         },
         TemplateFile {
+            relative_path: "src/shader_registry.rs".into(),
+            content: include_str!("../templates/shader_registry.rs.txt").to_string(),
+        },
+        TemplateFile {
+            relative_path: "assets/effects/default_effect.toml".into(),
+            content: include_str!("../templates/empty_effect.toml.txt").to_string(),
+        },
+        TemplateFile {
             relative_path: "assets/scenes/default.scene.json".into(),
             content: scene_json_content("空项目".into(), &empty_objects()),
         },
@@ -584,6 +592,14 @@ fn fps_template_files() -> Vec<TemplateFile> {
         TemplateFile {
             relative_path: "src/scene_builder.rs".into(),
             content: include_str!("../templates/scene_builder.rs.txt").to_string(),
+        },
+        TemplateFile {
+            relative_path: "src/shader_registry.rs".into(),
+            content: include_str!("../templates/shader_registry.rs.txt").to_string(),
+        },
+        TemplateFile {
+            relative_path: "assets/effects/default_effect.toml".into(),
+            content: include_str!("../templates/fps_effect.toml.txt").to_string(),
         },
         TemplateFile {
             relative_path: "assets/scenes/default.scene.json".into(),
@@ -607,6 +623,14 @@ fn third_person_template_files() -> Vec<TemplateFile> {
             content: include_str!("../templates/scene_builder.rs.txt").to_string(),
         },
         TemplateFile {
+            relative_path: "src/shader_registry.rs".into(),
+            content: include_str!("../templates/shader_registry.rs.txt").to_string(),
+        },
+        TemplateFile {
+            relative_path: "assets/effects/default_effect.toml".into(),
+            content: include_str!("../templates/tp_effect.toml.txt").to_string(),
+        },
+        TemplateFile {
             relative_path: "assets/scenes/default.scene.json".into(),
             content: scene_json_content("ThirdPerson".into(), &third_person_objects()),
         },
@@ -626,6 +650,14 @@ fn topdown_template_files() -> Vec<TemplateFile> {
         TemplateFile {
             relative_path: "src/scene_builder.rs".into(),
             content: include_str!("../templates/scene_builder.rs.txt").to_string(),
+        },
+        TemplateFile {
+            relative_path: "src/shader_registry.rs".into(),
+            content: include_str!("../templates/shader_registry.rs.txt").to_string(),
+        },
+        TemplateFile {
+            relative_path: "assets/effects/default_effect.toml".into(),
+            content: include_str!("../templates/td_effect.toml.txt").to_string(),
         },
         TemplateFile {
             relative_path: "assets/scenes/default.scene.json".into(),
@@ -747,9 +779,9 @@ serde = {{ version = "1.0", features = ["derive"] }}
 serde_json = "1.0"
 # 注意：path 相对于引擎根，若项目不在 projects/ 下请手动调整
 geese_game = {{ package = "game_runtime", path = "../../crates/game_runtime" }}
-# 取消注释以下依赖以启用脚手架模块（camera/player/scene_builder）：
-# render = {{ path = "../../crates/render" }}
-# input = {{ path = "../../crates/input" }}
+render = {{ path = "../../crates/render" }}
+input = {{ path = "../../crates/input" }}
+shader_framework = {{ path = "../../crates/shader_framework" }}
 
 "#
     )
@@ -767,21 +799,23 @@ pub fn main_rs_content(template: &ProjectTemplate, project_name: &str) -> String
     let has_camera = template.files.iter().any(|f| f.relative_path == "src/camera.rs");
     let has_player = template.files.iter().any(|f| f.relative_path == "src/player.rs");
     let has_scene_builder = template.files.iter().any(|f| f.relative_path == "src/scene_builder.rs");
+    let has_shader_registry = template.files.iter().any(|f| f.relative_path == "src/shader_registry.rs");
 
-    // 生成注释行而非 mod 声明：这些模块是脚手架示例代码，
-    // run_event_loop 当前自包含不使用它们，注释掉可避免编译错误（无需 input/render 依赖）。
-    let mod_decls = if has_camera || has_player || has_scene_builder {
-        let mut s = String::from("// 以下模块为脚手架示例代码，默认不编译。\n");
+    // 生成活跃的 mod 声明（不需要向后兼容，直接启用所有模块）
+    let mod_decls = if has_camera || has_player || has_scene_builder || has_shader_registry {
+        let mut s = String::new();
         if has_camera {
-            s.push_str("// mod camera;        // 取消注释以启用自定义摄像机\n");
+            s.push_str("mod camera;\n");
         }
         if has_player {
-            s.push_str("// mod player;        // 取消注释以启用角色控制器\n");
+            s.push_str("mod player;\n");
         }
         if has_scene_builder {
-            s.push_str("// mod scene_builder; // 取消注释以启用程序化场景构建\n");
+            s.push_str("mod scene_builder;\n");
         }
-        s.push_str("// 启用后需在 [dependencies] 中添加 render 和 input 的 path 依赖。\n");
+        if has_shader_registry {
+            s.push_str("mod shader_registry;\n");
+        }
         s
     } else {
         String::new()

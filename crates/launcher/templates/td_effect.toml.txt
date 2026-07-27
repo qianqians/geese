@@ -1,0 +1,29 @@
+# {{project_name}} — 默认 Effect 定义（俯视角）
+# 由 Geese Launcher 自动生成
+#
+# Forward+ PBR 管线 + 阴影 + 实例化渲染（大量障碍物场景优化）。
+
+[effect]
+name = "{{project_name}}_topdown"
+features = ["Lighting", "Shadows", "Instancing"]
+
+[[effect.passes]]
+name = "ShadowDepth"
+pass_type = "Shadow"
+shader = "ShadowDepth"
+enabled = true
+
+[[effect.passes]]
+name = "ForwardPBR"
+pass_type = "Geometry"
+shader = "ForwardPBR"
+enabled = true
+
+[effect.passes.features]
+LIGHTING = "true"
+SHADOWS = "true"
+INSTANCING = "true"
+
+[[effect.parameters]]
+name = "max_instances"
+value = { Int = 1024 }
