@@ -3,6 +3,28 @@
 //! An "effect" binds composed shaders to render-pass definitions, producing
 //! compiled WGSL for every pass. Effects can be loaded from TOML/JSON files
 //! or built programmatically via [`EffectBuilder`].
+//!
+//! # Stage Chain
+//!
+//! A pass can declare a `stage` chain to compose entry-point bodies from
+//! multiple modules in order. The TOML format uses a nested array:
+//!
+//! ```toml
+//! stage = [
+//!     ["vs", "fs"],
+//!     ["TransformShader.vs", "TransformShader.fs"],
+//!     ["PostShader.vs"]
+//! ]
+//! ```
+//!
+//! The outer list defines ordered execution steps. Each inner list contains
+//! stage body references for that step:
+//! - A bare stage name like `"vs"` refers to the **base shader's own body**.
+//! - A dotted reference like `"TransformShader.vs"` refers to an **external module's body**.
+//!
+//! All stages (including cs) execute in array order. The parse result preserves
+//! the original step sequence, producing one `(ShaderStage, Vec<module>)` entry
+//! per step per stage type found.
 
 use crate::compose::*;
 use crate::core::*;
@@ -65,6 +87,13 @@ pub struct PassDef {
     /// Whether this pass is enabled.
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// Stage chain: ordered list of execution steps.
+    /// Each step is a list of stage body references.
+    /// Bare "vs"/"fs"/"cs" = base shader's own body.
+    /// "module.vs"/"module.fs"/"module.cs" = referenced module's body.
+    /// All stages (including cs) execute in array order.
+    #[serde(default)]
+    pub stage: Vec<Vec<String>>,
 }
 
 fn default_true() -> bool {
@@ -216,8 +245,8 @@ impl EffectCompiler {
         pass: &PassDef,
         composer: &ShaderComposer,
     ) -> ShaderResult<CompiledPass> {
-        let composed = if pass.compositions.is_empty() {
-            // No compositions — build a ComposedShader directly from the module.
+        let composed = if pass.compositions.is_empty() && pass.stage.is_empty() {
+            // No compositions and no stage chain — build a ComposedShader directly from the module.
             let module = composer.get_module(&pass.shader).ok_or_else(|| {
                 ShaderError::Effect {
                     message: format!("Shader module '{}' not found in composer", pass.shader),
@@ -226,7 +255,17 @@ impl EffectCompiler {
             self.module_to_composed(module, &pass.shader)
         } else {
             // Convert CompositionDef → CompositionOp and compose.
-            let ops = self.resolve_compositions(&pass.compositions, composer)?;
+            let mut ops = self.resolve_compositions(&pass.compositions, composer)?;
+            // Append stage chain operations if stage list is non-empty
+            if !pass.stage.is_empty() {
+                let stage_groups = Self::parse_stage_list(&pass.stage)?;
+                for (shader_stage, stage_modules) in stage_groups {
+                    ops.push(CompositionOp::StageChain {
+                        stage: shader_stage,
+                        modules: stage_modules,
+                    });
+                }
+            }
             let result_name = format!("{}_{}", pass.shader, pass.name);
             composer.compose(&pass.shader, &ops, &result_name)?
         };
@@ -284,6 +323,22 @@ impl EffectCompiler {
                     });
                 }
             }
+            // Validate stage chain module references
+            for step in &pass.stage {
+                for item in step {
+                    if item.contains('.') {
+                        let module_name = item.rsplitn(2, '.').nth(1).unwrap();
+                        if composer.get_module(module_name).is_none() {
+                            return Err(ShaderError::Effect {
+                                message: format!(
+                                    "Pass '{}' stage list references unknown module '{}'",
+                                    pass.name, module_name
+                                ),
+                            });
+                        }
+                    }
+                }
+            }
         }
 
         Ok(())
@@ -324,6 +379,80 @@ impl EffectCompiler {
             constants: module.constants.clone(),
             global_vars: module.global_vars.clone(),
         }
+    }
+
+    /// Parse a stage list like `[["vs", "fs"], ["shader2.vs", "shader2.fs"], ["shader3.vs"]]`
+    /// into per-stage module chains.
+    ///
+    /// Each step is a list of stage body references.
+    /// Bare "vs"/"fs"/"cs" refers to the base module (skipped in module output).
+    /// "module.suffix" refers to an external module.
+    /// All stages (including cs) are chained in array order.
+    ///
+    /// Modules are grouped by stage type: one `(ShaderStage, Vec<module>)` per
+    /// stage that has at least one external module. Ordering is VS → FS → CS.
+    /// Only entries with non-empty module lists are emitted, ensuring the
+    /// downstream `StageChain` op adds the base body exactly once per stage.
+    /// If the stage list contains only base references (no external modules),
+    /// an error is returned.
+    fn parse_stage_list(
+        steps: &[Vec<String>],
+    ) -> ShaderResult<Vec<(ShaderStage, Vec<String>)>> {
+        let mut vs_modules = Vec::new();
+        let mut fs_modules = Vec::new();
+        let mut cs_modules = Vec::new();
+
+        for step in steps {
+            for item in step {
+                let (module_part, stage_suffix) = if item.contains('.') {
+                    let parts: Vec<&str> = item.rsplitn(2, '.').collect();
+                    (parts[1], parts[0])
+                } else {
+                    ("", item.as_str())
+                };
+
+                let item_stage = match stage_suffix {
+                    "vs" => ShaderStage::Vertex,
+                    "fs" => ShaderStage::Fragment,
+                    "cs" => ShaderStage::Compute,
+                    _ => {
+                        return Err(ShaderError::Effect {
+                            message: format!(
+                                "Invalid stage suffix '{}' in stage list. Expected 'vs', 'fs', or 'cs'",
+                                stage_suffix
+                            ),
+                        })
+                    }
+                };
+
+                if !module_part.is_empty() {
+                    match item_stage {
+                        ShaderStage::Vertex => vs_modules.push(module_part.to_string()),
+                        ShaderStage::Fragment => fs_modules.push(module_part.to_string()),
+                        ShaderStage::Compute => cs_modules.push(module_part.to_string()),
+                    }
+                }
+            }
+        }
+
+        let mut result = Vec::new();
+        if !vs_modules.is_empty() {
+            result.push((ShaderStage::Vertex, vs_modules));
+        }
+        if !fs_modules.is_empty() {
+            result.push((ShaderStage::Fragment, fs_modules));
+        }
+        if !cs_modules.is_empty() {
+            result.push((ShaderStage::Compute, cs_modules));
+        }
+
+        if result.is_empty() {
+            return Err(ShaderError::Effect {
+                message: "Empty stage list".into(),
+            });
+        }
+
+        Ok(result)
     }
 
     /// Convert [`CompositionDef`] descriptors into [`CompositionOp`] values,
@@ -432,6 +561,7 @@ impl EffectBuilder {
             compositions: Vec::new(),
             features: HashMap::new(),
             enabled: true,
+            stage: Vec::new(),
         });
         self
     }
@@ -448,6 +578,7 @@ impl EffectBuilder {
             compositions: Vec::new(),
             features: HashMap::new(),
             enabled: true,
+            stage: Vec::new(),
         });
         self
     }
@@ -464,6 +595,7 @@ impl EffectBuilder {
             compositions: Vec::new(),
             features: HashMap::new(),
             enabled: true,
+            stage: Vec::new(),
         });
         self
     }
@@ -480,6 +612,7 @@ impl EffectBuilder {
             compositions: Vec::new(),
             features: HashMap::new(),
             enabled: true,
+            stage: Vec::new(),
         });
         self
     }
@@ -496,6 +629,48 @@ impl EffectBuilder {
             compositions: Vec::new(),
             features: HashMap::new(),
             enabled: true,
+            stage: Vec::new(),
+        });
+        self
+    }
+
+    /// Add a pass with stage chain configuration.
+    ///
+    /// `stage` is a list of steps, where each step is a list of stage body references.
+    /// Bare "vs"/"fs"/"cs" = base body, "module.vs" = external module.
+    ///
+    /// # Example
+    /// ```ignore
+    /// builder.add_pass_with_stage(
+    ///     "MainPass",
+    ///     PassType::Geometry,
+    ///     "BaseShader",
+    ///     &[
+    ///         &["vs", "fs"],
+    ///         &["shader2.vs", "shader2.fs"],
+    ///         &["shader3.vs"],
+    ///     ],
+    /// );
+    /// ```
+    pub fn add_pass_with_stage(
+        mut self,
+        name: impl Into<String>,
+        pass_type: PassType,
+        shader: impl Into<String>,
+        stage: &[&[&str]],
+    ) -> Self {
+        let stage_vec: Vec<Vec<String>> = stage
+            .iter()
+            .map(|step| step.iter().map(|s| s.to_string()).collect())
+            .collect();
+        self.passes.push(PassDef {
+            name: name.into(),
+            pass_type,
+            shader: shader.into(),
+            compositions: Vec::new(),
+            features: HashMap::new(),
+            enabled: true,
+            stage: stage_vec,
         });
         self
     }
@@ -700,6 +875,7 @@ value = { Bool = true }
             compositions: Vec::new(),
             features: HashMap::new(),
             enabled: true,
+            stage: Vec::new(),
         };
 
         let particles_pass = PassDef {
@@ -709,6 +885,7 @@ value = { Bool = true }
             compositions: Vec::new(),
             features: HashMap::new(),
             enabled: true,
+            stage: Vec::new(),
         };
 
         let effect = EffectBuilder::new("ConditionalEffect")
@@ -731,6 +908,7 @@ value = { Bool = true }
             compositions: Vec::new(),
             features: HashMap::new(),
             enabled: true,
+            stage: Vec::new(),
         };
         let effect = EffectBuilder::new("test").add_pass(pass).build();
         assert_eq!(effect.passes.len(), 1);
@@ -807,6 +985,7 @@ value = { Bool = true }
             compositions: Vec::new(),
             features: HashMap::new(),
             enabled: true,
+            stage: Vec::new(),
         };
 
         let result = compiler.compile_pass(&pass, &composer);
@@ -889,6 +1068,7 @@ value = { Bool = true }
                 }],
                 features: HashMap::new(),
                 enabled: true,
+                stage: Vec::new(),
             }],
             features: Vec::new(),
             parameters: Vec::new(),
@@ -919,6 +1099,7 @@ value = { Bool = true }
                 compositions: Vec::new(),
                 features: HashMap::new(),
                 enabled: false,
+                stage: Vec::new(),
             }],
             features: Vec::new(),
             parameters: Vec::new(),
@@ -1049,6 +1230,7 @@ value = { Bool = true }
                 ],
                 features: HashMap::new(),
                 enabled: true,
+                stage: Vec::new(),
             }],
             features: Vec::new(),
             parameters: Vec::new(),
@@ -1105,6 +1287,7 @@ value = { Bool = true }
                 }],
                 features: HashMap::new(),
                 enabled: true,
+                stage: Vec::new(),
             }],
             features: Vec::new(),
             parameters: Vec::new(),
@@ -1203,6 +1386,7 @@ features = ["Lighting", { Custom = "Volumetrics" }]
                 }],
                 features: HashMap::new(),
                 enabled: true,
+                stage: Vec::new(),
             }],
             features: Vec::new(),
             parameters: Vec::new(),
@@ -1237,6 +1421,7 @@ features = ["Lighting", { Custom = "Volumetrics" }]
                 }],
                 features: HashMap::new(),
                 enabled: true,
+                stage: Vec::new(),
             }],
             features: Vec::new(),
             parameters: Vec::new(),
@@ -1247,5 +1432,390 @@ features = ["Lighting", { Custom = "Volumetrics" }]
         assert!(result.is_err());
         let msg = format!("{}", result.unwrap_err());
         assert!(msg.contains("target_fn"));
+    }
+
+    // ── Stage chain ─────────────────────────────────────────────────
+
+    /// Helper: build a single stage step (Vec<String>) from string slices.
+    fn stage_step(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn test_effect_builder_add_pass_with_stage() {
+        let effect = EffectBuilder::new("StagedEffect")
+            .add_pass_with_stage(
+                "MainPass",
+                PassType::Geometry,
+                "BaseShader",
+                &[
+                    &["vs", "fs"],
+                    &["TransformShader.vs"],
+                ],
+            )
+            .build();
+
+        assert_eq!(effect.passes.len(), 1);
+        let pass = &effect.passes[0];
+        assert_eq!(pass.name, "MainPass");
+        assert_eq!(pass.pass_type, PassType::Geometry);
+        assert_eq!(pass.shader, "BaseShader");
+        assert_eq!(pass.stage.len(), 2);
+        assert_eq!(pass.stage[0], vec!["vs", "fs"]);
+        assert_eq!(pass.stage[1], vec!["TransformShader.vs"]);
+    }
+
+    #[test]
+    fn test_stage_chain_toml_parsing() {
+        let toml_str = r#"
+[effect]
+name = "StagedEffect"
+
+[[effect.passes]]
+name = "MainPass"
+pass_type = "Geometry"
+shader = "BaseShader"
+stage = [["vs", "shader2.vs", "shader3.vs"]]
+"#;
+        let effect = EffectLoader::load_from_str(toml_str).unwrap();
+        assert_eq!(effect.passes[0].stage.len(), 1);
+        assert_eq!(effect.passes[0].stage[0].len(), 3);
+        assert_eq!(effect.passes[0].stage[0][0], "vs");
+        assert_eq!(effect.passes[0].stage[0][1], "shader2.vs");
+        assert_eq!(effect.passes[0].stage[0][2], "shader3.vs");
+    }
+
+    #[test]
+    fn test_stage_chain_compile() {
+        let mut composer = ShaderComposer::new();
+
+        let base = ShaderModuleBuilder::new("BaseShader")
+            .stream(presets::position())
+            .vertex_body("output.clip_position = vec4<f32>(input.position, 1.0);")
+            .fragment_body("return vec4<f32>(1.0, 0.0, 0.0, 1.0);")
+            .build();
+
+        let transform = ShaderModuleBuilder::new("TransformShader")
+            .vertex_body("output.clip_position = output.clip_position * 2.0;")
+            .build();
+
+        composer.register_module(base).unwrap();
+        composer.register_module(transform).unwrap();
+
+        let effect = RenderEffect {
+            name: "StagedEffect".into(),
+            passes: vec![PassDef {
+                name: "MainPass".into(),
+                pass_type: PassType::Geometry,
+                shader: "BaseShader".into(),
+                compositions: Vec::new(),
+                features: HashMap::new(),
+                enabled: true,
+                stage: vec![
+                    stage_step(&["vs"]),
+                    stage_step(&["TransformShader.vs"]),
+                ],
+            }],
+            features: Vec::new(),
+            parameters: Vec::new(),
+        };
+
+        let compiler = EffectCompiler::new();
+        let compiled = compiler.compile(&effect, &composer).unwrap();
+        assert_eq!(compiled.passes.len(), 1);
+
+        let wgsl = &compiled.passes[0].wgsl_source;
+        // Should contain both base and transform body
+        assert!(wgsl.contains("input.position"), "Base body present: {}", wgsl);
+        assert!(wgsl.contains("* 2.0"), "Transform body present: {}", wgsl);
+    }
+
+    #[test]
+    fn test_stage_chain_without_base_body() {
+        let mut composer = ShaderComposer::new();
+
+        let base = ShaderModuleBuilder::new("BaseShader")
+            .stream(presets::position())
+            .fragment_body("return vec4<f32>(1.0);")
+            .build();
+
+        let mod_a = ShaderModuleBuilder::new("ModA")
+            .vertex_body("output.clip_position = vec4<f32>(input.position, 1.0);")
+            .build();
+
+        let mod_b = ShaderModuleBuilder::new("ModB")
+            .vertex_body("output.clip_position = output.clip_position * 2.0;")
+            .build();
+
+        composer.register_module(base).unwrap();
+        composer.register_module(mod_a).unwrap();
+        composer.register_module(mod_b).unwrap();
+
+        let effect = RenderEffect {
+            name: "test".into(),
+            passes: vec![PassDef {
+                name: "P".into(),
+                pass_type: PassType::Geometry,
+                shader: "BaseShader".into(),
+                compositions: Vec::new(),
+                features: HashMap::new(),
+                enabled: true,
+                stage: vec![
+                    stage_step(&["ModA.vs"]),
+                    stage_step(&["ModB.vs"]),
+                ],
+            }],
+            features: Vec::new(),
+            parameters: Vec::new(),
+        };
+
+        let compiler = EffectCompiler::new();
+        let compiled = compiler.compile(&effect, &composer).unwrap();
+        let wgsl = &compiled.passes[0].wgsl_source;
+        assert!(wgsl.contains("input.position"), "ModA body: {}", wgsl);
+        assert!(wgsl.contains("* 2.0"), "ModB body: {}", wgsl);
+    }
+
+    #[test]
+    fn test_stage_chain_validate_unknown_module() {
+        let mut composer = ShaderComposer::new();
+        composer
+            .register_module(make_simple_module("BaseShader"))
+            .unwrap();
+
+        let effect = RenderEffect {
+            name: "test".into(),
+            passes: vec![PassDef {
+                name: "P".into(),
+                pass_type: PassType::Geometry,
+                shader: "BaseShader".into(),
+                compositions: Vec::new(),
+                features: HashMap::new(),
+                enabled: true,
+                stage: vec![
+                    stage_step(&["vs"]),
+                    stage_step(&["UnknownModule.vs"]),
+                ],
+            }],
+            features: Vec::new(),
+            parameters: Vec::new(),
+        };
+
+        let compiler = EffectCompiler::new();
+        let result = compiler.validate_effect(&effect, &composer);
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("UnknownModule"), "Error: {}", msg);
+    }
+
+    #[test]
+    fn test_stage_chain_empty_no_effect() {
+        // Empty stage list should behave as if stage field is absent
+        let mut composer = ShaderComposer::new();
+        composer
+            .register_module(make_simple_module("S"))
+            .unwrap();
+
+        let effect = RenderEffect {
+            name: "test".into(),
+            passes: vec![PassDef {
+                name: "P".into(),
+                pass_type: PassType::Geometry,
+                shader: "S".into(),
+                compositions: Vec::new(),
+                features: HashMap::new(),
+                enabled: true,
+                stage: Vec::new(),
+            }],
+            features: Vec::new(),
+            parameters: Vec::new(),
+        };
+
+        let compiler = EffectCompiler::new();
+        let compiled = compiler.compile(&effect, &composer).unwrap();
+        assert!(!compiled.passes[0].wgsl_source.is_empty());
+    }
+
+    #[test]
+    fn test_stage_chain_mixed_stages() {
+        let mut composer = ShaderComposer::new();
+
+        let base = ShaderModuleBuilder::new("BaseShader")
+            .stream(presets::position())
+            .vertex_body("output.clip_position = vec4<f32>(input.position, 1.0);")
+            .fragment_body("return vec4<f32>(1.0, 0.0, 0.0, 1.0);")
+            .build();
+
+        let mod_a = ShaderModuleBuilder::new("ModA")
+            .vertex_body("output.clip_position = output.clip_position * 2.0;")
+            .fragment_body("return vec4<f32>(0.0, 1.0, 0.0, 1.0);")
+            .build();
+
+        composer.register_module(base).unwrap();
+        composer.register_module(mod_a).unwrap();
+
+        // Mixed stage list: both vs and fs references
+        let effect = RenderEffect {
+            name: "MixedEffect".into(),
+            passes: vec![PassDef {
+                name: "MixedPass".into(),
+                pass_type: PassType::Geometry,
+                shader: "BaseShader".into(),
+                compositions: Vec::new(),
+                features: HashMap::new(),
+                enabled: true,
+                stage: vec![
+                    stage_step(&["vs", "fs"]),
+                    stage_step(&["ModA.vs", "ModA.fs"]),
+                ],
+            }],
+            features: Vec::new(),
+            parameters: Vec::new(),
+        };
+
+        let compiler = EffectCompiler::new();
+        let compiled = compiler.compile(&effect, &composer).unwrap();
+        let wgsl = &compiled.passes[0].wgsl_source;
+
+        // Vertex: base body + ModA body
+        assert!(wgsl.contains("input.position"), "Base VS body: {}", wgsl);
+        assert!(wgsl.contains("* 2.0"), "ModA VS body: {}", wgsl);
+        // Fragment: base body + ModA body (green color from ModA)
+        assert!(wgsl.contains("1.0, 0.0, 0.0"), "Base FS body: {}", wgsl);
+        assert!(wgsl.contains("0.0, 1.0, 0.0"), "ModA FS body: {}", wgsl);
+    }
+
+    #[test]
+    fn test_stage_chain_nested_array_toml() {
+        let toml_str = r#"
+[effect]
+name = "NestedArrayEffect"
+
+[[effect.passes]]
+name = "MainPass"
+pass_type = "Geometry"
+shader = "base"
+stage = [
+    ["vs", "fs", "cs"],
+    ["shader2.vs", "shader2.fs"],
+    ["shader3.vs", "shader2.fs"]
+]
+"#;
+        let effect = EffectLoader::load_from_str(toml_str).unwrap();
+        assert_eq!(effect.passes[0].stage.len(), 3);
+        assert_eq!(effect.passes[0].stage[0], vec!["vs", "fs", "cs"]);
+        assert_eq!(effect.passes[0].stage[1], vec!["shader2.vs", "shader2.fs"]);
+        assert_eq!(effect.passes[0].stage[2], vec!["shader3.vs", "shader2.fs"]);
+    }
+
+    #[test]
+    fn test_stage_chain_invalid_suffix() {
+        let mut composer = ShaderComposer::new();
+        composer.register_module(make_simple_module("Base")).unwrap();
+
+        let effect = RenderEffect {
+            name: "test".into(),
+            passes: vec![PassDef {
+                name: "P".into(),
+                pass_type: PassType::Geometry,
+                shader: "Base".into(),
+                compositions: Vec::new(),
+                features: HashMap::new(),
+                enabled: true,
+                stage: vec![vec!["vs".into(), "ModA.gs".into()]],
+            }],
+            features: Vec::new(),
+            parameters: Vec::new(),
+        };
+
+        let compiler = EffectCompiler::new();
+        let result = compiler.compile(&effect, &composer);
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("gs"), "Error should mention invalid suffix: {}", msg);
+    }
+
+    #[test]
+    fn test_stage_chain_toml_roundtrip() {
+        let effect = RenderEffect {
+            name: "RoundtripEffect".into(),
+            passes: vec![PassDef {
+                name: "StagedPass".into(),
+                pass_type: PassType::Geometry,
+                shader: "BaseShader".into(),
+                compositions: Vec::new(),
+                features: HashMap::new(),
+                enabled: true,
+                stage: vec![
+                    stage_step(&["vs"]),
+                    stage_step(&["skin.vs"]),
+                    stage_step(&["morph.vs"]),
+                ],
+            }],
+            features: Vec::new(),
+            parameters: Vec::new(),
+        };
+
+        let file = EffectFile { effect: effect.clone() };
+        let toml_str = toml::to_string_pretty(&file).unwrap();
+        let loaded = EffectLoader::load_from_str(&toml_str).unwrap();
+        assert_eq!(loaded.passes[0].stage.len(), 3);
+        assert_eq!(loaded.passes[0].stage[0], vec!["vs"]);
+        assert_eq!(loaded.passes[0].stage[1], vec!["skin.vs"]);
+        assert_eq!(loaded.passes[0].stage[2], vec!["morph.vs"]);
+    }
+
+    #[test]
+    fn test_stage_chain_multiple_modules() {
+        let mut composer = ShaderComposer::new();
+
+        let base = ShaderModuleBuilder::new("Base")
+            .stream(presets::position())
+            .vertex_body("output.clip_position = vec4<f32>(input.position, 1.0);")
+            .fragment_body("return vec4<f32>(1.0, 0.0, 0.0, 1.0);")
+            .build();
+
+        let mod_a = ShaderModuleBuilder::new("ModA")
+            .vertex_body("output.clip_position = output.clip_position * 2.0;")
+            .build();
+
+        let mod_b = ShaderModuleBuilder::new("ModB")
+            .vertex_body("output.clip_position = output.clip_position + vec4<f32>(0.5);")
+            .build();
+
+        composer.register_module(base).unwrap();
+        composer.register_module(mod_a).unwrap();
+        composer.register_module(mod_b).unwrap();
+
+        // Two external modules for the same stage (vs), across separate steps
+        let effect = RenderEffect {
+            name: "test".into(),
+            passes: vec![PassDef {
+                name: "P".into(),
+                pass_type: PassType::Geometry,
+                shader: "Base".into(),
+                compositions: Vec::new(),
+                features: HashMap::new(),
+                enabled: true,
+                stage: vec![
+                    stage_step(&["vs"]),
+                    stage_step(&["ModA.vs"]),
+                    stage_step(&["ModB.vs"]),
+                ],
+            }],
+            features: Vec::new(),
+            parameters: Vec::new(),
+        };
+
+        let compiler = EffectCompiler::new();
+        let compiled = compiler.compile(&effect, &composer).unwrap();
+        let wgsl = &compiled.passes[0].wgsl_source;
+
+        // Base body should be present
+        assert!(wgsl.contains("input.position"), "Base VS body: {}", wgsl);
+        // ModA body should be present
+        assert!(wgsl.contains("* 2.0"), "ModA VS body: {}", wgsl);
+        // ModB body should be present
+        assert!(wgsl.contains("+ vec4<f32>(0.5)"), "ModB VS body: {}", wgsl);
     }
 }

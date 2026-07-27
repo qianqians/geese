@@ -233,6 +233,7 @@ shader = "ShadowDepth"
                 }],
                 features: std::collections::HashMap::new(),
                 enabled: true,
+                stage: Vec::new(),
             },
             PassDef {
                 name: "SkinnedShadow".into(),
@@ -246,6 +247,7 @@ shader = "ShadowDepth"
                 }],
                 features: std::collections::HashMap::new(),
                 enabled: true,
+                stage: Vec::new(),
             },
         ],
         features: vec![RenderFeature::SkinRendering],

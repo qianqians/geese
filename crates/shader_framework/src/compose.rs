@@ -156,6 +156,12 @@ pub enum CompositionOp {
         name: String,
         module: String,
     },
+    /// StageChain: sequentially chain entry-point bodies from multiple modules for a specific stage.
+    /// Base module's own body (if any) is prepended automatically.
+    StageChain {
+        stage: ShaderStage,
+        modules: Vec<String>,
+    },
 }
 
 // ─── Shader Composer ──────────────────────────────────────────────────────────
@@ -329,6 +335,88 @@ impl ShaderComposer {
                     // Merge constants and global vars
                     Self::merge_constants(&mut constants, &sub_module.constants);
                     Self::merge_global_vars(&mut global_vars, &sub_module.global_vars);
+                }
+
+                CompositionOp::StageChain { stage, modules } => {
+                    // Collect body chain: base body (if any) + each module's body
+                    let mut bodies: Vec<&WgslFragment> = Vec::new();
+
+                    // Base body first (if present)
+                    match stage {
+                        ShaderStage::Vertex => {
+                            if let Some(b) = vertex_body.as_ref() {
+                                bodies.push(b);
+                            }
+                        }
+                        ShaderStage::Fragment => {
+                            if let Some(b) = fragment_body.as_ref() {
+                                bodies.push(b);
+                            }
+                        }
+                        ShaderStage::Compute => {
+                            if let Some(b) = compute_body.as_ref() {
+                                bodies.push(b);
+                            }
+                        }
+                    }
+
+                    // Then each module's body
+                    for module_name in modules {
+                        let module =
+                            self.modules.get(module_name.as_str()).ok_or_else(|| {
+                                ShaderError::Composition {
+                                    message: format!(
+                                        "StageChain module '{}' not found",
+                                        module_name
+                                    ),
+                                }
+                            })?;
+
+                        // Merge non-body content
+                        Self::merge_streams(&mut input_streams, &module.input_streams);
+                        Self::merge_streams(&mut output_streams, &module.output_streams);
+                        Self::merge_bindings(
+                            &mut bindings,
+                            &module.bindings,
+                            base_name,
+                            module_name,
+                        )?;
+                        Self::merge_structs(&mut structs, &module.structs);
+                        Self::merge_functions(
+                            &mut functions,
+                            &module.functions,
+                            base_name,
+                            module_name,
+                        )?;
+                        Self::merge_constants(&mut constants, &module.constants);
+                        Self::merge_global_vars(&mut global_vars, &module.global_vars);
+
+                        // Collect stage-specific body
+                        let module_body = match stage {
+                            ShaderStage::Vertex => &module.vertex_body,
+                            ShaderStage::Fragment => &module.fragment_body,
+                            ShaderStage::Compute => &module.compute_body,
+                        };
+                        if let Some(b) = module_body {
+                            bodies.push(b);
+                        }
+                    }
+
+                    // Chain bodies with block scope isolation
+                    if !bodies.is_empty() {
+                        let chained = bodies
+                            .iter()
+                            .map(|b| format!("{{ {} }}", b.source.trim()))
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        let chained_fragment = WgslFragment::new(chained);
+
+                        match stage {
+                            ShaderStage::Vertex => vertex_body = Some(chained_fragment),
+                            ShaderStage::Fragment => fragment_body = Some(chained_fragment),
+                            ShaderStage::Compute => compute_body = Some(chained_fragment),
+                        }
+                    }
                 }
             }
         }
@@ -575,6 +663,15 @@ impl CompositionBuilder {
         self.operations.push(CompositionOp::Compose {
             name: name.into(),
             module: module_name.into(),
+        });
+        self
+    }
+
+    /// Add a stage chain: sequentially execute multiple modules' entry-point bodies for a stage.
+    pub fn stage_chain(mut self, stage: ShaderStage, modules: Vec<impl Into<String>>) -> Self {
+        self.operations.push(CompositionOp::StageChain {
+            stage,
+            modules: modules.into_iter().map(|m| m.into()).collect(),
         });
         self
     }
@@ -1452,6 +1549,291 @@ mod tests {
         assert_eq!(def.input_streams().len(), 1);
         assert_eq!(def.functions().len(), 1);
         assert_eq!(def.dependencies(), vec!["dep_a"]);
+    }
+
+    #[test]
+    fn test_stage_chain_basic_with_base_body() {
+        let base = ShaderModuleBuilder::new("base")
+            .stream(presets::position())
+            .vertex_body("output.clip_position = vec4<f32>(input.position, 1.0);")
+            .fragment_body("return vec4<f32>(1.0, 0.0, 0.0, 1.0);")
+            .build();
+
+        let transform = ShaderModuleBuilder::new("transform")
+            .vertex_body("output.clip_position = output.clip_position * 2.0;")
+            .build();
+
+        let offset = ShaderModuleBuilder::new("offset")
+            .vertex_body("output.clip_position = output.clip_position + vec4<f32>(1.0);")
+            .build();
+
+        let mut composer = ShaderComposer::new();
+        composer.register_module(base).unwrap();
+        composer.register_module(transform).unwrap();
+        composer.register_module(offset).unwrap();
+
+        let result = CompositionBuilder::new("base")
+            .result_name("staged")
+            .stage_chain(ShaderStage::Vertex, vec!["transform", "offset"])
+            .build(&composer)
+            .unwrap();
+
+        let vs_body = &result.vertex_entry.as_ref().unwrap().body.source;
+        // Base body should come first (wrapped in block)
+        assert!(
+            vs_body.contains("input.position"),
+            "Should contain base body: {}",
+            vs_body
+        );
+        // Transform body should come second
+        assert!(
+            vs_body.contains("* 2.0"),
+            "Should contain transform body: {}",
+            vs_body
+        );
+        // Offset body should come last
+        assert!(
+            vs_body.contains("+ vec4<f32>(1.0)"),
+            "Should contain offset body: {}",
+            vs_body
+        );
+
+        // Fragment body should be unchanged (stage chain only affects vertex)
+        let fs_body = &result.fragment_entry.as_ref().unwrap().body.source;
+        assert!(
+            fs_body.contains("1.0, 0.0, 0.0"),
+            "Fragment body unchanged: {}",
+            fs_body
+        );
+    }
+
+    #[test]
+    fn test_stage_chain_without_base_body() {
+        // Base has no vertex body
+        let base = ShaderModuleBuilder::new("base")
+            .stream(presets::position())
+            .fragment_body("return vec4<f32>(1.0);")
+            .build();
+
+        let mod_a = ShaderModuleBuilder::new("mod_a")
+            .vertex_body("output.clip_position = vec4<f32>(input.position, 1.0);")
+            .build();
+
+        let mod_b = ShaderModuleBuilder::new("mod_b")
+            .vertex_body("output.clip_position = output.clip_position * 2.0;")
+            .build();
+
+        let mut composer = ShaderComposer::new();
+        composer.register_module(base).unwrap();
+        composer.register_module(mod_a).unwrap();
+        composer.register_module(mod_b).unwrap();
+
+        let result = CompositionBuilder::new("base")
+            .result_name("no_base_vs")
+            .stage_chain(ShaderStage::Vertex, vec!["mod_a", "mod_b"])
+            .build(&composer)
+            .unwrap();
+
+        let vs_body = &result.vertex_entry.as_ref().unwrap().body.source;
+        assert!(
+            vs_body.contains("input.position"),
+            "mod_a body present: {}",
+            vs_body
+        );
+        assert!(
+            vs_body.contains("* 2.0"),
+            "mod_b body present: {}",
+            vs_body
+        );
+    }
+
+    #[test]
+    fn test_stage_chain_variable_isolation() {
+        let base = ShaderModuleBuilder::new("base")
+            .stream(presets::position())
+            .vertex_body("let x = 1.0;\noutput.clip_position = vec4<f32>(input.position * x, 1.0);")
+            .fragment_body("return vec4<f32>(1.0);")
+            .build();
+
+        // Both modules use local variable 'x' — should not conflict due to block scope
+        let mod_a = ShaderModuleBuilder::new("mod_a")
+            .vertex_body("let x = 2.0;\noutput.clip_position = output.clip_position * x;")
+            .build();
+
+        let mod_b = ShaderModuleBuilder::new("mod_b")
+            .vertex_body("let x = 3.0;\noutput.clip_position = output.clip_position + vec4<f32>(x);")
+            .build();
+
+        let mut composer = ShaderComposer::new();
+        composer.register_module(base).unwrap();
+        composer.register_module(mod_a).unwrap();
+        composer.register_module(mod_b).unwrap();
+
+        let result = CompositionBuilder::new("base")
+            .result_name("isolated")
+            .stage_chain(ShaderStage::Vertex, vec!["mod_a", "mod_b"])
+            .build(&composer)
+            .unwrap();
+
+        // Generate and validate with naga — block scopes should prevent conflicts
+        let generator = WgslGenerator::new();
+        let wgsl = generator.generate_and_validate(&result);
+        assert!(
+            wgsl.is_ok(),
+            "Naga validation failed (variable isolation): {:?}",
+            wgsl.err()
+        );
+    }
+
+    #[test]
+    fn test_stage_chain_naga_validation() {
+        let base = ShaderModuleBuilder::new("base")
+            .stream(presets::position())
+            .stream(presets::normal())
+            .vertex_body("output.clip_position = vec4<f32>(input.position, 1.0);\noutput.normal = input.normal;")
+            .fragment_body("return vec4<f32>(1.0, 0.0, 0.0, 1.0);")
+            .build();
+
+        let skinning = ShaderModuleBuilder::new("skinning")
+            .stream(presets::bone_weights())
+            .stream(presets::bone_indices())
+            .build();
+
+        let mut composer = ShaderComposer::new();
+        composer.register_module(base).unwrap();
+        composer.register_module(skinning).unwrap();
+
+        let result = CompositionBuilder::new("base")
+            .result_name("validated")
+            .stage_chain(ShaderStage::Vertex, vec!["skinning"])
+            .build(&composer)
+            .unwrap();
+
+        // Should have all streams merged
+        assert_eq!(result.streams.streams().len(), 4);
+
+        let generator = WgslGenerator::new();
+        let wgsl = generator.generate_and_validate(&result);
+        assert!(
+            wgsl.is_ok(),
+            "Naga validation failed: {:?}",
+            wgsl.err()
+        );
+    }
+
+    #[test]
+    fn test_stage_chain_with_mixin_and_override() {
+        let base = ShaderModuleBuilder::new("base")
+            .stream(presets::position())
+            .overridable_function(
+                "get_scale",
+                vec![],
+                Some(WgslType::F32),
+                "return 1.0;",
+            )
+            .vertex_body("let s = get_scale();\noutput.clip_position = vec4<f32>(input.position * s, 1.0);")
+            .fragment_body("return vec4<f32>(1.0);")
+            .build();
+
+        let extra_stream = ShaderModuleBuilder::new("extra")
+            .stream(presets::normal())
+            .build();
+
+        let transform = ShaderModuleBuilder::new("transform")
+            .vertex_body("output.clip_position = output.clip_position * 2.0;")
+            .build();
+
+        let mut composer = ShaderComposer::new();
+        composer.register_module(base).unwrap();
+        composer.register_module(extra_stream).unwrap();
+        composer.register_module(transform).unwrap();
+
+        let replacement = FunctionDef {
+            name: "get_scale".into(),
+            parameters: vec![],
+            return_type: Some(WgslType::F32),
+            body: WgslFragment::new("return 3.0;"),
+            overridable: false,
+        };
+
+        let result = CompositionBuilder::new("base")
+            .result_name("mixed_ops")
+            .mixin("extra")
+            .override_fn("get_scale", replacement)
+            .stage_chain(ShaderStage::Vertex, vec!["transform"])
+            .build(&composer)
+            .unwrap();
+
+        // Should have position + normal streams
+        assert_eq!(result.streams.streams().len(), 2);
+        // get_scale should be overridden
+        let scale_fn = result.functions.iter().find(|f| f.name == "get_scale").unwrap();
+        assert!(scale_fn.body.source.contains("3.0"));
+        // Vertex body should have both base and transform
+        let vs_body = &result.vertex_entry.as_ref().unwrap().body.source;
+        assert!(vs_body.contains("get_scale"), "Base body present: {}", vs_body);
+        assert!(vs_body.contains("* 2.0"), "Transform body present: {}", vs_body);
+    }
+
+    #[test]
+    fn test_stage_chain_stream_and_binding_merge() {
+        let base = ShaderModuleBuilder::new("base")
+            .stream(presets::position())
+            .vertex_body("output.clip_position = vec4<f32>(input.position, 1.0);")
+            .fragment_body("return vec4<f32>(1.0);")
+            .build();
+
+        let mod_a = ShaderModuleBuilder::new("mod_a")
+            .stream(presets::normal())
+            .vertex_body("output.normal = input.normal;")
+            .build();
+
+        let mod_b = ShaderModuleBuilder::new("mod_b")
+            .stream(presets::uv(0))
+            .vertex_body("output.uv0 = input.uv0;")
+            .build();
+
+        let mut composer = ShaderComposer::new();
+        composer.register_module(base).unwrap();
+        composer.register_module(mod_a).unwrap();
+        composer.register_module(mod_b).unwrap();
+
+        let result = CompositionBuilder::new("base")
+            .result_name("merged")
+            .stage_chain(ShaderStage::Vertex, vec!["mod_a", "mod_b"])
+            .build(&composer)
+            .unwrap();
+
+        // position + normal + uv(0)
+        assert_eq!(result.streams.streams().len(), 3);
+        assert!(result.streams.get_by_semantic(&StreamSemantic::Position).is_some());
+        assert!(result.streams.get_by_semantic(&StreamSemantic::Normal).is_some());
+        assert!(result.streams.get_by_semantic(&StreamSemantic::UV(0)).is_some());
+    }
+
+    #[test]
+    fn test_stage_chain_module_not_found() {
+        let base = ShaderModuleBuilder::new("base")
+            .stream(presets::position())
+            .vertex_body("output.clip_position = vec4<f32>(input.position, 1.0);")
+            .fragment_body("return vec4<f32>(1.0);")
+            .build();
+
+        let mut composer = ShaderComposer::new();
+        composer.register_module(base).unwrap();
+
+        let result = CompositionBuilder::new("base")
+            .result_name("bad_ref")
+            .stage_chain(ShaderStage::Vertex, vec!["nonexistent"])
+            .build(&composer);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ShaderError::Composition { message } => {
+                assert!(message.contains("nonexistent"), "Error message: {}", message);
+            }
+            other => panic!("Expected Composition error, got: {:?}", other),
+        }
     }
 
     #[test]
