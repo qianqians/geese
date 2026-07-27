@@ -13,12 +13,6 @@ use crate::pipeline::{RenderingPath, ScenePipeline, ScenePipelineDescriptor};
 use crate::shadow::{CascadeConfig, CsmUniform};
 use crate::{Light, MaterialLibrary, RenderQueue};
 
-#[cfg(not(feature = "use-shader-framework"))]
-const PBR_COMMON: &str = include_str!("../shaders/pbr_common.wgsl");
-const DEFERRED_GEOMETRY_WGSL: &str = include_str!("../shaders/deferred_geometry.wgsl");
-const DEFERRED_LIGHTING_WGSL: &str = include_str!("../shaders/deferred_lighting.wgsl");
-const CLUSTER_CULLING_WGSL: &str = include_str!("../shaders/cluster_culling.wgsl");
-
 const CLUSTER_BITMASK_SIZE: u64 = (TOTAL_CLUSTERS as u64) * 4;
 const CULLING_WORKGROUP_SIZE: u32 = 64;
 
@@ -100,23 +94,9 @@ impl DeferredPlusPipeline {
         debug_assert_eq!(descriptor.rendering_path, RenderingPath::DeferredPlus);
 
         // ---- shaders ----
-        #[cfg(feature = "use-shader-framework")]
-        let pbr_common_generated = crate::shader_library::generate_pbr_common_wgsl();
-
-        #[cfg(feature = "use-shader-framework")]
-        let geometry_src = format!("{pbr_common_generated}\n{DEFERRED_GEOMETRY_WGSL}");
-        #[cfg(not(feature = "use-shader-framework"))]
-        let geometry_src = format!("{PBR_COMMON}\n{DEFERRED_GEOMETRY_WGSL}");
-
-        #[cfg(feature = "use-shader-framework")]
-        let lighting_src = format!("{pbr_common_generated}\n{DEFERRED_LIGHTING_WGSL}");
-        #[cfg(not(feature = "use-shader-framework"))]
-        let lighting_src = format!("{PBR_COMMON}\n{DEFERRED_LIGHTING_WGSL}");
-
-        #[cfg(feature = "use-shader-framework")]
-        let culling_src = format!("{pbr_common_generated}\n{CLUSTER_CULLING_WGSL}");
-        #[cfg(not(feature = "use-shader-framework"))]
-        let culling_src = format!("{PBR_COMMON}\n{CLUSTER_CULLING_WGSL}");
+        let geometry_src = crate::shader_library::generate_deferred_geometry_wgsl();
+        let lighting_src = crate::shader_library::generate_deferred_lighting_wgsl();
+        let culling_src = crate::shader_library::generate_cluster_culling_wgsl();
 
         let geometry_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("deferred+ geometry shader"),

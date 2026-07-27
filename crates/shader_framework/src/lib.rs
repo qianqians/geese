@@ -9,6 +9,8 @@ pub mod generator;
 pub mod compose;
 pub mod effect;
 pub mod variant;
+pub mod reflect;
+pub mod pipeline_compiler;
 
 pub use self::core::*;
 pub use stream::*;

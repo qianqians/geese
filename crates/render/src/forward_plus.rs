@@ -19,15 +19,6 @@ use crate::profiler::GpuProfiler;
 #[cfg(feature = "instancing")]
 use crate::common::InstanceData;
 
-#[cfg(not(feature = "use-shader-framework"))]
-const PBR_COMMON: &str = include_str!("../shaders/pbr_common.wgsl");
-const FORWARD_PLUS_WGSL: &str = include_str!("../shaders/forward_plus.wgsl");
-const CLUSTER_CULLING_WGSL: &str = include_str!("../shaders/cluster_culling.wgsl");
-
-#[cfg(feature = "instancing")]
-const FORWARD_PLUS_INSTANCED_WGSL: &str =
-    include_str!("../shaders/forward_plus_instanced.wgsl");
-
 const CLUSTER_BITMASK_SIZE: u64 = (TOTAL_CLUSTERS as u64) * 4;
 const CULLING_WORKGROUP_SIZE: u32 = 64;
 
@@ -91,19 +82,9 @@ impl ForwardPlusPipeline {
     ) -> Self {
         debug_assert_eq!(descriptor.rendering_path, RenderingPath::ForwardPlus);
 
-        // ---- shader 拼接 ----
-        #[cfg(feature = "use-shader-framework")]
-        let pbr_common_generated = crate::shader_library::generate_pbr_common_wgsl();
-
-        #[cfg(feature = "use-shader-framework")]
-        let forward_src = format!("{pbr_common_generated}\n{FORWARD_PLUS_WGSL}");
-        #[cfg(not(feature = "use-shader-framework"))]
-        let forward_src = format!("{PBR_COMMON}\n{FORWARD_PLUS_WGSL}");
-
-        #[cfg(feature = "use-shader-framework")]
-        let culling_src = format!("{pbr_common_generated}\n{CLUSTER_CULLING_WGSL}");
-        #[cfg(not(feature = "use-shader-framework"))]
-        let culling_src = format!("{PBR_COMMON}\n{CLUSTER_CULLING_WGSL}");
+        // ---- shader 生成 ----
+        let forward_src = crate::shader_library::generate_forward_plus_wgsl();
+        let culling_src = crate::shader_library::generate_cluster_culling_wgsl();
 
         let forward_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("forward_plus shader"),
@@ -201,10 +182,7 @@ impl ForwardPlusPipeline {
         // ---- instanced 渲染 pipeline ----
         #[cfg(feature = "instancing")]
         let (instanced_pipeline, instance_bind_group_layout, instance_buffer, instance_bind_group) = {
-            #[cfg(feature = "use-shader-framework")]
-            let instanced_src = format!("{pbr_common_generated}\n{FORWARD_PLUS_INSTANCED_WGSL}");
-            #[cfg(not(feature = "use-shader-framework"))]
-            let instanced_src = format!("{PBR_COMMON}\n{FORWARD_PLUS_INSTANCED_WGSL}");
+            let instanced_src = crate::shader_library::generate_forward_plus_instanced_wgsl();
             let instanced_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("forward+ instanced shader"),
                 source: wgpu::ShaderSource::Wgsl(instanced_src.into()),

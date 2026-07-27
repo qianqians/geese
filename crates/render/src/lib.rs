@@ -90,5 +90,4 @@ pub use wgpu;
 
 pub use sprite::{Sprite, SpriteBatch, SpriteCameraUniform, SpriteRenderer, SpriteVertex};
 
-#[cfg(feature = "use-shader-framework")]
 pub mod shader_library;

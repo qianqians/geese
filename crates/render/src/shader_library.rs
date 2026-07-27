@@ -21,8 +21,11 @@
 //!   Generated library + pipeline .wgsl file → complete shader source
 //! ```
 
+#[cfg(feature = "use-shader-framework")]
 use shader_framework::compose::{ShaderComposer, ShaderModule, ShaderModuleBuilder};
+#[cfg(feature = "use-shader-framework")]
 use shader_framework::core::*;
+#[cfg(feature = "use-shader-framework")]
 use shader_framework::generator::{ConstantDef, WgslGenerator};
 
 /// Maximum number of lights supported by the PBR shader.
@@ -45,6 +48,7 @@ pub const MAX_LIGHTS_SHADER: u32 = 32;
 ///
 /// This module has **no** vertex/fragment/compute body — it is designed to be
 /// used as a mixin or composed with pipeline-specific modules.
+#[cfg(feature = "use-shader-framework")]
 pub fn pbr_common_module() -> ShaderModule {
     ShaderModuleBuilder::new("pbr_common")
         // ── Constants ───────────────────────────────────────────────────────
@@ -449,6 +453,7 @@ pub fn pbr_common_module() -> ShaderModule {
 
 // ─── Composer factory ───────────────────────────────────────────────────────
 
+#[cfg(feature = "use-shader-framework")]
 /// Create a [`ShaderComposer`] pre-loaded with all library modules.
 ///
 /// Callers can then compose pipeline-specific shaders using
@@ -470,6 +475,7 @@ pub fn create_composer() -> ShaderComposer {
 /// This function composes pbr_common into a [`ComposedShader`] and then uses
 /// [`WgslGenerator`]'s individual generation methods to produce only the
 /// shared library parts (no entry points are generated).
+#[cfg(feature = "use-shader-framework")]
 pub fn generate_pbr_common_wgsl() -> String {
     let composer = create_composer();
 
@@ -506,12 +512,71 @@ pub fn generate_pbr_common_wgsl() -> String {
     parts.join("\n")
 }
 
+// ─── Internal pbr_common provider ───────────────────────────────────────────
+
+/// Return the pbr_common library WGSL.
+///
+/// When `use-shader-framework` is enabled, the WGSL is generated from the
+/// structured Rust metadata via [`generate_pbr_common_wgsl`].
+/// Otherwise, the hand-written `pbr_common.wgsl` file is included statically.
+fn pbr_common_library_wgsl() -> String {
+    #[cfg(feature = "use-shader-framework")]
+    {
+        generate_pbr_common_wgsl()
+    }
+    #[cfg(not(feature = "use-shader-framework"))]
+    {
+        include_str!("../shaders/pbr_common.wgsl").to_string()
+    }
+}
+
+// ─── Pipeline shader generation ─────────────────────────────────────────────
+
+/// Generate complete Forward+ shader (pbr_common + forward_plus entry points).
+pub fn generate_forward_plus_wgsl() -> String {
+    let pbr_common = pbr_common_library_wgsl();
+    let pipeline = include_str!("../shaders/forward_plus.wgsl");
+    format!("{pbr_common}\n{pipeline}")
+}
+
+/// Generate complete cluster culling compute shader.
+pub fn generate_cluster_culling_wgsl() -> String {
+    let pbr_common = pbr_common_library_wgsl();
+    let pipeline = include_str!("../shaders/cluster_culling.wgsl");
+    format!("{pbr_common}\n{pipeline}")
+}
+
+/// Generate complete Deferred+ geometry shader.
+pub fn generate_deferred_geometry_wgsl() -> String {
+    let pbr_common = pbr_common_library_wgsl();
+    let pipeline = include_str!("../shaders/deferred_geometry.wgsl");
+    format!("{pbr_common}\n{pipeline}")
+}
+
+/// Generate complete Deferred+ lighting shader.
+pub fn generate_deferred_lighting_wgsl() -> String {
+    let pbr_common = pbr_common_library_wgsl();
+    let pipeline = include_str!("../shaders/deferred_lighting.wgsl");
+    format!("{pbr_common}\n{pipeline}")
+}
+
+/// Generate complete Forward+ instanced shader.
+pub fn generate_forward_plus_instanced_wgsl() -> String {
+    let pbr_common = pbr_common_library_wgsl();
+    let pipeline = include_str!("../shaders/forward_plus_instanced.wgsl");
+    format!("{pbr_common}\n{pipeline}")
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "use-shader-framework")]
     use super::*;
 
+    // ── shader_framework metadata tests (require use-shader-framework) ──
+
+    #[cfg(feature = "use-shader-framework")]
     #[test]
     fn pbr_common_registers_without_error() {
         let composer = create_composer();
@@ -519,6 +584,7 @@ mod tests {
         assert_eq!(composer.module_names().len(), 1);
     }
 
+    #[cfg(feature = "use-shader-framework")]
     #[test]
     fn pbr_common_has_all_structs() {
         let module = pbr_common_module();
@@ -531,6 +597,7 @@ mod tests {
         assert_eq!(module.structs.len(), 5);
     }
 
+    #[cfg(feature = "use-shader-framework")]
     #[test]
     fn pbr_common_has_all_functions() {
         let module = pbr_common_module();
@@ -548,6 +615,7 @@ mod tests {
         assert_eq!(module.functions.len(), 10);
     }
 
+    #[cfg(feature = "use-shader-framework")]
     #[test]
     fn pbr_common_has_all_constants() {
         let module = pbr_common_module();
@@ -564,9 +632,10 @@ mod tests {
         assert_eq!(module.constants.len(), 9);
     }
 
+    #[cfg(feature = "use-shader-framework")]
     #[test]
     fn generated_wgsl_contains_key_content() {
-        let wgsl = generate_pbr_common_wgsl();
+        let wgsl = super::generate_pbr_common_wgsl();
         // Should contain the header comment
         assert!(wgsl.contains("Generated by shader_framework"));
         // Should contain key constants
@@ -584,6 +653,7 @@ mod tests {
 
     /// End-to-end test: compose pbr_common with a minimal shader and
     /// validate the generated WGSL via naga (the same validator wgpu uses).
+    #[cfg(feature = "use-shader-framework")]
     #[test]
     fn composed_shader_with_pbr_common_passes_naga_validation() {
         use shader_framework::stream::presets;
@@ -648,17 +718,10 @@ mod tests {
 
     /// Verify that the WGSL generated from `pbr_common_module()` is
     /// semantically equivalent to the hand-written `pbr_common.wgsl`.
-    ///
-    /// We compare the *vocabulary* (struct names, function signatures,
-    /// constant names) rather than a byte-for-byte diff, since whitespace
-    /// and formatting naturally differ between generated and handwritten code.
-    ///
-    /// Note: We do NOT run the original `.wgsl` through the naga parser
-    /// because it is a library module with no entry points — the WGSL
-    /// spec requires at least one entry point for standalone validation.
+    #[cfg(feature = "use-shader-framework")]
     #[test]
     fn generated_wgsl_semantically_equivalent_to_original() {
-        let wgsl = generate_pbr_common_wgsl();
+        let wgsl = super::generate_pbr_common_wgsl();
 
         // ── All struct definitions must be present ──────────────────────
         for struct_name in &[
@@ -712,16 +775,13 @@ mod tests {
         }
 
         // ── LightStorage array size must reference MAX_LIGHTS_SHADER ────
-        // The generated WGSL should contain the literal array size that
-        // matches our Rust constant.
         assert!(
-            wgsl.contains(&format!("array<Light, {MAX_LIGHTS_SHADER}>")),
-            "LightStorage.lights array size does not match MAX_LIGHTS_SHADER ({MAX_LIGHTS_SHADER})"
+            wgsl.contains(&format!("array<Light, {}>", super::MAX_LIGHTS_SHADER)),
+            "LightStorage.lights array size does not match MAX_LIGHTS_SHADER ({})",
+            super::MAX_LIGHTS_SHADER
         );
 
         // ── Cross-check: original .wgsl has same vocabulary ─────────────
-        // include_str! bakes the file into the test binary at compile time,
-        // so a missing file is a compile error — no runtime I/O needed.
         let original = include_str!("../shaders/pbr_common.wgsl");
 
         for struct_name in &[
@@ -756,5 +816,157 @@ mod tests {
                  — metadata may be out of sync"
             );
         }
+    }
+
+    // ── Pipeline shader naga validation tests (always run) ────────────────
+
+    /// Helper: validate WGSL source via naga parser.
+    fn validate_wgsl(source: &str, label: &str) {
+        match naga::front::wgsl::parse_str(source) {
+            Ok(_module) => {} // parsed successfully
+            Err(e) => {
+                panic!("naga WGSL parse failed for {label}:\n{e}");
+            }
+        }
+    }
+
+    #[test]
+    fn generate_forward_plus_wgsl_passes_naga_validation() {
+        let wgsl = super::generate_forward_plus_wgsl();
+        validate_wgsl(&wgsl, "forward_plus");
+    }
+
+    #[test]
+    fn generate_cluster_culling_wgsl_passes_naga_validation() {
+        let wgsl = super::generate_cluster_culling_wgsl();
+        validate_wgsl(&wgsl, "cluster_culling");
+    }
+
+    #[test]
+    fn generate_deferred_geometry_wgsl_passes_naga_validation() {
+        let wgsl = super::generate_deferred_geometry_wgsl();
+        validate_wgsl(&wgsl, "deferred_geometry");
+    }
+
+    #[test]
+    fn generate_deferred_lighting_wgsl_passes_naga_validation() {
+        let wgsl = super::generate_deferred_lighting_wgsl();
+        validate_wgsl(&wgsl, "deferred_lighting");
+    }
+
+    #[test]
+    fn generate_forward_plus_instanced_wgsl_passes_naga_validation() {
+        let wgsl = super::generate_forward_plus_instanced_wgsl();
+        validate_wgsl(&wgsl, "forward_plus_instanced");
+    }
+
+    /// Verify the convenience function produces the same result as manual
+    /// `format!` concatenation — i.e. it contains both pbr_common content
+    /// and the pipeline entry points.
+    #[test]
+    fn generated_forward_plus_semantically_equivalent_to_original() {
+        let wgsl = super::generate_forward_plus_wgsl();
+
+        // pbr_common vocabulary
+        assert!(wgsl.contains("struct Camera"), "Missing Camera struct");
+        assert!(wgsl.contains("struct LightStorage"), "Missing LightStorage");
+        assert!(wgsl.contains("fn shade_light"), "Missing shade_light");
+        assert!(wgsl.contains("MAX_LIGHTS"), "Missing MAX_LIGHTS constant");
+
+        // forward_plus pipeline entry points and types
+        assert!(wgsl.contains("@vertex"), "Missing @vertex entry");
+        assert!(wgsl.contains("@fragment"), "Missing @fragment entry");
+        assert!(wgsl.contains("fn vs_main"), "Missing vs_main");
+        assert!(wgsl.contains("fn fs_main"), "Missing fs_main");
+        assert!(wgsl.contains("struct Object"), "Missing Object struct");
+        assert!(wgsl.contains("struct VertexInput"), "Missing VertexInput");
+        assert!(wgsl.contains("struct VertexOutput"), "Missing VertexOutput");
+    }
+
+    /// StageChain proof-of-concept: demonstrate how base forward_plus
+    /// could be composed with an instancing vertex extension via StageChain.
+    ///
+    /// This is a demo only — the actual instanced shader still uses
+    /// `generate_forward_plus_instanced_wgsl()` (Method B concatenation).
+    #[cfg(feature = "use-shader-framework")]
+    #[test]
+    fn stage_chain_instancing_demo() {
+        use shader_framework::compose::CompositionOp;
+        use shader_framework::core::ShaderStage;
+        use shader_framework::stream::presets;
+
+        let mut composer = create_composer();
+
+        // Base forward_plus module (simplified for demo — just a vertex body)
+        let forward_base = ShaderModuleBuilder::new("forward_base")
+            .stream(presets::position())
+            .struct_def(StructDef {
+                name: "Object".into(),
+                fields: vec![StructField {
+                    name: "model".into(),
+                    ty: WgslType::Mat4x4(WgslScalarType::F32),
+                    attributes: vec![],
+                }],
+            })
+            .vertex_body(
+                "let model = object.model;\n\
+                 let wp = model * vec4<f32>(input.position, 1.0);\n\
+                 output.clip_position = camera.view_projection * wp;",
+            )
+            .fragment_body("return vec4<f32>(1.0);")
+            .build();
+
+        // Instancing extension — replaces vertex logic with instance_index lookup
+        let instancing_ext = ShaderModuleBuilder::new("instancing_ext")
+            .struct_def(StructDef {
+                name: "InstanceData".into(),
+                fields: vec![StructField {
+                    name: "model".into(),
+                    ty: WgslType::Mat4x4(WgslScalarType::F32),
+                    attributes: vec![],
+                }],
+            })
+            .vertex_body(
+                "let model = instances[instance_idx].model;\n\
+                 let wp = model * vec4<f32>(input.position, 1.0);\n\
+                 output.clip_position = camera.view_projection * wp;",
+            )
+            .build();
+
+        composer.register_module(forward_base).unwrap();
+        composer.register_module(instancing_ext).unwrap();
+
+        // Compose using StageChain: vertex stage chains base + extension
+        let composed = composer
+            .compose(
+                "forward_base",
+                &[CompositionOp::StageChain {
+                    stage: ShaderStage::Vertex,
+                    modules: vec!["instancing_ext".into()],
+                }],
+                "forward_instanced_composed",
+            )
+            .unwrap();
+
+        // Verify the composed shader has both Object and InstanceData structs
+        let struct_names: Vec<&str> = composed.structs.iter().map(|s| s.name.as_str()).collect();
+        assert!(struct_names.contains(&"Object"), "Missing Object struct");
+        assert!(
+            struct_names.contains(&"InstanceData"),
+            "Missing InstanceData struct"
+        );
+
+        // Verify vertex entry body contains chained content from both modules
+        let vs_body = composed.vertex_entry.as_ref().unwrap().body.source.as_str();
+        assert!(
+            vs_body.contains("object.model"),
+            "Missing base vertex body"
+        );
+        assert!(
+            vs_body.contains("instances[instance_idx]"),
+            "Missing instancing extension body"
+        );
+
+        println!("StageChain demo: vertex body successfully chained base + instancing extension");
     }
 }

@@ -26,6 +26,7 @@ pub struct ShaderModule {
     pub constants: Vec<ConstantDef>,
     pub global_vars: Vec<GlobalVarDef>,
     pub dependencies: Vec<String>,
+    pub vertex_attributes: Vec<VertexAttributeInfo>,
 }
 
 impl ShaderModuleDef for ShaderModule {
@@ -68,6 +69,10 @@ impl ShaderModuleDef for ShaderModule {
     fn dependencies(&self) -> Vec<String> {
         self.dependencies.clone()
     }
+
+    fn vertex_attributes(&self) -> Vec<VertexAttributeInfo> {
+        self.vertex_attributes.clone()
+    }
 }
 
 impl ShaderModule {
@@ -85,6 +90,7 @@ impl ShaderModule {
             constants: Vec::new(),
             global_vars: Vec::new(),
             dependencies: Vec::new(),
+            vertex_attributes: Vec::new(),
         }
     }
 
@@ -136,6 +142,22 @@ impl ShaderModule {
     pub fn with_global_var(mut self, v: GlobalVarDef) -> Self {
         self.global_vars.push(v);
         self
+    }
+
+    pub fn with_vertex_attribute(mut self, attr: VertexAttributeInfo) -> Self {
+        self.vertex_attributes.push(attr);
+        self
+    }
+
+    pub fn with_vertex_attributes(mut self, attrs: Vec<VertexAttributeInfo>) -> Self {
+        self.vertex_attributes.extend(attrs);
+        self
+    }
+
+    /// Parse a WGSL source and create a ShaderModule with all metadata reflected via naga.
+    pub fn from_wgsl(name: impl Into<String>, source: &str) -> ShaderResult<ShaderModule> {
+        let reflected = crate::reflect::reflect_module(&name.into(), source)?;
+        Ok(reflected.into_shader_module())
     }
 }
 
@@ -766,6 +788,16 @@ impl ShaderModuleBuilder {
 
     pub fn depends_on(mut self, dep: impl Into<String>) -> Self {
         self.module.dependencies.push(dep.into());
+        self
+    }
+
+    pub fn vertex_attribute(mut self, attr: VertexAttributeInfo) -> Self {
+        self.module.vertex_attributes.push(attr);
+        self
+    }
+
+    pub fn vertex_attributes(mut self, attrs: Vec<VertexAttributeInfo>) -> Self {
+        self.module.vertex_attributes.extend(attrs);
         self
     }
 

@@ -11,6 +11,9 @@ log = "0.4"
 config = { path = "../config" }
 shader_framework = { path = "../shader_framework", optional = true }
 
+[dev-dependencies]
+naga = { version = "22.1", features = ["wgsl-in"] }
+
 [features]
 default = []
 profiling = []

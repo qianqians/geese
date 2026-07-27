@@ -174,6 +174,12 @@ pub enum BindingResourceType {
         sample_type: TextureSampleType,
     },
     Sampler(SamplerType),
+    /// Storage texture (e.g. texture_storage_2d<r32float, write>).
+    StorageTexture {
+        dimension: TextureDimension,
+        format: String,
+        access: String,
+    },
 }
 
 /// A single resource binding descriptor (one `@group @binding` slot).
@@ -243,6 +249,14 @@ impl ShaderBinding {
                 };
                 format!("{} var {}: {};", prefix, self.name, st_str)
             }
+            BindingResourceType::StorageTexture { dimension, format, access } => {
+                let dim = match dimension {
+                    TextureDimension::D2 => "texture_storage_2d",
+                    TextureDimension::Cube => "texture_storage_cube",
+                    TextureDimension::D2Array => "texture_storage_2d_array",
+                };
+                format!("{} var {}: {}<{}, {}>;", prefix, self.name, dim, format, access)
+            }
         }
     }
 
@@ -301,6 +315,25 @@ impl ShaderBinding {
                     SamplerType::Comparison => wgpu::SamplerBindingType::Comparison,
                 };
                 wgpu::BindingType::Sampler(binding_type)
+            }
+            BindingResourceType::StorageTexture { dimension, format: _, access } => {
+                let view_dimension = match dimension {
+                    TextureDimension::D2 => wgpu::TextureViewDimension::D2,
+                    TextureDimension::Cube => wgpu::TextureViewDimension::Cube,
+                    TextureDimension::D2Array => wgpu::TextureViewDimension::D2Array,
+                };
+                let storage_access = if access == "read" {
+                    wgpu::StorageTextureAccess::ReadOnly
+                } else if access == "write" {
+                    wgpu::StorageTextureAccess::WriteOnly
+                } else {
+                    wgpu::StorageTextureAccess::ReadWrite
+                };
+                wgpu::BindingType::StorageTexture {
+                    access: storage_access,
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    view_dimension,
+                }
             }
         };
 
@@ -455,6 +488,11 @@ pub trait ShaderModuleDef: Send + Sync {
     fn dependencies(&self) -> Vec<String> {
         vec![]
     }
+
+    /// Vertex input attributes reflected from the @vertex entry point.
+    fn vertex_attributes(&self) -> Vec<VertexAttributeInfo> {
+        vec![]
+    }
 }
 
 // ─── StructDef ────────────────────────────────────────────────────────────────
@@ -606,12 +644,103 @@ pub enum ShaderError {
     #[error("Effect error: {message}")]
     Effect { message: String },
 
+    #[error("Reflection error: {message}")]
+    Reflect { message: String },
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }
 
 /// Convenience result type for shader operations.
 pub type ShaderResult<T> = Result<T, ShaderError>;
+
+// ─── Reflection Types ───────────────────────────────────────────────────────
+
+/// Metadata about a shader entry point, extracted via naga reflection.
+#[derive(Debug, Clone)]
+pub struct EntryPointInfo {
+    pub name: String,
+    pub stage: ShaderStage,
+    pub workgroup_size: Option<[u32; 3]>,
+    pub parameters: Vec<ParameterInfo>,
+}
+
+/// A single parameter of an entry point function.
+#[derive(Debug, Clone)]
+pub struct ParameterInfo {
+    pub name: String,
+    pub ty: WgslType,
+    pub binding: Option<ParameterBinding>,
+}
+
+/// Binding attribute on an entry point parameter.
+#[derive(Debug, Clone)]
+pub enum ParameterBinding {
+    Location(u32),
+    Builtin(String),
+}
+
+/// Vertex input attribute metadata, reflected from @vertex entry point.
+#[derive(Debug, Clone)]
+pub struct VertexAttributeInfo {
+    /// Field name (e.g. "position", "normal").
+    pub name: String,
+    /// @location(N) index.
+    pub location: u32,
+    /// WGSL type.
+    pub ty: WgslType,
+    /// Corresponding wgpu vertex format.
+    pub format: wgpu::VertexFormat,
+    /// Byte offset within vertex struct.
+    pub offset: u64,
+    /// Inferred stream semantic.
+    pub semantic: StreamSemantic,
+    /// Vertex or Instance step mode.
+    pub step_mode: wgpu::VertexStepMode,
+}
+
+/// Complete vertex buffer layout descriptor.
+#[derive(Debug, Clone)]
+pub struct VertexLayoutDescriptor {
+    pub attributes: Vec<VertexAttributeInfo>,
+    pub stride: u64,
+    pub has_instance_data: bool,
+}
+
+impl VertexLayoutDescriptor {
+    /// Convert to wgpu::VertexBufferLayout (per-vertex attributes only).
+    ///
+    /// Returns owned attributes via `Vec::leak()` for 'static lifetime.
+    pub fn to_wgpu_vertex_layout(&self) -> wgpu::VertexBufferLayout<'static> {
+        let attrs: Vec<wgpu::VertexAttribute> = self.attributes.iter()
+            .filter(|a| a.step_mode == wgpu::VertexStepMode::Vertex)
+            .map(|a| wgpu::VertexAttribute {
+                format: a.format,
+                offset: a.offset,
+                shader_location: a.location,
+            })
+            .collect();
+        wgpu::VertexBufferLayout {
+            array_stride: self.stride,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: attrs.leak(),
+        }
+    }
+
+    /// Convert to StreamDeclarations for StreamRouter integration.
+    pub fn to_stream_declarations(&self) -> Vec<StreamDeclaration> {
+        self.attributes.iter()
+            .filter(|a| a.step_mode == wgpu::VertexStepMode::Vertex)
+            .map(|a| StreamDeclaration {
+                semantic: a.semantic.clone(),
+                wgsl_type: a.ty.clone(),
+                location: Some(a.location),
+                name: a.name.clone(),
+                stage: StreamStage::VertexOnly,
+            })
+            .collect()
+    }
+}
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
