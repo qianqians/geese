@@ -1,27 +1,28 @@
-//! jump_jump - 跳一跳 Python 游戏项目。
+//! jump_jump - 跳一跳。
 //!
-//! 模板类型：Python 游戏
-//! 摄像机：Free
+//! 通过 game_runtime 的 Render Graph 管线运行 Python 游戏逻辑。
+//! 渲染路径：Forward+ (render-graph) → cluster culling → shadow → forward draw → post-process。
 //!
-//! 此项目通过编辑器 Play 按钮启动 Python 游戏子进程运行。
-//! 独立运行：`python run_game.py <project_path> jump_game --class JumpGame --title "跳一跳"`
-
-use std::time::Instant;
-use winit::{event_loop::EventLoop, window::WindowAttributes};
+//! 独立运行：`cargo run`（从项目根目录）
+//! 或通过编辑器 Play 按钮启动。
 
 fn main() {
     env_logger::init();
 
-    let event_loop = EventLoop::new().unwrap();
-    let window = winit::window::WindowBuilder::new()
-        .with_title("跳一跳")
-        .with_inner_size(winit::dpi::LogicalSize::new(1280, 720))
-        .build(&event_loop)
-        .unwrap();
+    // 项目根目录（Cargo 运行时工作目录即为项目根）
+    let project_path = std::env::current_dir()
+        .expect("failed to get current dir")
+        .to_string_lossy()
+        .to_string();
 
-    // TODO: 初始化 wgpu 设备、渲染器、场景、物理世界
-    // TODO: 主循环：输入轮询 → 更新 → 渲染
+    log::info!("🚀 jump_jump 启动 | Render Graph 管线 | 项目路径: {project_path}");
 
-    println!("🚀 jump_jump 已启动！模板：Python 游戏");
-    println!("提示：请通过编辑器的 Play 按钮启动游戏，或使用 run_game.py 脚本。");
+    geese_game::launch_python_game(
+        &project_path,
+        "jump_game",
+        "JumpGame",
+        "跳一跳",
+        1280,
+        720,
+    );
 }

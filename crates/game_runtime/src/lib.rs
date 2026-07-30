@@ -594,6 +594,57 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
 // C FFI 入口（供 ctypes / --direct 模式调用）
 // ---------------------------------------------------------------------------
 
+/// 启动 Python 游戏的高级 Rust API。
+///
+/// 初始化 CPython 解释器，将 `<project_path>/game` 加入 `sys.path`，
+/// 然后委托给 [`python_runtime::run_game`] 执行完整的游戏循环
+/// （wgpu 渲染 + Render Graph + 物理 + Python 脚本更新）。
+///
+/// 此函数永不返回（内部消耗 winit EventLoop）。
+#[cfg(feature = "python-runtime")]
+pub fn launch_python_game(
+    project_path: &str,
+    module_name: &str,
+    class_name: &str,
+    title: &str,
+    width: u32,
+    height: u32,
+) {
+    use pyo3::types::{PyAnyMethods, PyListMethods};
+
+    // 初始化 Python 解释器（多次调用安全）
+    pyo3::prepare_freethreaded_python();
+
+    // 将 <project_path>/game 加入 sys.path
+    pyo3::Python::with_gil(|py| {
+        let sys = py.import("sys").expect("failed to import sys");
+        let path = sys
+            .getattr("path")
+            .expect("sys.path missing");
+        let path = path.downcast::<pyo3::types::PyList>()
+            .expect("sys.path is not a list");
+        let game_dir = format!(
+            "{}{}game",
+            project_path,
+            std::path::MAIN_SEPARATOR
+        );
+        path.insert(0, game_dir.as_str()).expect("failed to prepend to sys.path");
+    });
+
+    // 启动游戏循环
+    pyo3::Python::with_gil(|py| {
+        python_runtime::run_game(
+            module_name,
+            class_name,
+            title,
+            width,
+            height,
+            py,
+        )
+        .expect("run_game failed");
+    });
+}
+
 /// C-compatible entry point for launching a Python game via ctypes.
 ///
 /// This function initialises the CPython interpreter (via pyo3), adds
@@ -613,7 +664,6 @@ pub extern "C" fn run_game_rust(
     height: i32,
 ) {
     use std::ffi::CStr;
-    use pyo3::types::{PyAnyMethods, PyListMethods};
 
     let project_path = unsafe { CStr::from_ptr(project_path) }
         .to_str().expect("project_path is not valid UTF-8");
@@ -624,35 +674,5 @@ pub extern "C" fn run_game_rust(
     let title = unsafe { CStr::from_ptr(title) }
         .to_str().expect("title is not valid UTF-8");
 
-    // Initialise the Python interpreter (safe to call multiple times).
-    pyo3::prepare_freethreaded_python();
-
-    // Add <project_path>/game to sys.path so the game module can be imported.
-    pyo3::Python::with_gil(|py| {
-        let sys = py.import("sys").expect("failed to import sys");
-        let path = sys
-            .getattr("path")
-            .expect("sys.path missing");
-        let path = path.downcast::<pyo3::types::PyList>()
-            .expect("sys.path is not a list");
-        let game_dir = format!(
-            "{}{}game",
-            project_path,
-            std::path::MAIN_SEPARATOR
-        );
-        path.insert(0, game_dir.as_str()).expect("failed to prepend to sys.path");
-    });
-
-    // Delegate to the full game runner.
-    pyo3::Python::with_gil(|py| {
-        python_runtime::run_game(
-            module_name,
-            class_name,
-            title,
-            width as u32,
-            height as u32,
-            py,
-        )
-        .expect("run_game failed");
-    });
+    launch_python_game(project_path, module_name, class_name, title, width as u32, height as u32);
 }

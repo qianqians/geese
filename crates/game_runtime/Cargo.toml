@@ -15,6 +15,7 @@ path = "src/main.rs"
 default = []
 python-scripting = []
 python-runtime = ["pyo3", "py_engine"]
+render-graph = ["render/render-graph"]
 
 [dependencies]
 winit = "0.30"
