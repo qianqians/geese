@@ -49,7 +49,7 @@ pub enum ResourceState {
 /// 渲染图执行上下文。在 `execute` 调用时传入。
 pub struct RenderGraphContext<'a> {
     pub device: &'a wgpu::Device,
-    pub queue: &'a wgpu::Queue,
+    pub queue: Option<&'a wgpu::Queue>,
     /// 外部颜色目标（通常为 surface texture view）
     pub color_target: Option<&'a wgpu::TextureView>,
     /// 外部深度目标
@@ -59,7 +59,8 @@ pub struct RenderGraphContext<'a> {
 /// 单个渲染 pass 的抽象。
 ///
 /// 每个节点声明其输入/输出资源（用于 barrier 推导）和执行逻辑。
-pub trait RenderPassNode: Send + Sync {
+/// 生命周期 `'a` 允许节点持有外部资源的引用（如 pipeline、bind group）。
+pub trait RenderPassNode<'a>: Send + Sync {
     /// Pass 名称（用于调试和依赖引用）。
     fn name(&self) -> &str;
 
@@ -81,9 +82,9 @@ pub trait RenderPassNode: Send + Sync {
 // RenderGraphBuilder
 // ---------------------------------------------------------------------------
 
-struct NodeEntry {
+struct NodeEntry<'a> {
     name: String,
-    node: Option<Box<dyn RenderPassNode>>,
+    node: Option<Box<dyn RenderPassNode<'a> + 'a>>,
     /// 依赖的 pass 名称（本 pass 必须在这些 pass 之后执行）
     deps: Vec<String>,
 }
@@ -97,11 +98,11 @@ struct NodeEntry {
 /// builder.add_pass("forward", Box::new(ForwardPassNode::new(...)), &["shadow"]);
 /// let compiled = builder.compile()?;
 /// ```
-pub struct RenderGraphBuilder {
-    nodes: Vec<NodeEntry>,
+pub struct RenderGraphBuilder<'a> {
+    nodes: Vec<NodeEntry<'a>>,
 }
 
-impl RenderGraphBuilder {
+impl<'a> RenderGraphBuilder<'a> {
     pub fn new() -> Self {
         Self { nodes: Vec::new() }
     }
@@ -114,7 +115,7 @@ impl RenderGraphBuilder {
     pub fn add_pass(
         &mut self,
         name: &str,
-        node: Box<dyn RenderPassNode>,
+        node: Box<dyn RenderPassNode<'a> + 'a>,
         deps: &[&str],
     ) -> &mut Self {
         self.nodes.push(NodeEntry {
@@ -126,11 +127,11 @@ impl RenderGraphBuilder {
     }
 
     /// 编译渲染图：拓扑排序 + 检测循环。
-    pub fn compile(self) -> Result<CompiledGraph, GraphError> {
+    pub fn compile(self) -> Result<CompiledGraph<'a>, GraphError> {
         Self::compile_inner(self.nodes)
     }
 
-    fn compile_inner(mut nodes: Vec<NodeEntry>) -> Result<CompiledGraph, GraphError> {
+    fn compile_inner(mut nodes: Vec<NodeEntry<'a>>) -> Result<CompiledGraph<'a>, GraphError> {
         let name_to_idx: HashMap<String, usize> = nodes
             .iter()
             .enumerate()
@@ -177,7 +178,7 @@ impl RenderGraphBuilder {
             });
         }
 
-        let sorted: Vec<Box<dyn RenderPassNode>> = order
+        let sorted: Vec<Box<dyn RenderPassNode<'a> + 'a>> = order
             .into_iter()
             .map(|i| nodes[i].node.take().expect("node already taken"))
             .collect();
@@ -186,10 +187,29 @@ impl RenderGraphBuilder {
     }
 }
 
-impl Default for RenderGraphBuilder {
+impl<'a> Default for RenderGraphBuilder<'a> {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// 从已构建的 pass 列表直接编译渲染图。
+///
+/// 与 [`RenderGraphBuilder`] 不同，此函数从输入 vec 中推导生命周期，
+/// 避免 `RenderGraphBuilder::new()` 无法推断 `'a` 的问题。
+/// 适合在 `render(&self, ...)` 中构建持有 `&self` 引用的非 `'static` 节点。
+pub fn compile_graph<'a>(
+    passes: Vec<(&str, Box<dyn RenderPassNode<'a> + 'a>, Vec<String>)>,
+) -> Result<CompiledGraph<'a>, GraphError> {
+    let entries: Vec<NodeEntry<'a>> = passes
+        .into_iter()
+        .map(|(name, node, deps)| NodeEntry {
+            name: name.to_string(),
+            node: Some(node),
+            deps,
+        })
+        .collect();
+    RenderGraphBuilder::compile_inner(entries)
 }
 
 // ---------------------------------------------------------------------------
@@ -197,11 +217,11 @@ impl Default for RenderGraphBuilder {
 // ---------------------------------------------------------------------------
 
 /// 编译后的渲染图（已拓扑排序，可直接执行）。
-pub struct CompiledGraph {
-    nodes: Vec<Box<dyn RenderPassNode>>,
+pub struct CompiledGraph<'a> {
+    nodes: Vec<Box<dyn RenderPassNode<'a> + 'a>>,
 }
 
-impl std::fmt::Debug for CompiledGraph {
+impl std::fmt::Debug for CompiledGraph<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CompiledGraph")
             .field("node_count", &self.nodes.len())
@@ -209,7 +229,7 @@ impl std::fmt::Debug for CompiledGraph {
     }
 }
 
-impl CompiledGraph {
+impl<'a> CompiledGraph<'a> {
     /// 顺序执行所有 pass，在相邻 pass 之间自动插入资源 barrier。
     pub fn execute(&self, ctx: &RenderGraphContext<'_>, encoder: &mut wgpu::CommandEncoder) {
         // 跟踪每个资源的当前状态（用于 barrier 推导）
@@ -243,8 +263,8 @@ impl CompiledGraph {
 
     fn insert_barriers_if_needed(
         _encoder: &mut wgpu::CommandEncoder,
-        _current: &Box<dyn RenderPassNode>,
-        _previous: &Box<dyn RenderPassNode>,
+        _current: &Box<dyn RenderPassNode<'a> + 'a>,
+        _previous: &Box<dyn RenderPassNode<'a> + 'a>,
         _states: &mut HashMap<ResourceId, ResourceState>,
     ) {
         // 骨架实现：wgpu 在 render pass 之间自动处理大部分同步。
@@ -319,7 +339,7 @@ mod tests {
         }
     }
 
-    impl RenderPassNode for TestPass {
+    impl RenderPassNode<'_> for TestPass {
         fn name(&self) -> &str {
             &self.name
         }
@@ -442,7 +462,7 @@ mod tests {
             outputs: Vec<ResourceId>,
         }
 
-        impl RenderPassNode for TexPass {
+        impl RenderPassNode<'_> for TexPass {
             fn name(&self) -> &str {
                 &self.name
             }

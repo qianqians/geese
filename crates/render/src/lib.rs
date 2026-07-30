@@ -14,6 +14,7 @@ pub mod lod;
 pub mod material;
 pub mod mesh;
 pub mod particle;
+pub mod passes;
 pub mod pipeline;
 pub mod post;
 pub mod post_pipeline;

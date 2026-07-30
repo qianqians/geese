@@ -449,6 +449,56 @@ impl DeferredPlusPipeline {
     ) {
         // Deferred+ 尚未实现阴影，请使用 Forward+ 获得 CSM 支持。
     }
+
+    /// 构建本帧的渲染图（cluster culling → geometry → lighting）。
+    #[cfg(feature = "render-graph")]
+    fn build_render_graph<'a>(&'a self) -> crate::graph::CompiledGraph<'a> {
+        use crate::graph::compile_graph;
+        use crate::passes::{
+            ClusterCullingNode, DeferredGeometryNode, DeferredLightingNode, GBufferViews,
+        };
+
+        let passes = vec![
+            (
+                "cluster_culling",
+                Box::new(ClusterCullingNode {
+                    culling_pipeline: &self.culling_pipeline,
+                    culling_bind_group: &self.culling_bind_group,
+                }) as Box<dyn crate::graph::RenderPassNode<'a> + 'a>,
+                vec![],
+            ),
+            (
+                "deferred_geometry",
+                Box::new(DeferredGeometryNode {
+                    geometry_pipeline: &self.geometry_pipeline,
+                    geometry_frame_bind_group: &self.geometry_frame_bind_group,
+                    commands: &self.prepared.commands,
+                    cache: &self.cache,
+                    gbuffer_views: GBufferViews {
+                        base: &self.gbuffer_base.view,
+                        normal: &self.gbuffer_normal.view,
+                        emissive: &self.gbuffer_emissive.view,
+                        depth: &self.gbuffer_depth.view,
+                    },
+                }) as Box<dyn crate::graph::RenderPassNode<'a> + 'a>,
+                vec![],
+            ),
+            (
+                "deferred_lighting",
+                Box::new(DeferredLightingNode {
+                    lighting_pipeline: &self.lighting_pipeline,
+                    lighting_frame_bind_group: &self.lighting_frame_bind_group,
+                    gbuffer_bind_group: &self.gbuffer_bind_group,
+                }) as Box<dyn crate::graph::RenderPassNode<'a> + 'a>,
+                vec![
+                    "cluster_culling".to_string(),
+                    "deferred_geometry".to_string(),
+                ],
+            ),
+        ];
+
+        compile_graph(passes).expect("deferred+ graph compile")
+    }
 }
 
 impl ScenePipeline for DeferredPlusPipeline {
@@ -582,104 +632,123 @@ impl ScenePipeline for DeferredPlusPipeline {
             );
         }
 
-        // ---- compute: cluster culling ----
+        // ---- render-graph 路径 ----
+        #[cfg(feature = "render-graph")]
         {
-            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("deferred+ cluster culling"),
-                timestamp_writes: None,
-            });
-            cpass.set_pipeline(&self.culling_pipeline);
-            cpass.set_bind_group(0, &self.culling_bind_group, &[]);
-            let groups = (TOTAL_CLUSTERS + CULLING_WORKGROUP_SIZE - 1) / CULLING_WORKGROUP_SIZE;
-            cpass.dispatch_workgroups(groups, 1, 1);
+            use crate::graph::RenderGraphContext;
+
+            let graph = self.build_render_graph();
+            let ctx = RenderGraphContext {
+                device: _device,
+                queue: None,
+                color_target: Some(color_target),
+                depth_target: None,
+            };
+            graph.execute(&ctx, encoder);
         }
 
-        // ---- geometry pass: 写 G-Buffer ----
+        // ---- 原有直接编码路径 ----
+        #[cfg(not(feature = "render-graph"))]
         {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("deferred+ geometry pass"),
-                color_attachments: &[
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: &self.gbuffer_base.view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+            // ---- compute: cluster culling ----
+            {
+                let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("deferred+ cluster culling"),
+                    timestamp_writes: None,
+                });
+                cpass.set_pipeline(&self.culling_pipeline);
+                cpass.set_bind_group(0, &self.culling_bind_group, &[]);
+                let groups = (TOTAL_CLUSTERS + CULLING_WORKGROUP_SIZE - 1) / CULLING_WORKGROUP_SIZE;
+                cpass.dispatch_workgroups(groups, 1, 1);
+            }
+
+            // ---- geometry pass: 写 G-Buffer ----
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("deferred+ geometry pass"),
+                    color_attachments: &[
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: &self.gbuffer_base.view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        }),
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: &self.gbuffer_normal.view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color {
+                                    r: 0.5,
+                                    g: 0.5,
+                                    b: 1.0,
+                                    a: 1.0,
+                                }),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        }),
+                        Some(wgpu::RenderPassColorAttachment {
+                            view: &self.gbuffer_emissive.view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        }),
+                    ],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.gbuffer_depth.view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
                             store: wgpu::StoreOp::Store,
-                        },
+                        }),
+                        stencil_ops: None,
                     }),
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: &self.gbuffer_normal.view,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+                pass.set_pipeline(&self.geometry_pipeline);
+                pass.set_bind_group(0, &self.geometry_frame_bind_group, &[]);
+                for command in &self.prepared.commands {
+                    let mesh = match self.cache.mesh_buffers.get(&command.mesh_key) {
+                        Some(m) => m,
+                        None => continue,
+                    };
+                    pass.set_bind_group(1, &command.material_bind_group, &[]);
+                    pass.set_bind_group(2, &command.object_bind_group, &[]);
+                    pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                    pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..command.index_count, 0, 0..1);
+                }
+            }
+
+            // ---- lighting pass: 全屏 quad → final color ----
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("deferred+ lighting pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: color_target,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: 0.5,
-                                g: 0.5,
-                                b: 1.0,
+                                r: 0.02,
+                                g: 0.02,
+                                b: 0.03,
                                 a: 1.0,
                             }),
                             store: wgpu::StoreOp::Store,
                         },
-                    }),
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: &self.gbuffer_emissive.view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    }),
-                ],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.gbuffer_depth.view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            pass.set_pipeline(&self.geometry_pipeline);
-            pass.set_bind_group(0, &self.geometry_frame_bind_group, &[]);
-            for command in &self.prepared.commands {
-                let mesh = match self.cache.mesh_buffers.get(&command.mesh_key) {
-                    Some(m) => m,
-                    None => continue,
-                };
-                pass.set_bind_group(1, &command.material_bind_group, &[]);
-                pass.set_bind_group(2, &command.object_bind_group, &[]);
-                pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..command.index_count, 0, 0..1);
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+                pass.set_pipeline(&self.lighting_pipeline);
+                pass.set_bind_group(0, &self.lighting_frame_bind_group, &[]);
+                pass.set_bind_group(1, &self.gbuffer_bind_group, &[]);
+                pass.draw(0..3, 0..1);
             }
-        }
-
-        // ---- lighting pass: 全屏 quad → final color ----
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("deferred+ lighting pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: color_target,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.02,
-                            g: 0.02,
-                            b: 0.03,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            pass.set_pipeline(&self.lighting_pipeline);
-            pass.set_bind_group(0, &self.lighting_frame_bind_group, &[]);
-            pass.set_bind_group(1, &self.gbuffer_bind_group, &[]);
-            pass.draw(0..3, 0..1);
         }
     }
 }

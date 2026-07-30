@@ -455,6 +455,69 @@ impl ForwardPlusPipeline {
             atlas.write_csm_uniform(queue, csm_uniform);
         }
     }
+
+    /// 构建本帧的渲染图（shadow → cluster culling → forward main）。
+    ///
+    /// 通过独立方法将生命周期 `'a` 与 `&'a self` 显式绑定，
+    /// 解决 trait object 生命周期推断问题。
+    #[cfg(feature = "render-graph")]
+    fn build_render_graph<'a>(&'a self) -> crate::graph::CompiledGraph<'a> {
+        use crate::graph::compile_graph;
+        use crate::passes::{ClusterCullingNode, ForwardRenderNode, ShadowPassNode};
+
+        let has_shadow = self.shadow_pass.is_some() && self.shadow_atlas.is_some();
+
+        // Shadow node（可选）
+        let shadow_node: Option<Box<dyn crate::graph::RenderPassNode<'a> + 'a>> =
+            if let (Some(sp), Some(atlas)) = (&self.shadow_pass, &self.shadow_atlas) {
+                Some(Box::new(ShadowPassNode {
+                    shadow_pass: sp,
+                    shadow_atlas: atlas,
+                    cache: &self.cache,
+                    commands: &self.prepared.commands,
+                }))
+            } else {
+                None
+            };
+
+        let forward_deps: Vec<String> = if has_shadow {
+            vec!["shadow".to_string(), "cluster_culling".to_string()]
+        } else {
+            vec!["cluster_culling".to_string()]
+        };
+
+        // 构建 pass 列表（使用 filter_map 移除 None）
+        let passes = vec![
+            shadow_node.map(|n| ("shadow", n, vec![])),
+            Some((
+                "cluster_culling",
+                Box::new(ClusterCullingNode {
+                    culling_pipeline: &self.culling_pipeline,
+                    culling_bind_group: &self.culling_bind_group,
+                }) as Box<dyn crate::graph::RenderPassNode<'a> + 'a>,
+                vec![],
+            )),
+            Some((
+                "forward_main",
+                Box::new(ForwardRenderNode {
+                    forward_pipeline: &self.forward_pipeline,
+                    frame_bind_group: &self.frame_bind_group,
+                    commands: &self.prepared.commands,
+                    cache: &self.cache,
+                    #[cfg(feature = "instancing")]
+                    instanced_pipeline: &self.instanced_pipeline,
+                    #[cfg(feature = "instancing")]
+                    instance_bind_group: &self.instance_bind_group,
+                }) as Box<dyn crate::graph::RenderPassNode<'a> + 'a>,
+                forward_deps,
+            )),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+
+        compile_graph(passes).expect("forward+ graph compile")
+    }
 }
 
 impl ScenePipeline for ForwardPlusPipeline {
@@ -555,99 +618,118 @@ impl ScenePipeline for ForwardPlusPipeline {
         #[cfg(feature = "profiling")]
         self.profiler.begin_frame();
 
-        // ---- shadow pass (optional) ----
-        if let (Some(sp), Some(atlas)) = (&self.shadow_pass, &self.shadow_atlas) {
-            #[cfg(feature = "profiling")]
-            let shadow_tw = self.profiler.render_pass_writes("shadow");
-            #[cfg(not(feature = "profiling"))]
-            let shadow_tw: Option<wgpu::RenderPassTimestampWrites> = None;
-            sp.render(encoder, &atlas.view, &self.cache, &self.prepared.commands, shadow_tw);
-        }
-
-        // ---- compute: cluster culling ----
+        // ---- render-graph 路径 ----
+        #[cfg(feature = "render-graph")]
         {
-            #[cfg(feature = "profiling")]
-            let culling_tw = self.profiler.compute_pass_writes("cluster_culling");
-            #[cfg(not(feature = "profiling"))]
-            let culling_tw: Option<wgpu::ComputePassTimestampWrites> = None;
+            use crate::graph::RenderGraphContext;
 
-            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("forward+ cluster culling"),
-                timestamp_writes: culling_tw,
-            });
-            cpass.set_pipeline(&self.culling_pipeline);
-            cpass.set_bind_group(0, &self.culling_bind_group, &[]);
-            let groups = (TOTAL_CLUSTERS + CULLING_WORKGROUP_SIZE - 1) / CULLING_WORKGROUP_SIZE;
-            cpass.dispatch_workgroups(groups, 1, 1);
+            let graph = self.build_render_graph();
+            let ctx = RenderGraphContext {
+                device: _device,
+                queue: None,
+                color_target: Some(color_target),
+                depth_target,
+            };
+            graph.execute(&ctx, encoder);
         }
 
-        // ---- forward render pass ----
-        let depth = match depth_target {
-            Some(t) => t,
-            None => {
-                log::error!("[render] Missing depth target, skipping forward+ render pass");
-                return;
+        // ---- 原有直接编码路径（render-graph 未启用时的 fallback） ----
+        #[cfg(not(feature = "render-graph"))]
+        {
+            // ---- shadow pass (optional) ----
+            if let (Some(sp), Some(atlas)) = (&self.shadow_pass, &self.shadow_atlas) {
+                #[cfg(feature = "profiling")]
+                let shadow_tw = self.profiler.render_pass_writes("shadow");
+                #[cfg(not(feature = "profiling"))]
+                let shadow_tw: Option<wgpu::RenderPassTimestampWrites> = None;
+                sp.render(encoder, &atlas.view, &self.cache, &self.prepared.commands, shadow_tw);
             }
-        };
 
-        #[cfg(feature = "profiling")]
-        let forward_tw = self.profiler.render_pass_writes("forward+");
-        #[cfg(not(feature = "profiling"))]
-        let forward_tw: Option<wgpu::RenderPassTimestampWrites> = None;
-
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("forward+ render pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: color_target,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.02,
-                        g: 0.02,
-                        b: 0.03,
-                        a: 1.0,
-                    }),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: depth,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
-            }),
-            timestamp_writes: forward_tw,
-            occlusion_query_set: None,
-        });
-
-        pass.set_pipeline(&self.forward_pipeline);
-        pass.set_bind_group(0, &self.frame_bind_group, &[]);
-        for command in &self.prepared.commands {
-            let mesh = match self.cache.mesh_buffers.get(&command.mesh_key) {
-                Some(m) => m,
-                None => continue,
-            };
-            pass.set_bind_group(1, &command.material_bind_group, &[]);
-            pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-            pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-
-            // Instanced path: 当 instance_count > 1 时使用 instanced pipeline
-            #[cfg(feature = "instancing")]
+            // ---- compute: cluster culling ----
             {
-                if command.instance_count > 1 {
-                    pass.set_pipeline(&self.instanced_pipeline);
-                    pass.set_bind_group(2, &self.instance_bind_group, &[]);
-                    pass.draw_indexed(0..command.index_count, 0, 0..command.instance_count);
-                    pass.set_pipeline(&self.forward_pipeline);
-                    continue;
-                }
+                #[cfg(feature = "profiling")]
+                let culling_tw = self.profiler.compute_pass_writes("cluster_culling");
+                #[cfg(not(feature = "profiling"))]
+                let culling_tw: Option<wgpu::ComputePassTimestampWrites> = None;
+
+                let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("forward+ cluster culling"),
+                    timestamp_writes: culling_tw,
+                });
+                cpass.set_pipeline(&self.culling_pipeline);
+                cpass.set_bind_group(0, &self.culling_bind_group, &[]);
+                let groups = (TOTAL_CLUSTERS + CULLING_WORKGROUP_SIZE - 1) / CULLING_WORKGROUP_SIZE;
+                cpass.dispatch_workgroups(groups, 1, 1);
             }
 
-            // Regular path: 单实例，使用 Object uniform
-            pass.set_bind_group(2, &command.object_bind_group, &[]);
-            pass.draw_indexed(0..command.index_count, 0, 0..1);
+            // ---- forward render pass ----
+            let depth = match depth_target {
+                Some(t) => t,
+                None => {
+                    log::error!("[render] Missing depth target, skipping forward+ render pass");
+                    return;
+                }
+            };
+
+            #[cfg(feature = "profiling")]
+            let forward_tw = self.profiler.render_pass_writes("forward+");
+            #[cfg(not(feature = "profiling"))]
+            let forward_tw: Option<wgpu::RenderPassTimestampWrites> = None;
+
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("forward+ render pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: color_target,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.02,
+                            g: 0.02,
+                            b: 0.03,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: depth,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: forward_tw,
+                occlusion_query_set: None,
+            });
+
+            pass.set_pipeline(&self.forward_pipeline);
+            pass.set_bind_group(0, &self.frame_bind_group, &[]);
+            for command in &self.prepared.commands {
+                let mesh = match self.cache.mesh_buffers.get(&command.mesh_key) {
+                    Some(m) => m,
+                    None => continue,
+                };
+                pass.set_bind_group(1, &command.material_bind_group, &[]);
+                pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+
+                // Instanced path: 当 instance_count > 1 时使用 instanced pipeline
+                #[cfg(feature = "instancing")]
+                {
+                    if command.instance_count > 1 {
+                        pass.set_pipeline(&self.instanced_pipeline);
+                        pass.set_bind_group(2, &self.instance_bind_group, &[]);
+                        pass.draw_indexed(0..command.index_count, 0, 0..command.instance_count);
+                        pass.set_pipeline(&self.forward_pipeline);
+                        continue;
+                    }
+                }
+
+                // Regular path: 单实例，使用 Object uniform
+                pass.set_bind_group(2, &command.object_bind_group, &[]);
+                pass.draw_indexed(0..command.index_count, 0, 0..1);
+            }
         }
 
         // ---- end frame profiling ----
