@@ -1,52 +1,147 @@
-### [English](https://github.com/redis-windows/redis-windows/blob/main/README.md) | [简体中文](https://github.com/redis-windows/redis-windows/blob/main/README.zh_CN.md)
+# Redis for Windows
 
-# Redis Windows Version
-### With the powerful automated building capability of GitHub Actions, we can compile the latest version of Redis for Windows system in real-time. 
-The entire compilation process is completely transparent and open, with the compilation script located in the [.github/workflows/](https://github.com/redis-windows/redis-windows/tree/main/.github/workflows) directory and the compilation logs available on the [Actions](https://github.com/redis-windows/redis-windows/actions) page. In addition, we have added a hash calculation step when the compilation is completed, and the result is printed in the log. This is unmodifiable and recorded in the release page. You can verify the hash value of the downloaded file against the log and release page.  
-Our project is absolutely pure and without any hidden features, and can withstand the scrutiny of all experts. If you have any good ideas, please feel free to communicate with us.  
+[![Build](https://github.com/redis-windows/redis-windows/actions/workflows/build-redis.yml/badge.svg)](https://github.com/redis-windows/redis-windows/actions)
+[![Release](https://img.shields.io/github/v/release/redis-windows/redis-windows)](https://github.com/redis-windows/redis-windows/releases)
 
-## We provide three operation modes: 
-1. Run the start.bat script in the project to start directly with one click.
-2. Use the command line.
-3. Support running as a system service.
+Compiled from official Redis source for Windows.
 
-### Command line startup:
-cmd startup: 
-```shell
+## Quick Start
+
+```cmd
+# After download and extract
 redis-server.exe redis.conf
-```
-powershell startup: 
-```shell
-./redis-server.exe redis.conf
+
+# Or use RedisService (recommended)
+RedisService.exe run --foreground
 ```
 
-### Service installation:
-Can achieve automatic startup on boot. Please run it as an administrator and change RedisService.exe to the actual directory where it is stored.
-```shell
-sc.exe create Redis binpath=C:\Software\Redis\RedisService.exe start= auto
-```
-Start service
-```shell
+## Usage
+
+### Option 1: RedisService.exe (Recommended)
+
+Automatically handles path conversion. Use native Windows paths.
+
+```cmd
+# Run in foreground
+RedisService.exe run --foreground --port 6379 --dir C:\redis-data
+
+# Install as Windows service
+RedisService.exe install -c C:\config\redis.conf --dir D:\data\redis --port 6379
 net start Redis
-```
-Out of Service
-```shell
-net stop Redis
-```
-Uninstall service
-```shell
-sc.exe delete Redis
+
+# Uninstall service
+RedisService.exe uninstall
 ```
 
-![image](https://user-images.githubusercontent.com/515784/215540157-65f55297-cde2-49b3-8ab3-14dca7e11ee0.png)
+### Option 2: redis-server.exe (Direct)
 
+**Important:** This build uses Cygwin runtime. Command-line paths must use Cygwin format.
 
-Project Home: https://github.com/redis-windows/redis-windows
+```cmd
+# ✅ Correct - Cygwin path format
+redis-server.exe /cygdrive/c/config/redis.conf --dir /cygdrive/d/data --port 6379
 
-## Acknowledgement: 
-[![NetEngine](https://avatars.githubusercontent.com/u/36178221?s=180&v=4)](https://www.zhihu.com/question/424272611/answer/2611312760) 
-[![JetBrains Logo (Main) logo](https://resources.jetbrains.com/storage/products/company/brand/logos/jb_beam.svg)](https://www.jetbrains.com/?from=redis-windows)
+# ❌ Wrong - Windows paths not supported
+redis-server.exe C:\config\redis.conf --dir D:\data
+```
 
+**Path Conversion:**
+
+| Windows | Cygwin |
+|---------|--------|
+| `C:\path` | `/cygdrive/c/path` |
+| `D:\path` | `/cygdrive/d/path` |
+| `.\data` | `./data` (relative works as-is) |
+
+**In config file:** Use forward slashes (Windows style with `/`).
+
+```conf
+# Recommended in redis.conf
+dir C:/redis/data
+logfile C:/redis/logs/redis.log
+```
+
+## RedisService CLI Reference
+
+```cmd
+RedisService.exe [command] [options]
+
+Commands:
+  install       Install as Windows service
+  uninstall     Uninstall Windows service
+  run           Run Redis (default)
+
+Options:
+  -c, --config <FILE>      Config file path
+  --port <PORT>            Server port
+  --dir <DIRECTORY>        Data directory
+  --loglevel <LEVEL>       Log level (debug/verbose/notice/warning)
+  -f, --foreground         Run in foreground
+  --service-name <NAME>    Service name (default: Redis)
+  --start-mode <MODE>      Startup type (auto/manual)
+  -h, --help               Show help
+  -v, --version            Show version
+```
+
+## Cross-Partition/Directories
+
+Config, data, and program can be in any location:
+
+```cmd
+# Program: C:\redis\RedisService.exe
+# Config:  D:\config\redis.conf
+# Data:    E:\data\redis
+
+RedisService.exe run -c D:\config\redis.conf --dir E:\data\redis --foreground
+```
+
+## Data Persistence
+
+Data is saved automatically on shutdown. `RedisService.exe` correctly passes `--dir` to ensure data is saved to the specified directory.
+
+```cmd
+# Start
+RedisService.exe run --foreground --dir C:\redis-data
+
+# Write data
+redis-cli SET mykey myvalue
+
+# Graceful shutdown
+redis-cli SHUTDOWN
+
+# Restart - data persists
+redis-cli GET mykey   # Returns "myvalue"
+```
+
+## FAQ
+
+### redis-server.exe can't find config file?
+
+Use Cygwin path format:
+```cmd
+redis-server.exe /cygdrive/c/config/redis.conf
+```
+
+Or use `RedisService.exe` which handles path conversion automatically.
+
+### Data lost after restart?
+
+1. Always specify `--dir` option
+2. Use graceful shutdown (`redis-cli SHUTDOWN` or `Ctrl+C`), don't kill the process
+3. Use the same `--dir` when restarting
+
+## Technical Details
+
+- Build toolchain: MSYS2 / Cygwin
+- Service wrapper: .NET 10.0
+- Path handling: RedisService auto-converts Windows ↔ Cygwin paths
+
+---
+
+English | [简体中文](README.zh_CN.md)
 
 ## Disclaimer
-We suggest that you use it for local development and follow Redis official guidance to deploy it on Linux for production environment. This project doesn't bear any responsibility for any losses caused by using it and is only for learning and exchange purposes.
+
+This project is not affiliated with, endorsed by, or sponsored by Redis Ltd. The license provided here applies only to this repository, not to the official Redis project.
+
+This is recommended for local development only. For production environments, please follow Redis official guidance and deploy on Linux. This project is not responsible for any losses caused by its use.
