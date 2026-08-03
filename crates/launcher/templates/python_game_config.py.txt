@@ -1,0 +1,34 @@
+"""
+{{project_name}} — 游戏配置。
+
+所有可调参数集中在此模块，游戏逻辑通过 `from .config import CFG` 引用。
+"""
+
+from dataclasses import dataclass
+
+
+@dataclass
+class GameConfig:
+    """游戏全部可调参数。"""
+
+    # ── 窗口 ──
+    window_width: int = 1280
+    window_height: int = 720
+    title: str = "{{project_name}}"
+
+    # ── 物理 ──
+    gravity: float = -9.81
+
+    # ── 玩家 ──
+    player_radius: float = 0.35
+    player_half_height: float = 0.5
+
+    # ── 光照 ──
+    ambient: tuple = (0.12, 0.12, 0.15)
+
+    # ── 颜色 ──
+    color_ground: tuple = (0.5, 0.5, 0.5)
+
+
+# 全局默认配置实例
+CFG = GameConfig()

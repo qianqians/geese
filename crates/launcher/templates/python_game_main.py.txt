@@ -1,0 +1,76 @@
+"""{{project_name}} 启动入口。
+
+用法:
+    python main.py [--title "窗口标题"] [--width 1280] [--height 720]
+
+此文件是自包含启动器，不依赖外部 run_game.py。
+游戏逻辑在 game/ 目录的 {{project_name}}Game 类中实现。
+"""
+
+import sys
+import os
+import argparse
+
+
+def _die(msg: str):
+    print(msg, file=sys.stderr)
+    sys.exit(1)
+
+
+def main():
+    p = argparse.ArgumentParser(description="{{project_name}} 启动器")
+    p.add_argument("--title", default="{{project_name}}")
+    p.add_argument("--width", type=int, default=1280)
+    p.add_argument("--height", type=int, default=720)
+    args = p.parse_args()
+
+    # 将项目 game/ 目录加入 Python 路径
+    project_dir = os.path.dirname(os.path.abspath(__file__))
+    game_dir = os.path.join(project_dir, "game")
+    sys.path.insert(0, os.path.normpath(game_dir))
+
+    # 导入 geese_game（由 py_engine DLL 提供）
+    # GEESE_GAME_DLL 环境变量可指定 DLL 路径（编辑器 Play 模式自动设置）
+    try:
+        from geese_game import run_game
+    except ImportError:
+        # 备选：通过 ctypes 直接加载（需设置 GEESE_GAME_DLL）
+        geese_game_dll = os.environ.get("GEESE_GAME_DLL", "")
+        if not geese_game_dll:
+            _die(
+                "[ERROR] 无法导入 geese_game，请设置 GEESE_GAME_DLL 环境变量\n"
+                "  示例: set GEESE_GAME_DLL=path/to/geese_game.dll\n"
+                "  或在编辑器中通过 Play 按钮启动（已自动配置路径）。"
+            )
+        import ctypes
+        import importlib.machinery
+        import importlib.util
+
+        if hasattr(os, "add_dll_directory"):
+            os.add_dll_directory(os.path.dirname(geese_game_dll))
+
+        loader = importlib.machinery.ExtensionFileLoader("geese_game", geese_game_dll)
+        spec = importlib.util.spec_from_loader("geese_game", loader, origin=geese_game_dll)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["geese_game"] = mod
+        spec.loader.exec_module(mod)
+        run_game = mod.run_game
+
+    # 自动检测游戏类（查找第一个含 update 方法的类型）
+    import importlib
+    game_mod = importlib.import_module("{{project_name}}")
+    game_class = None
+    for name, obj in vars(game_mod).items():
+        if isinstance(obj, type) and hasattr(obj, "update"):
+            game_class = name
+            break
+
+    if game_class is None:
+        _die("[ERROR] 未找到游戏类。请确保 game/__init__.py 中包含带 update 方法的类。")
+
+    print(f"启动 {game_class}...")
+    run_game("{{project_name}}", game_class, args.title, args.width, args.height)
+
+
+if __name__ == "__main__":
+    main()

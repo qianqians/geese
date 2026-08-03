@@ -241,6 +241,7 @@ impl Launcher {
                         "fps" => ("🔫", "FPS", egui::Color32::from_rgb(230, 120, 80)),
                         "third_person" => ("🎮", "第三人称", egui::Color32::from_rgb(100, 190, 140)),
                         "topdown" => ("🛰", "俯视角", egui::Color32::from_rgb(180, 150, 80)),
+                        "python_game" => ("🐍", "Python", egui::Color32::from_rgb(80, 180, 220)),
                         _ => ("📄", "", egui::Color32::WHITE),
                     };
                     // 图标区域
@@ -592,8 +593,11 @@ impl Launcher {
         let write_all = |staging_path: &std::path::Path| -> Result<(), String> {
             let staging_str = staging_path.display().to_string();
 
-            // 创建目录结构
-            let dirs = ["", "/src", "/assets", "/assets/scenes", "/assets/effects", "/config"];
+            // 创建目录结构（Python 模板不需要 /src）
+            let mut dirs = vec!["", "/assets", "/assets/scenes", "/assets/effects", "/config"];
+            if template.id != "python_game" {
+                dirs.push("/src");
+            }
             for d in &dirs {
                 fs::create_dir_all(format!("{}{}", staging_str, d))
                     .map_err(|e| format!("创建目录失败: {}", e))?;
@@ -607,15 +611,19 @@ impl Launcher {
                     .replace("{{player_height}}", &template.player_config.capsule_height.to_string())
             };
 
-            // 生成 Cargo.toml
-            let cargo_path = format!("{}/Cargo.toml", staging_str);
-            let cargo_content = templates::cargo_toml_content(name);
-            Self::write_file_static(&cargo_path, &replace_vars(&cargo_content))?;
+            // 生成 Cargo.toml（仅 Rust 模板）
+            if template.id != "python_game" {
+                let cargo_path = format!("{}/Cargo.toml", staging_str);
+                let cargo_content = templates::cargo_toml_content(name);
+                Self::write_file_static(&cargo_path, &replace_vars(&cargo_content))?;
+            }
 
-            // 生成 main.rs
-            let main_path = format!("{}/src/main.rs", staging_str);
-            let main_content = templates::main_rs_content(template, name);
-            Self::write_file_static(&main_path, &replace_vars(&main_content))?;
+            // 生成 main.rs（仅 Rust 模板）
+            if template.id != "python_game" {
+                let main_path = format!("{}/src/main.rs", staging_str);
+                let main_content = templates::main_rs_content(template, name);
+                Self::write_file_static(&main_path, &replace_vars(&main_content))?;
+            }
 
             // 生成 project.toml 配置
             let config_path = format!("{}/config/project.toml", staging_str);
@@ -762,6 +770,7 @@ mod tests {
         assert_eq!(launcher.templates[1].id, "fps");
         assert_eq!(launcher.templates[2].id, "third_person");
         assert_eq!(launcher.templates[3].id, "topdown");
+        assert_eq!(launcher.templates[4].id, "python_game");
         assert!(launcher.selected_index.is_none());
     }
 
@@ -916,5 +925,28 @@ mod tests {
         // 验证暂存目录不存在
         let staging = tmp.join(".test_rollback.tmp");
         assert!(!staging.exists(), "Staging directory should not exist after rollback");
+    }
+
+    #[test]
+    fn python_game_template_no_rust_files() {
+        let py = templates::python_game_template();
+        let has_cargo = py.files.iter().any(|f| f.relative_path == "Cargo.toml");
+        let has_main_rs = py.files.iter().any(|f| f.relative_path == "src/main.rs");
+        let has_main_py = py.files.iter().any(|f| f.relative_path == "main.py");
+        let has_init = py.files.iter().any(|f| f.relative_path == "game/__init__.py");
+        let has_config = py.files.iter().any(|f| f.relative_path == "game/config.py");
+        let has_effect = py.files.iter().any(|f| f.relative_path == "assets/effects/default_effect.toml");
+        assert!(!has_cargo, "python_game should NOT include Cargo.toml");
+        assert!(!has_main_rs, "python_game should NOT include src/main.rs");
+        assert!(has_main_py, "python_game should include main.py entry point");
+        assert!(has_init, "python_game should include game/__init__.py");
+        assert!(has_config, "python_game should include game/config.py");
+        assert!(has_effect, "python_game should include effect.toml");
+    }
+
+    #[test]
+    fn python_game_template_file_count() {
+        let py = templates::python_game_template();
+        assert_eq!(py.files.len(), 5); // main.py, effect.toml, scene.json, __init__.py, config.py
     }
 }

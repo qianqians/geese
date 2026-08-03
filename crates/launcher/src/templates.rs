@@ -669,12 +669,24 @@ fn topdown_template_files() -> Vec<TemplateFile> {
 fn python_game_template_files() -> Vec<TemplateFile> {
     vec![
         TemplateFile {
+            relative_path: "main.py".into(),
+            content: include_str!("../templates/python_game_main.py.txt").to_string(),
+        },
+        TemplateFile {
+            relative_path: "assets/effects/default_effect.toml".into(),
+            content: include_str!("../templates/empty_effect.toml.txt").to_string(),
+        },
+        TemplateFile {
             relative_path: "assets/scenes/default.scene.json".into(),
             content: scene_json_content("Python 游戏".into(), &empty_objects()),
         },
         TemplateFile {
             relative_path: "game/__init__.py".into(),
             content: include_str!("../templates/python_game_init.py.txt").to_string(),
+        },
+        TemplateFile {
+            relative_path: "game/config.py".into(),
+            content: include_str!("../templates/python_game_config.py.txt").to_string(),
         },
     ]
 }

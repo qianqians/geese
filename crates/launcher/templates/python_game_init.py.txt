@@ -12,6 +12,9 @@
 
 import math
 
+# 导入集中配置:
+# from .config import CFG
+
 
 class {{project_name}}Game:
     """游戏主类。引擎每帧调用 update(bridge, dt)。"""
