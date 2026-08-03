@@ -35,6 +35,8 @@ pub struct InspectorPanel {
     /// NavMesh Component 状态
     navmesh_enabled: bool,
     navmesh_agent_radius: f32,
+    /// 用户是否刚在 Inspector 中编辑过 Transform（抑制外部同步覆盖）
+    user_editing_transform: bool,
 }
 
 impl InspectorPanel {
@@ -57,6 +59,7 @@ impl InspectorPanel {
             physics_body_kind_idx: 0,
             navmesh_enabled: false,
             navmesh_agent_radius: 0.5,
+            user_editing_transform: false,
         }
     }
 
@@ -168,16 +171,24 @@ impl EditorPanel for InspectorPanel {
 
         // 检测选中实体变化，从缓存同步
         let selection_changed = state.selected_entity.as_deref() != self.last_selected.as_deref();
+
+        // 每帧从 cache 同步 Transform（捕捉 Gizmo 拖拽/Undo/Redo/物理回写），
+        // 但若用户正在 Inspector 中编辑 DragValue 则跳过，避免覆盖用户输入。
+        if !self.user_editing_transform {
+            if let Some(ref entity_id) = state.selected_entity {
+                self.sync_transform(entity_id, &mut state.transform_cache);
+            }
+        }
+
         if selection_changed {
             self.last_selected = state.selected_entity.clone();
+            self.user_editing_transform = false;
             if let Some(ref entity_id) = state.selected_entity {
                 // 同步名称
                 self.entity_name = state.name_cache
                     .get(entity_id)
                     .cloned()
                     .unwrap_or_default();
-                // 同步 Transform（通过 sync_transform 统一处理命中与 miss）
-                self.sync_transform(entity_id, &mut state.transform_cache);
                 // 同步 Physics Component
                 self.physics_enabled = state.physics_component_cache.contains_key(entity_id);
                 if self.physics_enabled {
@@ -248,6 +259,7 @@ impl EditorPanel for InspectorPanel {
                         if drag_value_row(ui, "Rotation", &mut self.rotation, 1.0) { changed = true; }
                         if drag_value_row(ui, "Scale   ", &mut self.scale, 0.01) { changed = true; }
 
+                        self.user_editing_transform = changed;
                         if changed {
                             if let Some(ref entity_id) = state.selected_entity {
                                 state.transform_cache.insert(

@@ -344,20 +344,28 @@ impl BuildPanel {
 
             match cmd.spawn() {
                 Ok(mut child) => {
-                    // 逐行读取 stdout
-                    if let Some(stdout) = child.stdout.take() {
-                        let reader = BufReader::new(stdout);
-                        for line in reader.lines().flatten() {
-                            let _ = tx.send(BuildEvent::LogLine(line));
-                        }
-                    }
-                    // 逐行读取 stderr（cargo 大部分输出在 stderr）
-                    if let Some(stderr) = child.stderr.take() {
-                        let reader = BufReader::new(stderr);
-                        for line in reader.lines().flatten() {
-                            let _ = tx.send(BuildEvent::LogLine(line));
-                        }
-                    }
+                    // 并发读取 stdout 和 stderr，避免管道缓冲区满导致死锁
+                    let tx1 = tx.clone();
+                    let tx2 = tx.clone();
+                    let stdout_handle = child.stdout.take().map(|out| {
+                        std::thread::spawn(move || {
+                            let reader = BufReader::new(out);
+                            for line in reader.lines().flatten() {
+                                let _ = tx1.send(BuildEvent::LogLine(line));
+                            }
+                        })
+                    });
+                    let stderr_handle = child.stderr.take().map(|err| {
+                        std::thread::spawn(move || {
+                            let reader = BufReader::new(err);
+                            for line in reader.lines().flatten() {
+                                let _ = tx2.send(BuildEvent::LogLine(line));
+                            }
+                        })
+                    });
+                    // 等待两个读取线程完成
+                    if let Some(h) = stdout_handle { let _ = h.join(); }
+                    if let Some(h) = stderr_handle { let _ = h.join(); }
 
                     let status = child.wait();
                     match status {

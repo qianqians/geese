@@ -50,6 +50,8 @@ pub struct PlayModeSnapshot {
     pub camera_distance: f32,
     /// 面板状态快照
     pub panel_state: PanelStateSnapshot,
+    /// 变换缓存快照（Play 期间物理回写会修改 editor transform_cache）
+    pub transform_cache: std::collections::HashMap<String, ([f32;3], [f32;3], [f32;3])>,
 }
 
 /// 面板状态快照，Play 时保存 UI 状态、Stop 时恢复。
@@ -161,6 +163,7 @@ impl PlayMode {
                 inspector_visible: state.panel_layer.is_visible(&PanelLayer::Inspector),
                 asset_browser_visible: state.panel_layer.is_visible(&PanelLayer::AssetBrowser),
             },
+            transform_cache: state.transform_cache.clone(),
         });
 
         self.is_playing = true;
@@ -194,6 +197,8 @@ impl PlayMode {
         state.panel_layer.set_visible(PanelLayer::Hierarchy, snapshot.panel_state.hierarchy_visible);
         state.panel_layer.set_visible(PanelLayer::Inspector, snapshot.panel_state.inspector_visible);
         state.panel_layer.set_visible(PanelLayer::AssetBrowser, snapshot.panel_state.asset_browser_visible);
+        // 恢复 Play 期间被物理回写修改的 transform_cache
+        state.transform_cache = snapshot.transform_cache.clone();
     }
 
     /// 更新播放模式时间。

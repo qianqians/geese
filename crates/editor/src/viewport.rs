@@ -508,7 +508,7 @@ impl ViewportPanel {
                 input.pointer.button_down(egui::PointerButton::Primary)
             });
             let left_pressed = ui.input(|input| {
-                input.pointer.button_clicked(egui::PointerButton::Primary)
+                input.pointer.button_pressed(egui::PointerButton::Primary)
             });
             let left_released = ui.input(|input| {
                 input.pointer.button_released(egui::PointerButton::Primary)

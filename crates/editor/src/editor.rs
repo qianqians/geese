@@ -96,12 +96,14 @@ pub struct Editor {
     pub material_library: MaterialLibrary,
     /// 编辑器是否请求关闭（供 DesktopApp 检查）
     pub close_requested: bool,
+    /// 后台导出的状态消息接收端（避免阻塞 UI 线程）
+    export_receiver: Option<std::sync::mpsc::Receiver<String>>,
 }
 
 impl Editor {
     /// 从项目路径打开编辑器。
     pub fn open(project_path: String, render_state: Option<egui_wgpu::RenderState>) -> Self {
-        let state = EditorState::new(project_path.clone());
+        let mut state = EditorState::new(project_path.clone());
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
@@ -110,11 +112,13 @@ impl Editor {
 
         // 创建本地物理世界并加载场景碰撞体
         let mut physics = PhysicsManager::new([0.0, -9.81, 0.0]);
-        let manifest_path = format!("{}/.scene.json", project_path);
+        let manifest_path = format!("{}/assets/scene.scene.json", project_path);
         physics.load_scene(&manifest_path);
 
         // 推导引擎根目录（从 project_path 向上查找含 crates/ 的目录）
         let engine_root = find_engine_root(&project_path);
+        // 统一 EditorState 的 engine_root，避免 Editor.engine_root 与 state.engine_root 不一致
+        state.engine_root = engine_root.clone();
 
         // 初始化资源数据库（扫描 assets 目录，自动生成 .meta 文件）
         let asset_database = match AssetDatabase::open(&state.project_path) {
@@ -157,6 +161,7 @@ impl Editor {
             material_library: MaterialLibrary::default(),
             scene: None,
             close_requested: false,
+            export_receiver: None,
         }
     }
 
@@ -167,11 +172,11 @@ impl Editor {
             self.close_requested = true;
         }
 
-        // 计算每帧时间增量
+        // 计算每帧时间增量（钳制上限，防止断点/窗口拖拽后 dt 爆炸）
         let now = std::time::Instant::now();
         let dt = self
             .last_update
-            .map(|t| now.duration_since(t).as_secs_f32())
+            .map(|t| now.duration_since(t).as_secs_f32().min(0.1))
             .unwrap_or(0.016);
         self.last_update = Some(now);
 
@@ -182,6 +187,9 @@ impl Editor {
                 let bodies = self.physics.get_body_snapshots();
                 self.state.physics_debug_bodies = bodies.clone();
                 self.physics_debug.update(bodies);
+            } else {
+                // 物理调试关闭时清除残留线框
+                self.state.physics_debug_bodies.clear();
             }
 
             // Play 模式下同步角色控制器刚体变换回场景节点
@@ -196,12 +204,17 @@ impl Editor {
                         .iter()
                         .find_map(|(k, v)| (v == handle).then(|| k.clone()))
                     {
+                        // 保留缓存中已有的 scale，避免被硬编码覆盖
+                        let scale = self.state.transform_cache
+                            .get(&node_id)
+                            .map(|(_, _, s)| *s)
+                            .unwrap_or([1.0, 1.0, 1.0]);
                         self.state.transform_cache.insert(
                             node_id,
                             (
                                 [pos.x, pos.y, pos.z],
                                 [rot.x, rot.y, rot.z],
-                                [1.0, 1.0, 1.0],
+                                scale,
                             ),
                         );
                     }
@@ -309,6 +322,13 @@ impl Editor {
         self.process_pending_transform();
         // 6. 消费 Undo/Redo 回调产生的 apply 事件
         self.process_apply_queue();
+        // 7. 轮询后台导出结果（避免阻塞 UI 线程）
+        if let Some(ref rx) = self.export_receiver {
+            if let Ok(msg) = rx.try_recv() {
+                self.state.status_message = Some(msg);
+                self.export_receiver = None;
+            }
+        }
     }
 
     /// 保存当前场景到磁盘。
@@ -416,10 +436,9 @@ impl Editor {
                 let has_mesh = node.mesh().is_some();
                 let ntype = if has_mesh { NodeType::Mesh } else { NodeType::Empty };
 
+                // 先收集子节点 ID（不递归，避免父节点不存在时子节点被提升为 root）
                 let cids: Vec<String> = node.children().map(|c| {
-                    let cid = format!("node_{}", c.index());
-                    walk_gltf_node(&c, Some(eid.clone()), hierarchy, tx_cache, phys_cache, navmesh_cache, name_cache, mesh_entities, model_uuid.clone(), physics.clone(), navmesh.clone());
-                    cid
+                    format!("node_{}", c.index())
                 }).collect();
 
                 // Mesh 节点记录其来源 GLTF 模型的 UUID
@@ -429,6 +448,7 @@ impl Editor {
                     None
                 };
 
+                // 先添加当前节点，确保子节点递归时父节点已存在
                 hierarchy.add_scene_node(SceneNodeData {
                     id: eid.clone(),
                     name: nname.clone(),
@@ -442,6 +462,11 @@ impl Editor {
                     physics: physics.clone(),
                     navmesh: navmesh.clone(),
                 });
+
+                // 再递归处理子节点（父节点已在树中）
+                for child in node.children() {
+                    walk_gltf_node(&child, Some(eid.clone()), hierarchy, tx_cache, phys_cache, navmesh_cache, name_cache, mesh_entities, model_uuid.clone(), physics.clone(), navmesh.clone());
+                }
 
                 tx_cache.entry(eid.clone()).or_insert((
                     [0.0, 0.0, 0.0],
@@ -613,6 +638,9 @@ impl Editor {
     // -------------------------------------------------------------------
 
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {
+        // 文本输入聚焦时不处理会干扰打字的快捷键（W/E/R/Tab）
+        let typing = ctx.wants_keyboard_input();
+
         // 先收集快捷键动作
         let mut toggle_hierarchy = false;
         let mut toggle_inspector = false;
@@ -632,8 +660,8 @@ impl Editor {
             if input.modifiers.ctrl && input.key_pressed(egui::Key::B) {
                 toggle_asset_browser = true;
             }
-            // Tab 切换所有非 pinned 面板
-            if input.key_pressed(egui::Key::Tab) && !input.modifiers.ctrl {
+            // Tab 切换所有非 pinned 面板（文本输入时不触发）
+            if !typing && input.key_pressed(egui::Key::Tab) && !input.modifiers.ctrl {
                 toggle_ui = true;
             }
             // Undo/Redo
@@ -981,7 +1009,7 @@ impl Editor {
     }
 
     /// 导出游戏为独立 Windows 可执行文件（Quick Export）。
-    /// 先执行 cargo build --release -p game_runtime，再复制产物。
+    /// 在后台线程执行 cargo build --release，不阻塞编辑器 UI。
     fn handle_export_windows(&mut self) {
         let project_name = std::path::Path::new(&self.state.project_path)
             .file_name()
@@ -999,75 +1027,79 @@ impl Editor {
         } else {
             std::path::PathBuf::from(&self.state.engine_root)
         };
-        let manifest = root_path.join("crates").join("game_runtime").join("Cargo.toml");
 
-        // 执行 cargo build
-        let build_status = Command::new("cargo")
-            .args(["build", "--release", "-p", "game_runtime", "--manifest-path"])
-            .arg(&manifest)
-            .status();
+        // 在后台线程执行构建和复制，避免阻塞 UI
+        let (tx, rx) = std::sync::mpsc::channel();
+        let project_path = self.state.project_path.clone();
 
-        match build_status {
-            Ok(s) if s.success() => {
-                // 构建成功，继续复制
-            }
-            Ok(s) => {
-                self.state.status_message = Some(format!(
-                    "Build failed with exit code: {}",
-                    s.code().map(|c| c.to_string()).unwrap_or_else(|| "unknown".into())
-                ));
-                return;
-            }
-            Err(e) => {
-                self.state.status_message = Some(format!("Failed to start cargo: {e}"));
-                return;
-            }
-        }
+        std::thread::spawn(move || {
+            let manifest = root_path.join("crates").join("game_runtime").join("Cargo.toml");
 
-        // 创建输出目录
-        let _ = std::fs::create_dir_all(&export_dir);
-        let _ = std::fs::create_dir_all(format!("{}/assets", export_dir));
-        let _ = std::fs::create_dir_all(format!("{}/config", export_dir));
+            let build_status = Command::new("cargo")
+                .args(["build", "--release", "-p", "game_runtime", "--manifest-path"])
+                .arg(&manifest)
+                .status();
 
-        // 复制资产
-        let assets_src = format!("{}/assets", self.state.project_path);
-        let assets_dst = format!("{}/assets", export_dir);
-        if let Err(e) = copy_dir_recursive(&assets_src, &assets_dst) {
-            eprintln!("[Editor] copy assets failed: {e}");
-        }
+            let result = match build_status {
+                Ok(s) if s.success() => {
+                    // 构建成功，复制产物
+                    let _ = std::fs::create_dir_all(&export_dir);
+                    let _ = std::fs::create_dir_all(format!("{}/assets", export_dir));
+                    let _ = std::fs::create_dir_all(format!("{}/config", export_dir));
 
-        // 复制 config
-        let config_src = format!("{}/config", self.state.project_path);
-        let config_dst = format!("{}/config", export_dir);
-        if let Err(e) = copy_dir_recursive(&config_src, &config_dst) {
-            eprintln!("[Editor] copy config failed: {e}");
-        }
+                    let assets_src = format!("{}/assets", project_path);
+                    let assets_dst = format!("{}/assets", export_dir);
+                    if let Err(e) = copy_dir_recursive(&assets_src, &assets_dst) {
+                        eprintln!("[Editor] copy assets failed: {e}");
+                    }
 
-        // 复制 game_runtime .exe
-        let exe_src = root_path
-            .join("crates")
-            .join("game_runtime")
-            .join("target")
-            .join("release")
-            .join("geese_game.exe");
-        let exe_dst = format!("{}/{}.exe", export_dir, project_name);
+                    let config_src = format!("{}/config", project_path);
+                    let config_dst = format!("{}/config", export_dir);
+                    if let Err(e) = copy_dir_recursive(&config_src, &config_dst) {
+                        eprintln!("[Editor] copy config failed: {e}");
+                    }
 
-        if exe_src.exists() {
-            if let Err(e) = std::fs::copy(&exe_src, &exe_dst) {
-                eprintln!("[Editor] copy exe failed: {e}");
-                self.state.status_message = Some(format!("Export failed: {e}"));
-                return;
-            }
-            self.state.status_message = Some(format!(
-                "Exported to {}/export/{}/{}.exe",
-                self.state.project_path, project_name, project_name
-            ));
-        } else {
-            self.state.status_message = Some(format!(
-                "geese_game.exe not found at {}. Build may have failed silently.",
-                exe_src.display()
-            ));
-        }
+                    // 复制 game_runtime .exe
+                    let exe_src = root_path
+                        .join("crates")
+                        .join("game_runtime")
+                        .join("target")
+                        .join("release")
+                        .join("geese_game.exe");
+                    let exe_dst = format!("{}/{}.exe", export_dir, project_name);
+
+                    if exe_src.exists() {
+                        if let Err(e) = std::fs::copy(&exe_src, &exe_dst) {
+                            eprintln!("[Editor] copy exe failed: {e}");
+                            format!("Export failed: {e}")
+                        } else {
+                            format!(
+                                "Exported to {}/export/{}/{}.exe",
+                                project_path, project_name, project_name
+                            )
+                        }
+                    } else {
+                        format!(
+                            "geese_game.exe not found at {}. Build may have failed silently.",
+                            exe_src.display()
+                        )
+                    }
+                }
+                Ok(s) => {
+                    format!(
+                        "Build failed with exit code: {}",
+                        s.code().map(|c| c.to_string()).unwrap_or_else(|| "unknown".into())
+                    )
+                }
+                Err(e) => {
+                    format!("Failed to start cargo: {e}")
+                }
+            };
+
+            let _ = tx.send(result);
+        });
+
+        self.export_receiver = Some(rx);
     }
 
     /// 将选中节点及其子树保存为 .prefab.json 文件。
@@ -1431,9 +1463,11 @@ impl Editor {
             // 重新创建本地物理世界并加载场景碰撞体
             self.physics = PhysicsManager::new([0.0, -9.81, 0.0]);
             {
-                let manifest_path = format!("{}/.scene.json", self.state.project_path);
+                let manifest_path = format!("{}/assets/scene.scene.json", self.state.project_path);
                 self.physics.load_scene(&manifest_path);
             }
+            // 清除上一轮 Play 的角色控制器句柄（物理世界已重建）
+            self.state.cc_body_handles.clear();
             self.physics_debug.enabled = false;
             self.state.mode = EditorMode::Edit;
             self.state.panel_layer.set_edit_alpha();

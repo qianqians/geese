@@ -85,9 +85,11 @@ impl SceneNodeTree {
                 eprintln!("[SceneNodeTree] parent '{}' of node '{}' not found, promoted to root", pid, id);
                 self.root_ids.push(id.clone());
             } else {
-                // 更新父节点的 children 列表
+                // 更新父节点的 children 列表（避免重复添加）
                 if let Some(parent) = self.nodes.get_mut(pid) {
-                    parent.children.push(id.clone());
+                    if !parent.children.contains(&id) {
+                        parent.children.push(id.clone());
+                    }
                 }
             }
         } else {
@@ -119,13 +121,31 @@ impl SceneNodeTree {
             .unwrap_or_default()
     }
 
+    /// 递归深度上限（防止循环引用导致栈溢出）
+    const MAX_REMOVE_DEPTH: usize = 1000;
+
     pub fn remove(&mut self, id: &str) {
+        self.remove_internal(id, 0);
+    }
+
+    fn remove_internal(&mut self, id: &str, depth: usize) {
+        if depth > Self::MAX_REMOVE_DEPTH {
+            eprintln!("[SceneNodeTree] remove: max depth {} exceeded at '{}', stopping recursion", Self::MAX_REMOVE_DEPTH, id);
+            return;
+        }
+        // 先提取 parent_id（owned clone），避免后续 get_mut 时与 get 产生借用冲突
+        let parent_id = self.nodes.get(id).and_then(|n| n.parent.clone());
+        if let Some(ref pid) = parent_id {
+            if let Some(parent) = self.nodes.get_mut(pid) {
+                parent.children.retain(|c| c != id);
+            }
+        }
         let children_ids: Vec<String> = self.nodes
             .get(id)
             .map(|node| node.children.clone())
             .unwrap_or_default();
         for child_id in children_ids {
-            self.remove(&child_id);
+            self.remove_internal(&child_id, depth + 1);
         }
         self.nodes.remove(id);
         self.root_ids.retain(|rid| rid != id);
@@ -134,14 +154,23 @@ impl SceneNodeTree {
     /// 收集以 `id` 为根的子树中所有节点 ID（包括 `id` 自身）。
     pub fn collect_subtree_ids(&self, id: &str) -> Vec<String> {
         let mut result = vec![id.to_string()];
+        self.collect_subtree_ids_internal(id, &mut result, 0);
+        result
+    }
+
+    fn collect_subtree_ids_internal(&self, id: &str, result: &mut Vec<String>, depth: usize) {
+        if depth > Self::MAX_REMOVE_DEPTH {
+            eprintln!("[SceneNodeTree] collect_subtree_ids: max depth {} exceeded at '{}', stopping", Self::MAX_REMOVE_DEPTH, id);
+            return;
+        }
         let children_ids: Vec<String> = self.nodes
             .get(id)
             .map(|node| node.children.clone())
             .unwrap_or_default();
         for child_id in children_ids {
-            result.extend(self.collect_subtree_ids(&child_id));
+            result.push(child_id.clone());
+            self.collect_subtree_ids_internal(&child_id, result, depth + 1);
         }
-        result
     }
 
     pub fn find(&self, name_filter: &str) -> Vec<String> {
@@ -190,100 +219,7 @@ impl HierarchyPanel {
     }
 
     pub fn new() -> Self {
-        let mut tree = SceneNodeTree::new();
-
-        // 添加示例节点（演示用）
-        tree.add_node(SceneNodeData {
-            id: "root".into(),
-            name: "Scene Root".into(),
-            children: vec!["room".into(), "outdoor".into()],
-            parent: None,
-            visible: true,
-            locked: false,
-            node_type: NodeType::Empty,
-            asset_source_uuid: None,
-            prefab_ref_uuid: None,
-            physics: None,
-            navmesh: None,
-        });
-        tree.add_node(SceneNodeData {
-            id: "room".into(),
-            name: "Room".into(),
-            children: vec!["floor".into(), "walls".into(), "light_main".into()],
-            parent: Some("root".into()),
-            visible: true,
-            locked: false,
-            node_type: NodeType::Empty,
-            asset_source_uuid: None,
-            prefab_ref_uuid: None,
-            physics: None,
-            navmesh: None,
-        });
-        tree.add_node(SceneNodeData {
-            id: "floor".into(),
-            name: "Floor".into(),
-            children: vec![],
-            parent: Some("room".into()),
-            visible: true,
-            locked: false,
-            node_type: NodeType::Mesh,
-            asset_source_uuid: None,
-            prefab_ref_uuid: None,
-            physics: None,
-            navmesh: None,
-        });
-        tree.add_node(SceneNodeData {
-            id: "walls".into(),
-            name: "Walls".into(),
-            children: vec![],
-            parent: Some("room".into()),
-            visible: true,
-            locked: false,
-            node_type: NodeType::Mesh,
-            asset_source_uuid: None,
-            prefab_ref_uuid: None,
-            physics: None,
-            navmesh: None,
-        });
-        tree.add_node(SceneNodeData {
-            id: "light_main".into(),
-            name: "Main Light".into(),
-            children: vec![],
-            parent: Some("room".into()),
-            visible: true,
-            locked: false,
-            node_type: NodeType::Light,
-            asset_source_uuid: None,
-            prefab_ref_uuid: None,
-            physics: None,
-            navmesh: None,
-        });
-        tree.add_node(SceneNodeData {
-            id: "outdoor".into(),
-            name: "Outdoor Props".into(),
-            children: vec!["player_spawn".into()],
-            parent: Some("root".into()),
-            visible: true,
-            locked: false,
-            node_type: NodeType::Empty,
-            asset_source_uuid: None,
-            prefab_ref_uuid: None,
-            physics: None,
-            navmesh: None,
-        });
-        tree.add_node(SceneNodeData {
-            id: "player_spawn".into(),
-            name: "Player Spawn".into(),
-            children: vec![],
-            parent: Some("outdoor".into()),
-            visible: true,
-            locked: false,
-            node_type: NodeType::PlayerSpawn,
-            asset_source_uuid: None,
-            prefab_ref_uuid: None,
-            physics: None,
-            navmesh: None,
-        });
+        let tree = SceneNodeTree::new();
 
         Self {
             tree,
@@ -521,7 +457,8 @@ impl HierarchyPanel {
                             state.name_cache.remove(id);
                             state.mesh_entities.remove(id);
                         }
-                        if state.selected_entity.as_deref() == Some(node_id) {
+                        // 检查选中的实体是否在被删除的子树中（包括深层子节点）
+                        if state.selected_entity.as_ref().map_or(false, |sel| deleted_ids.contains(sel)) {
                             state.selected_entity = None;
                         }
                     }
@@ -656,7 +593,8 @@ impl EditorPanel for HierarchyPanel {
             });
             if released {
                 let scroll_rect = scroll_response.inner_rect;
-                if ui.rect_contains_pointer(scroll_rect) {
+                let over_hierarchy = ui.rect_contains_pointer(scroll_rect);
+                if over_hierarchy {
                     let parent_id = match &state.drop_target_hint {
                         Some(DropTargetHint::Hierarchy { target_node_id }) => target_node_id.clone(),
                         _ => None,
@@ -667,13 +605,14 @@ impl EditorPanel for HierarchyPanel {
                         position: [0.0, 0.0, 0.0],
                         parent_node_id: parent_id,
                     });
+                    // 仅当拖放在 Hierarchy 内释放时才清除状态
+                    state.dragged_asset_uuid = None;
+                    state.dragged_asset_type = None;
+                    state.dragged_asset_name = None;
+                    state.drag_source = None;
+                    state.drop_target_hint = None;
                 }
-                // 清除拖拽状态
-                state.dragged_asset_uuid = None;
-                state.dragged_asset_type = None;
-                state.dragged_asset_name = None;
-                state.drag_source = None;
-                state.drop_target_hint = None;
+                // 鼠标在 Hierarchy 外释放 → 保留拖拽状态供 Viewport 消费
             }
         }
     }

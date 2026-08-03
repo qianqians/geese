@@ -242,8 +242,8 @@ impl GizmoInteraction {
                         }
                     };
 
-                    drag.current_world = drag.start_world + projected;
-                    drag.delta = projected;
+                    drag.delta += projected;
+                    drag.current_world = drag.start_world + drag.delta;
 
                     // 网格吸附
                     if self.snap_enabled {
@@ -315,9 +315,9 @@ impl GizmoInteraction {
         let handle_len = GizmoConfig::default().handle_length;
         let hit_r = GizmoConfig::default().hit_radius;
 
-        let x_tip = frame.raw_tip(frame.axis_x_screen, handle_len);
-        let y_tip = frame.raw_tip(frame.axis_y_screen, handle_len);
-        let z_tip = frame.raw_tip(frame.axis_z_screen, handle_len);
+        let x_tip = frame.tip(frame.axis_x_screen, handle_len);
+        let y_tip = frame.tip(frame.axis_y_screen, handle_len);
+        let z_tip = frame.tip(frame.axis_z_screen, handle_len);
 
         // 点到线段的距离
         let dist_to_seg = |p: (f32, f32), a: (f32, f32), b: (f32, f32)| -> f32 {

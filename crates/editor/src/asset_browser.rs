@@ -602,8 +602,10 @@ impl AssetBrowser {
                 for entry in filtered.iter() {
                     let label = format!("{}  {}", entry.asset_type.icon(), entry.name);
                     let response = ui.selectable_label(false, label);
+                    // Wrap with drag sense to enable drag-start detection
+                    let drag_response = ui.interact(response.rect, ui.next_auto_id(), egui::Sense::click_and_drag());
 
-                    if response.drag_started()
+                    if drag_response.drag_started()
                         && entry.asset_type.is_draggable()
                         && !entry.uuid.is_empty()
                     {
@@ -661,8 +663,8 @@ impl AssetBrowser {
                                         .size(28.0),
                                 );
                                 ui.add_space(2.0);
-                                let display_name = if entry.name.len() > 14 {
-                                    format!("{}\u{2026}", &entry.name[..13])
+                                let display_name = if entry.name.chars().count() > 14 {
+                                    format!("{}\u{2026}", entry.name.chars().take(13).collect::<String>())
                                 } else {
                                     entry.name.clone()
                                 };
@@ -680,7 +682,9 @@ impl AssetBrowser {
                             });
                         });
 
-                    if resp.response.drag_started()
+                    // Wrap with drag sense to enable drag-start detection
+                    let drag_response = ui.interact(resp.response.rect, ui.next_auto_id(), egui::Sense::click_and_drag());
+                    if drag_response.drag_started()
                         && entry.asset_type.is_draggable()
                         && !entry.uuid.is_empty()
                     {
