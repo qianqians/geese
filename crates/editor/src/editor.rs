@@ -470,10 +470,15 @@ impl Editor {
                     walk_gltf_node(&child, Some(eid.clone()), hierarchy, tx_cache, phys_cache, navmesh_cache, name_cache, mesh_entities, model_uuid.clone(), physics.clone(), navmesh.clone());
                 }
 
+                // 读取 GLTF 节点的实际 TRS（decomposed 返回 (translation, quat[x,y,z,w], scale)），
+                // 四元数转欧拉角度数（与 prefab_loader 的转换路径一致，保证序列化格式往返一致）
+                let (t, r, s) = node.transform().decomposed();
+                let quat = cgmath::Quaternion::new(r[3], r[0], r[1], r[2]);
+                let euler: cgmath::Euler<cgmath::Rad<f32>> = quat.into();
                 tx_cache.entry(eid.clone()).or_insert((
-                    [0.0, 0.0, 0.0],
-                    [0.0, 0.0, 0.0],
-                    [1.0, 1.0, 1.0],
+                    t,
+                    [euler.x.0.to_degrees(), euler.y.0.to_degrees(), euler.z.0.to_degrees()],
+                    s,
                 ));
                 if let Some(ref phys) = physics {
                     phys_cache.entry(eid.clone()).or_insert_with(|| phys.clone());
@@ -1386,6 +1391,9 @@ impl Editor {
             // 检查是否有嵌套 prefab_ref
             let prefab_ref_uuid = node_def.prefab_ref.clone();
 
+            // 提取有效物理组件（复用，避免二次调用）
+            let eff_physics = node_def.effective_physics();
+
             node_datas.push(SceneNodeData {
                 id: eid.clone(),
                 name: node_def.name.clone(),
@@ -1396,7 +1404,7 @@ impl Editor {
                 node_type: ntype,
                 asset_source_uuid: asset_uuid,
                 prefab_ref_uuid,
-                physics: node_def.effective_physics(),
+                physics: eff_physics.clone(),
                 navmesh: node_def.navmesh.clone(),
             });
 
@@ -1410,6 +1418,15 @@ impl Editor {
                 eid.clone(),
                 (node_pos, node_def.transform.rotation, node_def.transform.scale),
             );
+            // 同步填充 Inspector 读取的缓存（与 GLTF 导入路径对齐），
+            // 否则 Inspector 显示空白/无组件，且重存 prefab 时丢失物理/导航组件
+            self.state.name_cache.insert(eid.clone(), node_def.name.clone());
+            if let Some(phys) = eff_physics {
+                self.state.physics_component_cache.insert(eid.clone(), phys);
+            }
+            if let Some(ref nm) = node_def.navmesh {
+                self.state.navmesh_component_cache.insert(eid.clone(), nm.clone());
+            }
             if has_mesh {
                 self.state.mesh_entities.insert(eid);
             }
