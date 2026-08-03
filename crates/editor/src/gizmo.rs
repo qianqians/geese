@@ -130,6 +130,10 @@ impl GizmoInteraction {
 
     /// 处理快捷键。
     pub fn handle_shortcuts(&mut self, ui: &egui::Ui) {
+        // 文本输入聚焦时不响应快捷键（W/E/R/X/Y/Z/Esc 均与打字冲突）
+        if ui.ctx().wants_keyboard_input() {
+            return;
+        }
         ui.input(|input| {
             // 模式切换
             if input.key_pressed(egui::Key::W) && !input.modifiers.ctrl && !input.modifiers.shift {

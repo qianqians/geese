@@ -197,7 +197,9 @@ impl Editor {
                 let handles: Vec<physics_manager::BodyHandle> =
                     self.state.cc_body_handles.values().copied().collect();
                 let transforms = self.physics.get_body_transforms(&handles);
-                for (handle, (pos, rot)) in handles.iter().zip(transforms.iter()) {
+                for (handle, transform) in handles.iter().zip(transforms.iter()) {
+                    // 跳过已失效的句柄（物理世界重建后残留的过期句柄）
+                    let Some((pos, rot)) = transform else { continue };
                     if let Some(node_id) = self
                         .state
                         .cc_body_handles
@@ -1482,8 +1484,10 @@ impl Editor {
 
             // 创建本地物理世界并加载场景碰撞体
             self.physics = PhysicsManager::new([0.0, -9.81, 0.0]);
-            let manifest_path = format!("{}/.scene.json", self.state.project_path);
+            let manifest_path = format!("{}/assets/scene.scene.json", self.state.project_path);
             self.physics.load_scene(&manifest_path);
+            // 物理世界已重建，编辑模式的角色控制器句柄全部失效
+            self.state.cc_body_handles.clear();
 
             // 检测是否为 Python 游戏项目，启动子进程
             if let Some(game_config) = parse_game_config(&self.state.project_path) {

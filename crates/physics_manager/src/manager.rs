@@ -256,14 +256,22 @@ impl PhysicsManager {
     }
 
     /// Read world transforms for a list of body handles.
-    pub fn get_body_transforms(&self, handles: &[BodyHandle]) -> Vec<(Vec3, Quat)> {
+    ///
+    /// Returns one entry per input handle, in order. Invalid/expired handles
+    /// yield `None` at their corresponding index, so callers can safely zip
+    /// the result with the input slice without misalignment.
+    pub fn get_body_transforms(&self, handles: &[BodyHandle]) -> Vec<Option<(Vec3, Quat)>> {
         let mut transforms = Vec::with_capacity(handles.len());
         if let Some(scene) = self.world.scene(self.scene_id) {
             for &handle in handles {
-                if let Some(iso) = scene.body_isometry(handle) {
-                    transforms.push((iso.translation, iso.rotation));
-                }
+                transforms.push(
+                    scene
+                        .body_isometry(handle)
+                        .map(|iso| (iso.translation, iso.rotation)),
+                );
             }
+        } else {
+            transforms.resize_with(handles.len(), || None);
         }
         transforms
     }
