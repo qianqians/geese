@@ -30,8 +30,8 @@ def gen_entity_module(module_name, funcs, dependent_struct, dependent_enum, enum
             code_declaration += "    public on_" + func_name + ":" + func_type + "[] = []\n"
             code_constructor += "        this.entity.reg_hub_notify_callback(\"" + func_name + "\", this." + func_name + ")\n"
 
-            code_func += "    public " + func_name + "(hub_name:string, bin:Uint8Array):\n"
-            code_func += "        inArray = decode(bin) as any;\n"
+            code_func += "    public " + func_name + "(hub_name:string, bin:Uint8Array) {\n"
+            code_func += "        let inArray = decode(bin) as any;\n"
             count = 0 
             for _type, _name, _parameter in i[2]:
                 type_ = check_type(_type, dependent_struct, dependent_enum)
@@ -45,7 +45,7 @@ def gen_entity_module(module_name, funcs, dependent_struct, dependent_enum, enum
                     dependent_struct, 
                     dependent_enum)
                 count += 1
-            code_func += "        s = new engine.session(hub_name)\n"
+            code_func += "        let s = new engine.session(hub_name)\n"
             code_func += "        for (let fn of this.on_" + func_name + ") {\n"
             code_func += "            fn(s, "
             count = 0
