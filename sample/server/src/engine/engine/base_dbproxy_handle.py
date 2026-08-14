@@ -6,7 +6,7 @@ class base_dbproxy_handle(object):
         self.__random_new_dbproxy__()
 
     def __random_new_dbproxy__(self):
-        from app import app
+        from .app import app
         self.__dbproxy__ = app().dbproxy_mgr.get_dbproxy()
         
     def __get_dbproxy__(self):

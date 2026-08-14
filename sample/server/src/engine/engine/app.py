@@ -14,11 +14,12 @@ import asyncio
 
 from .redis import *
 
-from .pyhub import HubConnMsgPump, HubDBMsgPump
+from .pyhub import HubConnMsgPump, HubDBMsgPump, PhysicsWorld
 from .context import context
 from .dbproxy_msg_handle import dbproxy_msg_handle
 from .conn_msg_handle import conn_msg_handle
 from .dbproxy import *
+from .physics_sync import PhysicsSyncManager
 from .service import *
 from .save import *
 from .player import *
@@ -27,7 +28,6 @@ from .subentity import *
 from .receiver import *
 from .login import *
 from .get_guid import *
-from .dbproxy import *
 
 def __handle_exception__(exc_type, exc_value, tb):
     app().error("error Uncaught exception:{}, exc_value:{}, tb:{}".format(exc_type, exc_value, tb))
@@ -63,7 +63,12 @@ class app(object):
         self.__loop__ = None
         self.__conn_pump__ = None
         self.__db_pump__ = None
-        
+        self.__physics_tick__:Callable[[float], None] = None
+        self.physics_world:PhysicsWorld = None
+        self.scene_id:int = 0
+        self.scene_bodies:dict = {}
+        self.physics_sync:PhysicsSyncManager = None
+                
         self.is_idle = True
         self.config:dict = None
         self.redis_proxy:Redis = None
@@ -119,6 +124,63 @@ class app(object):
         if _service is not None:
             _service.on_migrate(_entity)
 
+    def register_physics_tick(self, tick:Callable[[float], None]):
+        """注入可选的物理推进钩子；signature: ``tick(dt: float) -> None``。
+
+        例：``app().register_physics_tick(lambda dt: scene.step(dt))``。
+        默认 dt 与主循环 tick 节奏一致（0.033s）。
+        """
+        self.__physics_tick__ = tick
+        return self
+
+    def build_scene_physics(self, manifest_path: str):
+        """
+        初始化物理世界并从 .scene.json 加载场景碰撞体。
+
+        调用时机：在 ``build()`` 之后、``run()`` 之前。
+        """
+        from .scene_physics import load_scene_collision_from_manifest
+        self.physics_sync = PhysicsSyncManager(self.ctx)
+
+        self.physics_world = PhysicsWorld()
+        self.scene_id = self.physics_world.create_scene((0.0, -9.81, 0.0))
+
+        self.scene_bodies = load_scene_collision_from_manifest(
+            self.physics_world,
+            self.scene_id,
+            manifest_path,
+        )
+
+        self.register_physics_tick(
+            lambda dt: self.physics_world.step(self.scene_id, dt)
+        )
+
+        self.info(
+            "scene physics loaded: {} bodies from '{}'",
+            len(self.scene_bodies),
+            manifest_path,
+        )
+        return self
+
+    def cast_ray(
+        self,
+        origin: tuple[float, float, float],
+        direction: tuple[float, float, float],
+        max_toi: float,
+        solid: bool = True,
+    ):
+        """射线检测工具（Thrift cast_ray_req → cast_ray_rsp）。"""
+        if self.physics_world is None:
+            return None
+        from .physics import _cast_ray
+        return _cast_ray(self.physics_world, self.scene_id, origin, direction, max_toi, solid)
+
+    def get_contacts(self):
+        """获取本帧碰撞事件（Thrift get_contacts_req → get_contacts_rsp）。"""
+        if self.physics_world is None:
+            return []
+        return self.physics_world.drain_collision_events(self.scene_id)
+
     def register(self, entity_type:str, creator:Callable[[str, str, dict]]):
         self.__entity_create_method__[entity_type] = creator
         return self
@@ -135,16 +197,20 @@ class app(object):
             value_lock = self.redis_proxy.get(key)
             if value_lock == value:
                 self.redis_proxy.delete(key)
-        except:
+        except Exception:
             self.ctx.log("error", "unlock distributed lock faild key:{} value:{}".format(key, value))
 
     async def distributed_lock(self, key:str, timeout:int) -> Callable[[], None] | None:
         try:
             value = str(uuid.uuid4())
+            deadline = time.monotonic() + max(timeout * 3, 5)
             while not self.redis_proxy.set(key, value, ex=timeout, nx=True):
-                asyncio.sleep(0.08)
+                if time.monotonic() > deadline:
+                    self.ctx.log("error", "distributed lock timeout key:{} timeout:{}".format(key, timeout))
+                    return None
+                await asyncio.sleep(0.08)
             return lambda : self.__unlock_distributed_lock__(key, value)
-        except:
+        except Exception:
             self.ctx.log("error", "distributed lock faild key:{}".format(key))
         return None
     
@@ -180,6 +246,7 @@ class app(object):
                 break
     
     def poll_db_msg_thread(self):
+        physics_last_time = time.monotonic()
         while self.__is_run__:
             start = time.time()
             try:
@@ -205,6 +272,16 @@ class app(object):
                 self.poll_conn_msg()
             except Exception as ex:
                 self.error("poll Exception:{0}", ex)
+            if self.__physics_tick__ is not None:
+                try:
+                    now = time.monotonic()
+                    dt = now - physics_last_time
+                    physics_last_time = now
+                    self.__physics_tick__(min(dt, 0.05))
+                    if self.physics_sync is not None:
+                        self.physics_sync.flush_after_step(self.physics_world, self.scene_id)
+                except Exception as ex:
+                    self.error("physics tick Exception:{0}", ex)
             tick = time.time() - start
             if tick < 0.033:
                 idle_count += 1

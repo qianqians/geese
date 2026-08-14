@@ -66,7 +66,7 @@ class dbproxy(object):
         return self.get_object_info(db, collection, query, 0, 100, "", False, callback, end_callback)
     
     def __get_object_one_callback_data__(data_list:list, db:str, collection:str, future:asyncio.Future):
-        from app import app
+        from .app import app
         app().trace(f"__get_object_one_callback_data__ data_list:{data_list}")
         if len(data_list) == 1:
             app().run_coroutine_async(__get_object_one_callback_set_future__(future, data_list[0]))
@@ -76,7 +76,7 @@ class dbproxy(object):
             app().run_coroutine_async(__get_object_one_callback_set_future_error__(future, DBExtensionError(db, collection, "db error more then one object")))
     
     async def get_object_one(self, db:str, collection:str, query:dict) -> dict:
-        from app import app
+        from .app import app
         future = asyncio.Future()
         self.get_object_info(db, collection, query, 0, 100, "", False, 
             lambda _list: dbproxy.__get_object_one_callback_data__(_list, db, collection, future),

@@ -28,7 +28,7 @@ class group(object):
         # 动态场景对象：重新同步给新客户端
         if self.dynamic_cache:
             from scene_physics import ENTITY_TYPE_DYNAMIC
-            from app import app
+            from .app import app
             for entity_id, msg_bytes in self.dynamic_cache.items():
                 app().ctx.hub_call_client_create_remote_entity(
                     gate_name,
@@ -47,7 +47,7 @@ class group(object):
             if cli_gate_name == gate_name and cli_conn_id == conn_id:
                 self.clients.remove(_c)
 
-                from app import app
+                from .app import app
                 for _e in self.entities.values():
                     app().ctx.hub_call_client_remove_remote_entity(cli_gate_name, _e.entity_id, cli_conn_id)
                 for _p in self.players.values():
@@ -80,7 +80,7 @@ class group(object):
 
         for _conn in gate_clients.items():
             gate_name, list_conn_id = _conn
-            from app import app
+            from .app import app
             app().ctx.hub_call_client_delete_remote_entity(gate_name, _e.entity_id)
 
         del self.entities[_e.entity_id]
@@ -112,7 +112,7 @@ class group(object):
 
         for _conn in gate_clients.items():
             gate_name, list_conn_id = _conn
-            from app import app
+            from .app import app
             app().ctx.hub_call_client_delete_remote_entity(gate_name, _p.entity_id)
 
         del self.players[_p.entity_id]

@@ -27,7 +27,7 @@ class player(ABC, base_entity):
         self.conn_hub_server:list[str] = []
         self.conn_client_gate:list[str] = []
         
-        from app import app
+        from .app import app
 
         self.is_dynamic = is_dynamic
         if is_dynamic:
@@ -52,14 +52,14 @@ class player(ABC, base_entity):
         pass
     
     def on_migrate_to_other_hub(self):
-        from app import app
+        from .app import app
         app().entity_mgr.del_entity(self.entity_id)
         app().save_mgr.del_save_entity(self.entity_id)
     
     def try_migrate_entity(self):
         if not self.is_dynamic:
             return
-        from app import app
+        from .app import app
         from threading import Timer
         if not app().is_idle:
             import random
@@ -70,13 +70,13 @@ class player(ABC, base_entity):
                 self.__migrate_timer__.start()
 
     async def start_migrate_entity(self):
-        from app import app
+        from .app import app
         migrate_hub = await app().ctx.entry_hub_service(self.service_name)
         await self.start_migrate_entity_initiative(migrate_hub)
             
     async def start_migrate_entity_initiative(self, migrate_hub:str):
         if migrate_hub != "":
-            from app import app
+            from .app import app
             app().ctx.hub_call_hub_migrate_entity(migrate_hub, self.service_name, self.entity_type, self.entity_id, "", "", self.conn_client_gate, self.conn_hub_server, msgpack.dumps(self.full_info()))
 
             for hub in self.conn_hub_server:
@@ -88,7 +88,7 @@ class player(ABC, base_entity):
             self.__migrate_timer__.cancel()
             
     async def migrate_entity_complete(self):
-        from app import app
+        from .app import app
         for hub in self.conn_hub_server:
             app().ctx.hub_call_hub_migrate_entity_complete(hub, self.entity_id)
         for gate in self.conn_client_gate:
@@ -98,19 +98,19 @@ class player(ABC, base_entity):
         self.on_migrate_to_other_hub()
 
     def create_main_remote_entity(self):
-        from app import app
+        from .app import app
         app().ctx.hub_call_client_create_remote_entity(self.client_gate_name, self.is_migrate, [], self.client_conn_id, self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))
     
     def create_remote_entity(self, gate_name:str, conn_id:list[str]):
         if gate_name not in self.conn_client_gate:
             self.conn_client_gate.append(gate_name)
-        from app import app
+        from .app import app
         app().ctx.hub_call_client_create_remote_entity(gate_name, self.is_migrate, conn_id, "", self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))
     
     def create_remote_hub_entity(self, hub_name:str):
         if hub_name not in self.conn_hub_server:
             self.conn_hub_server.append(hub_name)
-        from app import app
+        from .app import app
         app().ctx.create_service_entity(self.is_migrate, hub_name, self.service_name, self.entity_id, self.entity_type, msgpack.dumps(self.hub_info()))
 
     def handle_hub_request(self, source_hub:str, method:str, msg_cb_id:int, argvs:bytes):
@@ -134,15 +134,15 @@ class player(ABC, base_entity):
         self.hub_notify_callback[method] = callback
 
     def call_hub_response(self, hub_name:str, msg_cb_id:int, argvs:bytes):
-        from app import app
+        from .app import app
         app().ctx.hub_call_hub_rsp(hub_name, self.entity_id, msg_cb_id, argvs)
 
     def call_hub_response_error(self, hub_name:str, msg_cb_id:int, argvs:bytes):
-        from app import app
+        from .app import app
         app().ctx.hub_call_hub_err(hub_name, self.entity_id, msg_cb_id, argvs)
 
     def call_hub_notify(self, method:str, argvs:bytes):
-        from app import app
+        from .app import app
         for hub_name in self.conn_hub_server:
             app().ctx.hub_call_hub_ntf(hub_name, self.entity_id, method, argvs)
 
@@ -189,7 +189,7 @@ class player(ABC, base_entity):
         self.client_notify_callback[method] = callback
 
     def call_client_request(self, method:str, argvs:bytes) -> int:
-        from app import app
+        from .app import app
         msg_cb_id = self.request_msg_cb_id
         self.request_msg_cb_id += 1
         app().ctx.hub_call_client_rpc(self.client_gate_name, self.entity_id, msg_cb_id, method, argvs)
@@ -199,19 +199,19 @@ class player(ABC, base_entity):
         self.client_callback[msg_cb_id] = rsp
 
     def call_client_response(self, gate_name:str, conn_id:str, msg_cb_id:int, argvs:bytes):
-        from app import app
+        from .app import app
         app().ctx.hub_call_client_rsp(gate_name, conn_id, self.entity_id, msg_cb_id, argvs)
 
     def call_client_response_error(self, gate_name:str, conn_id:str, msg_cb_id:int, argvs:bytes):
-        from app import app
+        from .app import app
         app().ctx.hub_call_client_err(gate_name, conn_id, self.entity_id, msg_cb_id, argvs)
 
     def call_client_main_notify(self, method:str, argvs:bytes):
-        from app import app
+        from .app import app
         app().ctx.hub_call_client_ntf(self.client_gate_name, self.client_conn_id, self.entity_id, method, argvs)
 
     def call_client_mutilcast(self, method:str, argvs:bytes):
-        from app import app
+        from .app import app
         for gate_name in self.conn_client_gate:
             app().ctx.hub_call_client_ntf(gate_name, None, self.entity_id, method, argvs)
 
@@ -261,7 +261,7 @@ class player_manager(object):
             
         self.conn_id_players[_player.client_conn_id] = _p_list
         
-        from app import app
+        from .app import app
         if is_reconnect:
             app().ctx.hub_call_client_refresh_entity(gate_name, _player.is_migrate, conn_id, is_main, _player.entity_id, _player.entity_type, msgpack.dumps(_player.client_info()))
         else:

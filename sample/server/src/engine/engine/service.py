@@ -32,14 +32,14 @@ class service_manager(object):
     def reg_service(self, _service:service):
         self.services[_service.service_name] = _service
         
-        from app import app
+        from .app import app
         app().register_service(_service.service_name)
 
     def get_service(self, service_name:str) -> service:
         return self.services[service_name]
     
 async def query_service(service_name:str):
-    from app import app
+    from .app import app
     hub_name = await app().ctx.entry_hub_service(service_name)
     if app().ctx.hub_name() == hub_name:
         _service = app().service_mgr.get_service(service_name)
@@ -48,7 +48,7 @@ async def query_service(service_name:str):
         app().ctx.query_service(hub_name, service_name)
         
 async def forward_client_query_service(service_name:str, gate_name:str, gate_host:str, conn_id:str, argvs:dict):
-    from app import app
+    from .app import app
     hub_name = await app().ctx.entry_hub_service(service_name)
     if app().ctx.hub_name() == hub_name:
         await app().ctx.entry_gate_service(gate_name, gate_host)
@@ -58,7 +58,7 @@ async def forward_client_query_service(service_name:str, gate_name:str, gate_hos
         app().ctx.forward_client_request_service(hub_name, service_name, gate_name, gate_host, conn_id, dumps(argvs))
 
 async def forward_client_query_service_ext(service_name:str, info:list[(str, str, str, dict)]):
-    from app import app
+    from .app import app
     hub_name = await app().ctx.entry_hub_service(service_name)
     if app().ctx.hub_name() == hub_name:
         _service = app().service_mgr.get_service(service_name)

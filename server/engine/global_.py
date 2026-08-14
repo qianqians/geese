@@ -1,5 +1,5 @@
 # -*- coding: UTF-8 -*-
-from app import singleton, app
+from .app import singleton, app
 
 @singleton
 class global_entity(object):

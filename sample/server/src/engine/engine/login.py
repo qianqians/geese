@@ -22,7 +22,7 @@ class login_event_handle(ABC, base_dbproxy_handle):
         pass
     
     def __replace_client__(self, old_gate_name:str, old_conn_id:str, new_gate_name:str, new_conn_id:str, sdk_uuid:str, argvs:dict, is_replace:bool, prompt_info:str):
-        from app import app
+        from .app import app
         app().ctx.hub_call_replace_client(old_gate_name, old_conn_id, new_gate_name, new_conn_id, sdk_uuid, argvs, is_replace, prompt_info)
 
 class login_service(object):

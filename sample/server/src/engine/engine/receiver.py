@@ -9,7 +9,7 @@ class receiver(base_entity):
         self.hub_notify_callback:dict[str, Callable[[str, bytes],None]] = {}
         self.source_hub_name = source_hub_name
 
-        from app import app
+        from .app import app
         app().receiver_mgr.add_receiver(self)
 
     def handle_hub_notify(self, source_hub:str, method:str, argvs:bytes):

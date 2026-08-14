@@ -22,13 +22,13 @@ class save(ABC, base_dbproxy_handle):
         self.__is_dirty__ = False
         self.__save_timer__ = None
 
-        from app import app
+        from .app import app
         app().save_mgr.add_save_entity(self)
 
     def set_dirty(self):
         self.__is_dirty__ = True
         if self.__save_timer__ == None:
-            from app import app
+            from .app import app
             self.__save_timer__ = Timer(app().ctx.save_time_interval(), self.save_entity)
             self.__save_timer__.start()
 
@@ -74,7 +74,7 @@ class save(ABC, base_dbproxy_handle):
                         _new_obj.__creator_entity_callback__(result)
                 callback(data)
             except Exception as err:
-                from app import app
+                from .app import app
                 app().error("save load_or_create_entity exception dbproxy:{} __db__:{} __collection__:{}".format(
                     _new_obj.__dbproxy__, _new_obj.__db__, _new_obj.__collection__))
                 _new_obj.__random_new_dbproxy__()

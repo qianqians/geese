@@ -19,7 +19,7 @@ class subentity(base_entity):
         self.is_migrate = is_migrate
         self.cache_msg:list[Callable[[str]]] = []
 
-        from app import app
+        from .app import app
         app().subentity_mgr.add_subentity(self)
 
     def del_callback(self, msg_cb_id:int) -> bool:
@@ -55,7 +55,7 @@ class subentity(base_entity):
         self.hub_notify_callback[method] = callback
 
     def call_hub_request(self, method:str, argvs:bytes) -> int:
-        from app import app
+        from .app import app
         msg_cb_id = self.request_msg_cb_id
         self.request_msg_cb_id += 1
         if not self.is_migrate:
@@ -68,7 +68,7 @@ class subentity(base_entity):
         self.hub_callback[msg_cb_id] = rsp
 
     def call_hub_notify(self, method:str, argvs:bytes):
-        from app import app
+        from .app import app
         if not self.is_migrate:
             app().ctx.hub_call_hub_ntf(self.source_hub_name, self.entity_id, method, argvs)
         else:
