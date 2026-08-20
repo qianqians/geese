@@ -2,13 +2,15 @@
 //!
 //! WASD 驱动角色在摄像机相对方向上移动，Space 跳跃。
 //! 移动方向始终相对于摄像机朝向。
+//!
+//! 移动速度 / 跳跃冲量由项目配置 `config/project.toml` 注入。
 
 use cgmath::{Point3, Vector3, InnerSpace};
 use input::{InputState, KeyCode};
 
 /// 第三人称角色控制器。
 pub struct ThirdPersonPlayer {
-    /// 角色底部位置（胶囊体中心）
+    /// 角色脚底位置
     pub position: Point3<f32>,
     /// 当前速度
     pub velocity: Vector3<f32>,
@@ -18,6 +20,8 @@ pub struct ThirdPersonPlayer {
     pub move_speed: f32,
     /// 跳跃冲量
     pub jump_impulse: f32,
+    /// 地面高度（角色脚底静止时所在 Y 值，与模板场景地面 y=0 一致）
+    pub ground_y: f32,
     /// 是否在地面上
     pub is_grounded: bool,
     /// 摩擦系数
@@ -27,13 +31,18 @@ pub struct ThirdPersonPlayer {
 }
 
 impl ThirdPersonPlayer {
+    /// 使用项目配置注入的参数创建角色（由 Geese Launcher 生成）。
     pub fn new(position: Point3<f32>) -> Self {
+        let move_speed: f32 = {{player_move_speed}};
+        let jump_impulse: f32 = {{player_jump_impulse}};
+
         Self {
             position,
             velocity: Vector3::new(0.0, 0.0, 0.0),
             yaw: 0.0,
-            move_speed: 5.0,
-            jump_impulse: 8.0,
+            move_speed,
+            jump_impulse,
+            ground_y: 0.0,
             is_grounded: false,
             friction: 10.0,
             acceleration: 50.0,
@@ -88,9 +97,9 @@ impl ThirdPersonPlayer {
         self.position.y += self.velocity.y * dt;
         self.position.z += self.velocity.z * dt;
 
-        // 地面检测
-        if self.position.y <= 1.0 {
-            self.position.y = 1.0;
+        // 地面检测：脚底静止在地面上
+        if self.position.y <= self.ground_y {
+            self.position.y = self.ground_y;
             self.velocity.y = 0.0;
             self.is_grounded = true;
         }

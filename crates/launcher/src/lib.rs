@@ -603,12 +603,33 @@ impl Launcher {
                     .map_err(|e| format!("创建目录失败: {}", e))?;
             }
 
-            // 替换变量的辅助函数
+            // 替换变量的辅助函数：将模板中的 `{{variable}}` 占位符替换为配置值
+            let cam = &template.camera_config;
+            let player = &template.player_config;
+            // 由 follow_offset（笛卡尔偏移）派生轨道摄像机的球坐标参数
+            let (ox, oy, oz) = cam.follow_offset;
+            let cam_distance = (ox * ox + oy * oy + oz * oz).sqrt();
+            let cam_pitch = if cam_distance > 0.0 {
+                (oy / cam_distance).asin()
+            } else {
+                0.4
+            };
+            let cam_yaw = ox.atan2(oz);
+
             let replace_vars = |content: &str| -> String {
                 content
                     .replace("{{project_name}}", name)
-                    .replace("{{camera_fov}}", &template.camera_config.fov.to_string())
-                    .replace("{{player_height}}", &template.player_config.capsule_height.to_string())
+                    .replace("{{camera_fov}}", &cam.fov.to_string())
+                    .replace("{{camera_z_near}}", &cam.z_near.to_string())
+                    .replace("{{camera_z_far}}", &cam.z_far.to_string())
+                    .replace("{{camera_eye_height}}", &cam.eye_height.to_string())
+                    .replace("{{camera_follow_smooth}}", &cam.follow_smooth.to_string())
+                    .replace("{{camera_distance}}", &cam_distance.to_string())
+                    .replace("{{camera_pitch}}", &cam_pitch.to_string())
+                    .replace("{{camera_yaw}}", &cam_yaw.to_string())
+                    .replace("{{player_move_speed}}", &player.move_speed.to_string())
+                    .replace("{{player_jump_impulse}}", &player.jump_impulse.to_string())
+                    .replace("{{player_mouse_sensitivity}}", &player.mouse_sensitivity.to_string())
             };
 
             // 生成 Cargo.toml（仅 Rust 模板）
@@ -925,6 +946,38 @@ mod tests {
         // 验证暂存目录不存在
         let staging = tmp.join(".test_rollback.tmp");
         assert!(!staging.exists(), "Staging directory should not exist after rollback");
+    }
+
+    #[test]
+    fn third_person_generated_files_have_config_injected() {
+        let launcher = Launcher::new();
+        let template = templates::third_person_template();
+
+        // 生成到唯一临时目录
+        let base = std::env::temp_dir().join(format!("geese_tp_gen_{}", std::process::id()));
+        let full = base.join("MyThirdPerson");
+        let _ = std::fs::remove_dir_all(&base);
+
+        let result = launcher.generate_project(&template, "MyThirdPerson", full.to_str().unwrap());
+        assert!(result.is_ok(), "生成失败: {:?}", result.err());
+
+        let camera = std::fs::read_to_string(full.join("src/camera.rs")).unwrap();
+        let player = std::fs::read_to_string(full.join("src/player.rs")).unwrap();
+
+        // 无残留占位符（防止新增占位符却未加入 replace_vars）
+        assert!(!camera.contains("{{"), "camera.rs 残留未替换占位符:\n{camera}");
+        assert!(!player.contains("{{"), "player.rs 残留未替换占位符:\n{player}");
+
+        // 配置值已注入生成代码
+        assert!(camera.contains("let fov: f32 = 60;"), "fov 未注入:\n{camera}");
+        assert!(camera.contains("let z_far: f32 = 1000;"), "z_far 未注入:\n{camera}");
+        assert!(camera.contains("let distance: f32 = 6.5;"), "distance 未由 follow_offset 派生:\n{camera}");
+        assert!(camera.contains("let target_height: f32 = 1.7;"), "target_height 未注入:\n{camera}");
+        assert!(camera.contains("let orbit_sensitivity: f32 = 0.003;"), "orbit_sensitivity 未注入:\n{camera}");
+        assert!(player.contains("let move_speed: f32 = 5;"), "move_speed 未注入:\n{player}");
+        assert!(player.contains("let jump_impulse: f32 = 8;"), "jump_impulse 未注入:\n{player}");
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
