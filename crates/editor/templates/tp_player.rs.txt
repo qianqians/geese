@@ -40,7 +40,7 @@ impl ThirdPersonPlayer {
     }
 
     /// 处理输入并在世界坐标系中更新速度。
-    pub fn handle_input(&mut self, input: &InputState) {
+    pub fn handle_input(&mut self, input: &InputState, dt: f32) {
         let mut move_dir = Vector3::new(0.0, 0.0, 0.0);
 
         if input.is_key_down(KeyCode::W) {
@@ -63,10 +63,10 @@ impl ThirdPersonPlayer {
         }
 
         let target_velocity_xz = move_dir * self.move_speed;
-        let accel = self.acceleration;
+        let t = (self.acceleration * dt).min(1.0);
 
-        self.velocity.x += (target_velocity_xz.x - self.velocity.x) * accel.min(1.0);
-        self.velocity.z += (target_velocity_xz.z - self.velocity.z) * accel.min(1.0);
+        self.velocity.x += (target_velocity_xz.x - self.velocity.x) * t;
+        self.velocity.z += (target_velocity_xz.z - self.velocity.z) * t;
 
         // 跳跃
         if input.is_key_down(KeyCode::Space) && self.is_grounded {

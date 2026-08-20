@@ -720,8 +720,8 @@ fn scene_json_content(scene_name: String, objects: &[SceneObjectDesc]) -> String
                 let mut light = HashMap::new();
                 let dir = obj.rotation_euler.unwrap_or((-0.6, 0.4, 0.0));
                 // 欧拉角转为方向向量（简化：yaw 影响 XZ，pitch 影响 Y）
-                let (yaw_sin, yaw_cos) = (dir.1.to_radians().sin(), dir.1.to_radians().cos());
-                let (pitch_sin, pitch_cos) = (dir.0.to_radians().sin(), dir.0.to_radians().cos());
+                let (yaw_sin, yaw_cos) = (dir.1.sin(), dir.1.cos());
+                let (pitch_sin, pitch_cos) = (dir.0.sin(), dir.0.cos());
                 light.insert(
                     "direction".into(),
                     serde_json::json!([-yaw_sin * pitch_cos, -pitch_sin, -yaw_cos * pitch_cos]),
