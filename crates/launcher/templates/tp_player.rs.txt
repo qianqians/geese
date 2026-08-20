@@ -95,11 +95,11 @@ impl ThirdPersonPlayer {
             self.is_grounded = true;
         }
 
-        // 摩擦力
+        // 摩擦力（帧率无关的指数衰减）
         if self.is_grounded {
-            let friction_force = self.friction * dt;
-            self.velocity.x *= (1.0 - friction_force).max(0.0);
-            self.velocity.z *= (1.0 - friction_force).max(0.0);
+            let decay = (-self.friction * dt).exp();
+            self.velocity.x *= decay;
+            self.velocity.z *= decay;
         }
     }
 }

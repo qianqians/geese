@@ -73,13 +73,15 @@ impl ThirdPersonCamera {
 
     /// 更新摄像机，平滑跟随角色。
     /// `player_pos`: 角色位置（底部）。
-    pub fn update(&mut self, player_pos: Point3<f32>) {
+    pub fn update(&mut self, player_pos: Point3<f32>, dt: f32) {
         self.target_position = self.compute_ideal_position(player_pos);
 
+        // 帧率无关的指数平滑：follow_smooth 视为 60 FPS 基准下的每帧插值系数
         let smooth = self.follow_smooth.clamp(0.0, 1.0);
-        self.position.x += (self.target_position.x - self.position.x) * smooth;
-        self.position.y += (self.target_position.y - self.position.y) * smooth;
-        self.position.z += (self.target_position.z - self.position.z) * smooth;
+        let t = 1.0 - (1.0 - smooth).powf(dt * 60.0);
+        self.position.x += (self.target_position.x - self.position.x) * t;
+        self.position.y += (self.target_position.y - self.position.y) * t;
+        self.position.z += (self.target_position.z - self.position.z) * t;
     }
 
     /// 处理鼠标拖拽旋转摄像机。
@@ -88,6 +90,9 @@ impl ThirdPersonCamera {
         self.yaw -= mouse_delta.0 * self.orbit_sensitivity;
         self.pitch += mouse_delta.1 * self.orbit_sensitivity;
         self.pitch = self.pitch.clamp(self.min_pitch, self.max_pitch);
+        // 规范化 yaw 到 [-π, π]，避免长时间旋转后的浮点精度损失
+        self.yaw = (self.yaw + std::f32::consts::PI).rem_euclid(2.0 * std::f32::consts::PI)
+            - std::f32::consts::PI;
     }
 
     /// 处理滚轮缩放。
