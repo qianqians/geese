@@ -31,7 +31,7 @@ def genstructprotocol(struct_name, elems, dependent_struct, dependent_enum):
             code += "    _protocol[\"" + value + "\"] = " + key + "_to_protcol(_struct." + value + ")\n"
         elif type_ == TypeType.List:
             code += "    if (_struct." + value + ") {\n"
-            code += "        _array_" + value + " = []\n"
+            code += "        let _array_" + value + " = []\n"
             code += "        for (let v_ of _struct." + value + ") {\n"
             array_type = key[0:-2]
             code += gen_struct_container_protocol(3, "_array_" + value, "list", array_type, "", "v_", dependent_struct, dependent_enum)
