@@ -1,8 +1,7 @@
 
 struct msg {
 	1:string method,
-	2:binary argvs,
-	3: optional i32 protocol_version
+	2:binary argvs
 }
 
 struct rpc_rsp {
