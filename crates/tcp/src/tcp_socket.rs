@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 use async_trait::async_trait;
 use tracing::{trace, error};
 
-use net::{NetReaderCallback, NetWriter, NetReader, NetPack};
+use net::{NetReaderCallback, NetReaderCloseCallback, NetWriter, NetReader, NetPack, notify_close};
 
 pub struct TcpReader {
     rd: ReadHalf<TcpStream>
@@ -23,7 +23,7 @@ impl TcpReader {
 }
 
 impl NetReader for TcpReader {
-    fn start(self, f: Arc<Mutex<Box<dyn NetReaderCallback + Send + 'static>>>) -> JoinHandle<()>
+    fn start(self, f: Arc<Mutex<Box<dyn NetReaderCallback + Send + 'static>>>, close: Option<Arc<Mutex<Box<dyn NetReaderCloseCallback + Send + 'static>>>>) -> JoinHandle<()>
     {
         trace!("TcpReader NetReader start!");
 
@@ -37,18 +37,30 @@ impl NetReader for TcpReader {
                 match _p.rd.read(&mut buf).await {
                     Ok(0) => {
                         error!("network recv 0!");
+                        notify_close(&close).await;
                         return;
                     },
                     Ok(n) => {
                         net_pack.input(&buf[..n]);
-                        while let Some(data) = net_pack.try_get_pack() {
-                            let mut f_handle = f_clone.as_ref().lock().await;
-                            f_handle.cb(data).await;
-                            trace!("process data end!");
+                        loop {
+                            match net_pack.try_get_pack() {
+                                Ok(Some(data)) => {
+                                    let mut f_handle = f_clone.as_ref().lock().await;
+                                    f_handle.cb(data).await;
+                                    trace!("process data end!");
+                                },
+                                Ok(None) => break,
+                                Err(err) => {
+                                    error!("network pack error:{:?}!", err);
+                                    notify_close(&close).await;
+                                    return;
+                                }
+                            }
                         }
                     },
                     Err(err) => {
                         error!("network err:{}!", err);
+                        notify_close(&close).await;
                         return;
                     }
                 }

@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use thrift::protocol::{TCompactOutputProtocol, TSerializable};
 use thrift::transport::{TIoChannel, TBufferChannel};
 
-use net::{NetReaderCallback, NetReader, NetWriter};
+use net::{NetReaderCallback, NetReaderCloseCallback, NetReader, NetWriter};
 use tcp::tcp_socket::{TcpReader, TcpWriter};
 use tcp::tcp_connect::TcpConnect;
 use tcp::tcp_server::TcpListenCallback;
@@ -21,7 +21,7 @@ use tracing::{trace, info, error};
 
 use crate::conn_manager::ConnManager;
 use crate::client_msg_handle::GateClientMsgHandle;
-use crate::hub_proxy_manager::{HubProxy, HubReaderCallback};
+use crate::hub_proxy_manager::{HubProxy, HubReaderCallback, HubProxyCloseCallback};
 
 use proto::common::RegServer;
 
@@ -124,8 +124,10 @@ pub async fn entry_hub_service(_conn_mgr: Arc<Mutex<ConnManager>>, _service_name
                 let _conn_mgr_clone = _conn_mgr.clone();
                 let _hubproxy = Arc::new(Mutex::new(HubProxy::new(
                     _wr_arc, _conn_mgr_clone)));
+                let _close_cb: Arc<Mutex<Box<dyn NetReaderCloseCallback + Send + 'static>>> =
+                    Arc::new(Mutex::new(Box::new(HubProxyCloseCallback::new(_hubproxy.clone()))));
                 let _ = rd.start(Arc::new(Mutex::new(Box::new(
-                    HubReaderCallback::new(_hubproxy.clone(), _conn_mgr_handle.get_hub_msg_handle())))));
+                    HubReaderCallback::new(_hubproxy.clone(), _conn_mgr_handle.get_hub_msg_handle())))), Some(_close_cb));
                 _conn_mgr_handle.add_hub_proxy(service.id.to_string(), _hubproxy.clone()).await;
                 let _h_clone = _hubproxy.clone();
                 let mut _h = _hubproxy.as_ref().lock().await;
@@ -263,6 +265,28 @@ impl ClientReaderCallback {
     }
 }
 
+pub struct ClientProxyCloseCallback {
+    conn_id: String,
+    conn_mgr: Arc<Mutex<ConnManager>>,
+}
+
+impl ClientProxyCloseCallback {
+    pub fn new(_conn_id: String, _conn_mgr: Arc<Mutex<ConnManager>>) -> ClientProxyCloseCallback {
+        ClientProxyCloseCallback {
+            conn_id: _conn_id,
+            conn_mgr: _conn_mgr,
+        }
+    }
+}
+
+#[async_trait]
+impl NetReaderCloseCallback for ClientProxyCloseCallback {
+    async fn on_close(&mut self) {
+        let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
+        _conn_mgr.close_client(&self.conn_id).await;
+    }
+}
+
 pub struct TcpClientProxyManager {
     conn_mgr: Arc<Mutex<ConnManager>>
 }
@@ -293,7 +317,9 @@ impl TcpListenCallback for TcpClientProxyManager {
             trace!("tcp listen _conn_mgr lock end!");
         }
 
-        let join = rd.start(Arc::new(Mutex::new(Box::new(ClientReaderCallback::new(_clientproxy_clone.clone(), _client_msg_handle)))));
+        let _close_cb: Arc<Mutex<Box<dyn NetReaderCloseCallback + Send + 'static>>> =
+            Arc::new(Mutex::new(Box::new(ClientProxyCloseCallback::new(_conn_id.clone(), self.conn_mgr.clone()))));
+        let join = rd.start(Arc::new(Mutex::new(Box::new(ClientReaderCallback::new(_clientproxy_clone.clone(), _client_msg_handle)))), Some(_close_cb));
         {
             trace!("TcpListenCallback cb _clientproxy lock begin!");
             let mut _client_tmp = _clientproxy.as_ref().lock().await;
@@ -342,7 +368,9 @@ impl WSSListenCallback for WSSClientProxyManager {
             trace!("wss listen _conn_mgr lock end!");
         }
         
-        let join = rd.start(Arc::new(Mutex::new(Box::new(ClientReaderCallback::new(_clientproxy_clone.clone(), _client_msg_handle)))));
+        let _close_cb: Arc<Mutex<Box<dyn NetReaderCloseCallback + Send + 'static>>> =
+            Arc::new(Mutex::new(Box::new(ClientProxyCloseCallback::new(_conn_id.clone(), self.conn_mgr.clone()))));
+        let join = rd.start(Arc::new(Mutex::new(Box::new(ClientReaderCallback::new(_clientproxy_clone.clone(), _client_msg_handle)))), Some(_close_cb));
         {
             trace!("WSSListenCallback cb _clientproxy lock begin!");
             let mut _client_tmp = _clientproxy.as_ref().lock().await;

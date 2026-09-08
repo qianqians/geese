@@ -9,7 +9,7 @@ use async_trait::async_trait;
 
 use proto::hub::HubService;
 
-use net::{NetReaderCallback, NetReader, NetWriter};
+use net::{NetReaderCallback, NetReaderCloseCallback, NetReader, NetWriter};
 use tcp::tcp_socket::{TcpReader, TcpWriter};
 use tcp::tcp_server::TcpListenCallback;
 
@@ -96,6 +96,37 @@ impl HubReaderCallback {
 
 }
 
+pub struct HubProxyCloseCallback {
+    hubproxy: Arc<Mutex<HubProxy>>,
+}
+
+impl HubProxyCloseCallback {
+    pub fn new(_hubproxy: Arc<Mutex<HubProxy>>) -> HubProxyCloseCallback {
+        HubProxyCloseCallback {
+            hubproxy: _hubproxy
+        }
+    }
+}
+
+#[async_trait]
+impl NetReaderCloseCallback for HubProxyCloseCallback {
+    async fn on_close(&mut self) {
+        let conn_mgr: Arc<Mutex<ConnManager>>;
+        let name: Option<String>;
+        {
+            let mut _hub = self.hubproxy.as_ref().lock().await;
+            conn_mgr = _hub.conn_mgr.clone();
+            name = _hub.name.clone();
+            let mut _wr = _hub.wr.as_ref().lock().await;
+            _wr.close().await;
+        }
+        if let Some(n) = name {
+            let mut _conn_mgr = conn_mgr.as_ref().lock().await;
+            _conn_mgr.delete_hub_proxy(&n);
+        }
+    }
+}
+
 pub struct HubProxyManager {
     conn_mgr: Arc<Mutex<ConnManager>>,
 }
@@ -111,7 +142,9 @@ impl TcpListenCallback for HubProxyManager {
         let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
         let _hub_msg_handle = _conn_mgr.get_hub_msg_handle();
 
-        let _ = rd.start(Arc::new(Mutex::new(Box::new(HubReaderCallback::new(_hubproxy.clone(), _hub_msg_handle)))));
+        let _close_cb: Arc<Mutex<Box<dyn NetReaderCloseCallback + Send + 'static>>> =
+            Arc::new(Mutex::new(Box::new(HubProxyCloseCallback::new(_hubproxy.clone()))));
+        let _ = rd.start(Arc::new(Mutex::new(Box::new(HubReaderCallback::new(_hubproxy.clone(), _hub_msg_handle)))), Some(_close_cb));
     }
 }
 

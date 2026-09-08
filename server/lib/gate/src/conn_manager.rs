@@ -186,8 +186,8 @@ impl ConnManager {
                 _client_conn_id = _client.conn_id.clone();
             }
             
-            info!("ConnManager poll delete_client_proxy!");
-            self.delete_client_proxy(&_client_conn_id);
+            info!("ConnManager poll close_client!");
+            self.close_client(&_client_conn_id).await;
             if let Some(vec_hub) = self.entities.delete_client(&_client_conn_id) {
                 let mut invaild_hubs: Vec<String> = Vec::new();
                 for hub_name in vec_hub.iter() {

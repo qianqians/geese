@@ -14,7 +14,7 @@
 
 use std::sync::Arc;
 
-use net::{NetReader, NetReaderCallback, NetWriter};
+use net::{NetReader, NetReaderCallback, NetReaderCloseCallback, NetWriter};
 use serde::{Deserialize, Serialize};
 use tcp::tcp_connect::TcpConnect;
 use tokio::sync::{Mutex, oneshot};
@@ -153,6 +153,24 @@ impl NetReaderCallback for PhysicsReaderCallback {
     }
 }
 
+struct PhysicsCloseCallback {
+    writer: Arc<Mutex<Box<dyn NetWriter + Send>>>,
+}
+
+impl PhysicsCloseCallback {
+    fn new(writer: Arc<Mutex<Box<dyn NetWriter + Send>>>) -> Self {
+        Self { writer }
+    }
+}
+
+#[async_trait::async_trait]
+impl NetReaderCloseCallback for PhysicsCloseCallback {
+    async fn on_close(&mut self) {
+        let mut w = self.writer.lock().await;
+        w.close().await;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // PhysicsClient
 // ---------------------------------------------------------------------------
@@ -162,7 +180,7 @@ impl NetReaderCallback for PhysicsReaderCallback {
 /// 封装 `tcp::TcpConnect` + `net::NetWriter/NetReader`，与 Python
 /// `physics_editor_server.py` 通信（RPC 数组协议）。
 pub struct PhysicsClient {
-    writer: Mutex<Box<dyn NetWriter + Send>>,
+    writer: Arc<Mutex<Box<dyn NetWriter + Send>>>,
     response_tx: Arc<Mutex<Option<oneshot::Sender<Vec<u8>>>>>,
     reader_join: tokio::task::JoinHandle<()>,
 }
@@ -174,15 +192,20 @@ impl PhysicsClient {
             .await
             .map_err(|e| format!("TcpConnect failed: {e}"))?;
 
+        let writer: Arc<Mutex<Box<dyn NetWriter + Send>>> = Arc::new(Mutex::new(Box::new(writer)));
+
         let callback = PhysicsReaderCallback::new();
         let response_tx = callback.response_tx.clone();
         let cb: Arc<Mutex<Box<dyn NetReaderCallback + Send + 'static>>> =
             Arc::new(Mutex::new(Box::new(callback)));
 
-        let reader_join = reader.start(cb);
+        let close_cb: Arc<Mutex<Box<dyn NetReaderCloseCallback + Send + 'static>>> =
+            Arc::new(Mutex::new(Box::new(PhysicsCloseCallback::new(writer.clone()))));
+
+        let reader_join = reader.start(cb, Some(close_cb));
 
         Ok(Self {
-            writer: Mutex::new(Box::new(writer)),
+            writer,
             response_tx,
             reader_join,
         })

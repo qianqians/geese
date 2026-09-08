@@ -11,7 +11,7 @@ use tokio_tungstenite::tungstenite::Message;
 use async_trait::async_trait;
 use tracing::{trace, info, error, warn};
 
-use net::{NetReaderCallback, NetWriter, NetReader, NetPack};
+use net::{NetReaderCallback, NetReaderCloseCallback, NetWriter, NetReader, NetPack, notify_close};
 
 pub type WssSink = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 
@@ -31,7 +31,7 @@ impl WSSReader {
 }
 
 impl NetReader for WSSReader {
-    fn start(self, f: Arc<Mutex<Box<dyn NetReaderCallback + Send + 'static>>>,) -> JoinHandle<()>
+    fn start(self, f: Arc<Mutex<Box<dyn NetReaderCallback + Send + 'static>>>, close: Option<Arc<Mutex<Box<dyn NetReaderCloseCallback + Send + 'static>>>>) -> JoinHandle<()>
     {
         trace!("WSSReader NetReader start!");
 
@@ -40,45 +40,52 @@ impl NetReader for WSSReader {
         tokio::spawn(async move {
             let mut net_pack = NetPack::new();
             loop {
-                let message: Option<Message>;
-                {
-                    message = match _p.s.next().await {
-                        None => None,
-                        Some(msg) => {
-                            match msg {
-                                Err(_) => {
-                                    error!("WSSReader read msg error!");
+                let message = match _p.s.next().await {
+                    None => {
+                        error!("WSSReader stream closed!");
+                        notify_close(&close).await;
+                        return;
+                    },
+                    Some(Err(_)) => {
+                        error!("WSSReader read msg error!");
+                        notify_close(&close).await;
+                        return;
+                    },
+                    Some(Ok(msg)) => msg,
+                };
+
+                match message {
+                    Message::Close(_) => {
+                        error!("network Close!");
+                        notify_close(&close).await;
+                        return;
+                    },
+                    Message::Ping(data) => {
+                        info!("ping");
+                        let writer = _p.writer.clone();
+                        let mut w = writer.lock().await;
+                        if let Err(e) = w.send(Message::Pong(data)).await {
+                            warn!("Failed to send Pong: {}", e);
+                        }
+                    },
+                    Message::Binary(buf) => {
+                        net_pack.input(&buf[..]);
+                        loop {
+                            match net_pack.try_get_pack() {
+                                Ok(Some(data)) => {
+                                    let mut f_handle = f_clone.as_ref().lock().await;
+                                    f_handle.cb(data).await;
+                                },
+                                Ok(None) => break,
+                                Err(err) => {
+                                    error!("network pack error:{:?}!", err);
+                                    notify_close(&close).await;
                                     return;
                                 }
-                                Ok(_m) => Some(_m)
                             }
                         }
-                    }
-                }
-                
-                if let Some(msg) = message {
-                    match msg {
-                        Message::Close(_) => {
-                            error!("network Close!");
-                            return;
-                        },
-                        Message::Ping(data) => {
-                            info!("ping");
-                            let writer = _p.writer.clone();
-                            let mut w = writer.lock().await;
-                            if let Err(e) = w.send(Message::Pong(data)).await {
-                                warn!("Failed to send Pong: {}", e);
-                            }
-                        },
-                        Message::Binary(buf) => {
-                            net_pack.input(&buf[..]);
-                            while let Some(data) = net_pack.try_get_pack() {
-                                let mut f_handle = f_clone.as_ref().lock().await;
-                                f_handle.cb(data).await;
-                            }
-                        },
-                        _ => {}
-                    }
+                    },
+                    _ => {}
                 }
             }
         })

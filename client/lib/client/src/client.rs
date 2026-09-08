@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use thrift::protocol::{TCompactOutputProtocol, TCompactInputProtocol, TSerializable};
 use thrift::transport::{TIoChannel, TBufferChannel};
 
-use net::{NetReaderCallback, NetReader, NetWriter};
+use net::{NetReaderCallback, NetReaderCloseCallback, NetReader, NetWriter};
 use tcp::tcp_connect::TcpConnect;
 use wss::wss_connect::WSSConnect;
 use queue::Queue;
@@ -66,6 +66,33 @@ impl GateProxyReaderCallback {
         GateProxyReaderCallback {
             gate_proxy: _gate_proxy
         }
+    }
+}
+
+pub struct GateProxyCloseCallback {
+    gate_proxy: Arc<StdMutex<GateProxy>>,
+}
+
+impl GateProxyCloseCallback {
+    pub fn new(_gate_proxy: Arc<StdMutex<GateProxy>>) -> GateProxyCloseCallback {
+        GateProxyCloseCallback {
+            gate_proxy: _gate_proxy
+        }
+    }
+}
+
+#[async_trait]
+impl NetReaderCloseCallback for GateProxyCloseCallback {
+    async fn on_close(&mut self) {
+        let wr = {
+            let mut _g = self.gate_proxy.as_ref().lock().unwrap();
+            _g.wr.clone()
+        };
+        let mut _wr = wr.as_ref().lock().await;
+        _wr.close().await;
+        drop(_wr);
+        let mut _g = self.gate_proxy.as_ref().lock().unwrap();
+        _g.join = None;
     }
 }
 
@@ -307,9 +334,11 @@ impl Context {
                 let _gate_proxy = GateProxy::new(_wr_arc.clone(), self.msg_handle.clone());
                 self.gate_proxy = Some(_gate_proxy.clone());
 
+                let _close_cb: Arc<Mutex<Box<dyn NetReaderCloseCallback + Send + 'static>>> =
+                    Arc::new(Mutex::new(Box::new(GateProxyCloseCallback::new(_gate_proxy.clone()))));
                 let mut _gate_proxy_mut = _gate_proxy.as_ref().lock().unwrap();
                 _gate_proxy_mut.join = Some(rd.start(Arc::new(Mutex::new(Box::new(
-                    GateProxyReaderCallback::new(_gate_proxy.clone()))))));
+                    GateProxyReaderCallback::new(_gate_proxy.clone())))), Some(_close_cb)));
             }
             else {
                 println!("connect_tcp faild! host:{}", format!("{}:{}", addr, port));
@@ -327,9 +356,11 @@ impl Context {
                 let _gate_proxy = GateProxy::new(_wr_arc.clone(), self.msg_handle.clone());
                 self.gate_proxy = Some(_gate_proxy.clone());
 
+                let _close_cb: Arc<Mutex<Box<dyn NetReaderCloseCallback + Send + 'static>>> =
+                    Arc::new(Mutex::new(Box::new(GateProxyCloseCallback::new(_gate_proxy.clone()))));
                 let mut _gate_proxy_mut = _gate_proxy.as_ref().lock().unwrap();
                 _gate_proxy_mut.join = Some(rd.start(Arc::new(Mutex::new(Box::new(
-                    GateProxyReaderCallback::new(_gate_proxy.clone()))))));
+                    GateProxyReaderCallback::new(_gate_proxy.clone())))), Some(_close_cb)));
             }
             else {
                 println!("connect_ws faild! host:{}", host);
