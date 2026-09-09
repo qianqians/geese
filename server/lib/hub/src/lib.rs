@@ -87,6 +87,7 @@ use crate::hub_service_manager::{ConnCallbackMsgHandle, StdMutex};
 
 #[derive(Deserialize, Serialize, Debug)]
 struct HubCfg {
+    name: String,
     consul_url: String,
     health_port: u16,
     redis_url: String,
@@ -135,8 +136,6 @@ impl HubContext {
     pub fn new(cfg_file: String) -> PyResult<Self> {
         info!("hub start!");
 
-        let _name = format!("hub_{}", Uuid::new_v4());
-
         let cfg_data = match load_data_from_file(cfg_file.to_string()) {
             Err(e) => {
                 error!("hub load_data_from_file faild {}, {}!", cfg_file, e);
@@ -151,6 +150,7 @@ impl HubContext {
             },
             Ok(_cfg) => _cfg
         };
+        let _name = format!("hub_{}", cfg.name);
 
         let (_, _guard) = log::init(cfg.log_level, cfg.log_dir, cfg.log_file, cfg.jaeger_url, Some(_name.clone()));
     
@@ -273,6 +273,7 @@ impl HubContext {
                     .check(AgentServiceCheckBuilder::default()
                         .name("health_check")
                         .interval("10s")
+                        .timeout("3s")
                         .http(_health_host)
                         .status("passing")
                         .build()

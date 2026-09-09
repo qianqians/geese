@@ -1,7 +1,6 @@
 use std::env;
 
 use tracing::{info, error};
-use uuid::Uuid;
 use consulrs::api::check::common::AgentServiceCheckBuilder;
 use consulrs::api::service::requests::RegisterServiceRequest;
 
@@ -15,8 +14,6 @@ use dbproxy::{DBProxyServer, DBProxyCfg};
 #[tokio::main]
 async fn main() {
     info!("dbproxy start!");
-
-    let _name = format!("dbproxy_{}", Uuid::new_v4());
 
     let args: Vec<String> = env::args().collect();
     let cfg_file = match args.get(1) {
@@ -40,6 +37,7 @@ async fn main() {
         },
         Ok(_cfg) => _cfg
     };
+    let _name = format!("dbproxy_{}", cfg.name);
 
     let (_, _guard) = log::init(cfg.log_level, cfg.log_dir, cfg.log_file, cfg.jaeger_url, Some(_name.clone()));
 
@@ -71,6 +69,7 @@ async fn main() {
             .check(AgentServiceCheckBuilder::default()
                 .name("health_check")
                 .interval("10s")
+                .timeout("3s")
                 .http(_health_host)
                 .status("passing")
                 .build()

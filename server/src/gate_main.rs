@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use consulrs::api::check::common::AgentServiceCheckBuilder;
 use consulrs::api::service::requests::RegisterServiceRequest;
 use tracing::{trace, info, error};
@@ -17,6 +16,7 @@ use gate::{WSSCfg, GateServer};
 
 #[derive(Deserialize, Serialize, Debug)]
 struct GateCfg {
+    name: String,
     consul_url: String,
     health_port: u16,
     jaeger_url: Option<String>,
@@ -33,8 +33,6 @@ struct GateCfg {
 #[tokio::main]
 async fn main() {
     info!("gate start!");
-
-    let _name = format!("gate_{}", Uuid::new_v4());
 
     let args: Vec<String> = env::args().collect();
     let cfg_file = match args.get(1) {
@@ -58,6 +56,7 @@ async fn main() {
         },
         Ok(_cfg) => _cfg
     };
+    let _name = format!("gate_{}", cfg.name);
 
     let (_, _guard) = log::init(cfg.log_level, cfg.log_dir, cfg.log_file, cfg.jaeger_url, Some(_name.clone()));
 

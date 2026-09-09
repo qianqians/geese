@@ -66,6 +66,7 @@ impl HubProxy {
         let mut o_prot = TCompactOutputProtocol::new(wr);
         let _ = HubService::write_to_out_protocol(&msg, &mut o_prot);
         let mut p_send = self.wr.as_ref().lock().await;
+        trace!("send_hub_msg send bytes len:{}", rd.write_bytes().len());
         p_send.send(&rd.write_bytes()).await
     }
 }

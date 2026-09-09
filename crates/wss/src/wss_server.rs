@@ -59,12 +59,11 @@ impl WSSServer {
                 let _s_listen = _listener.accept().await;
                 let (_s, addr) = match _s_listen {
                     Err(e) => {
-                        error!("TcpServer listener loop err:{}!", e);
+                        error!("wss listener loop err:{}!", e);
                         continue;
                     },
                     Ok(_s) => _s
                 };
-
                 trace!("wss accept client ip:{:?}", addr);
 
                 let _acc_s = match _tokio_acceptor.accept(_s).await {

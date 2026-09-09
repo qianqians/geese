@@ -37,6 +37,7 @@ pub struct IndexCfg {
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct DBProxyCfg {
+    pub name: String,
     pub namespace: String,
     pub consul_url: String,
     pub health_port: u16,
