@@ -33,6 +33,9 @@ class context(object):
         
     def set_health_state(self, status:bool):
         self.ctx.set_health_state(status)
+
+    def deregister_service(self):
+        self.ctx.deregister_service()
         
     def entry_dbproxy_service(self) -> str:
         return self.ctx.entry_dbproxy_service()

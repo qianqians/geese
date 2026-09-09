@@ -234,6 +234,8 @@ class app(object):
         
     def close(self):
         self.__is_run__ = False
+        if self.ctx is not None:
+            self.ctx.deregister_service()
 
     def poll_db_msg(self):
         while True:
@@ -300,6 +302,9 @@ class app(object):
                         self.ctx.set_health_state(False)
                     health_state = False
                     self.is_idle = False
+            # 每轮向 Rust 侧上报一次当前健康状态，作为心跳：
+            # 主循环一旦卡死，Rust 侧的 last_heartbeat 会超时，/health 即返回非 2xx。
+            self.ctx.set_health_state(health_state)
             if update is not None:
                 update()
         self.save_mgr.for_each_entity(lambda entt: entt.save_entity())
