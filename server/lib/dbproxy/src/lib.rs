@@ -41,6 +41,8 @@ pub struct DBProxyCfg {
     pub namespace: String,
     pub consul_url: String,
     pub health_port: u16,
+    pub advertise_ip: String,
+    pub service_port: u16,
     pub jaeger_url: Option<String>,
     pub redis_url: String,
     pub mongo_url: String,
@@ -155,6 +157,12 @@ impl DBProxyServer {
 
     pub async fn run(&mut self) {
         loop {
+            // 每轮心跳：表示“主循环仍在正常运转”。
+            {
+                let mut _health = self.health.as_ref().lock().await;
+                _health.heartbeat();
+            }
+
             let _offset_time = &self.offset_time;
             let begin = _offset_time.utc_unix_time_with_offset();
             DBProxyHubMsgHandle::poll(self.handle.clone()).await;
@@ -167,12 +175,6 @@ impl DBProxyServer {
 
             if tick < 33 {
                 tokio::time::sleep(Duration::from_millis((33 - tick) as u64)).await;
-                let mut _health = self.health.as_ref().lock().await;
-                _health.set_health_status(true);
-            }
-            else if tick > 256 {
-                let mut _health = self.health.as_ref().lock().await;
-                _health.set_health_status(false);
             }
         }
     }

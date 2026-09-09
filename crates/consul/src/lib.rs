@@ -37,6 +37,17 @@ impl ConsulImpl  {
         }
     }
 
+    pub async fn deregister(&mut self, id: String) {
+        match service::deregister(&self.client, id.as_str(), None).await {
+            Err(e) => {
+                error!("consul deregister err:{}!", e);
+            },
+            Ok(_) => {
+                info!("consul deregister success!");
+            }
+        }
+    }
+
     pub async fn services(&mut self, name: String) -> Option<Vec<ServiceInfo>> {
         match catalog::nodes_with_service(&self.client, name.clone().as_str(), None).await {
             Err(e) => {

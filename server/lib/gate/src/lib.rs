@@ -158,6 +158,12 @@ impl GateServer {
     pub async fn run(&mut self) {
         let mut flush_gate_key_time = self.get_utc_unix_time_with_offset().await;
         loop {
+            // 每轮心跳：表示“主循环仍在正常运转”。
+            {
+                let mut _health = self.health.as_ref().lock().await;
+                _health.heartbeat();
+            }
+
             let begin = self.get_utc_unix_time_with_offset().await;
             
             let hub_msg_handle:Option<Arc<Mutex<GateHubMsgHandle>>>;
@@ -185,12 +191,6 @@ impl GateServer {
 
             if tick < 33 {
                 tokio::time::sleep(Duration::from_millis((33 - tick) as u64)).await;
-                let mut _health = self.health.as_ref().lock().await;
-                _health.set_health_status(true);
-            }
-            else if tick > 100 {
-                let mut _health = self.health.as_ref().lock().await;
-                _health.set_health_status(false);
             }
 
             if (self.get_utc_unix_time_with_offset().await - flush_gate_key_time) > 1000 * 10 {

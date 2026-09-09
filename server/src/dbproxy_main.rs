@@ -7,7 +7,6 @@ use consulrs::api::service::requests::RegisterServiceRequest;
 use health::HealthHandle;
 use consul::ConsulImpl;
 use config::{load_data_from_file, load_cfg_from_data};
-use local_ip::get_local_ip;
 
 use dbproxy::{DBProxyServer, DBProxyCfg};
 
@@ -45,6 +44,15 @@ async fn main() {
     let health_host = format!("0.0.0.0:{}", health_port);
     let health_handle = HealthHandle::new(health_host.clone());
 
+    // 1. 先绑定健康检查端口，失败直接退出。
+    let listener = match HealthHandle::bind(health_host.clone()).await {
+        Ok(l) => l,
+        Err(e) => {
+            error!("DBProxy health bind failed {}!", e);
+            return;
+        }
+    };
+
     let mut server = match DBProxyServer::new(_name.clone(), cfg.redis_url, cfg.mongo_url, cfg.index, cfg.guid, health_handle.clone()).await {
         Err(e) => {
             error!("DBProxy DBProxyServer new faild {}!", e);
@@ -53,8 +61,8 @@ async fn main() {
         Ok(_s) => _s
     };
 
-    let _local_ip = get_local_ip();
-    let _health_host = format!("http://{_local_ip}:{health_port}/health");
+    let _advertise_ip = cfg.advertise_ip.clone();
+    let _health_host = format!("http://{_advertise_ip}:{health_port}/health");
     let mut consul_impl = match ConsulImpl::new(cfg.consul_url) {
         Err(e) => {
             error!("DBProxy ConsulImpl new faild {}!", e);
@@ -65,7 +73,9 @@ async fn main() {
     consul_impl.register("dbproxy".to_string(), Some(
         RegisterServiceRequest::builder()
             .name("dbproxy")
-            .id(_name)
+            .id(_name.clone())
+            .address(_advertise_ip)
+            .port(cfg.service_port)
             .check(AgentServiceCheckBuilder::default()
                 .name("health_check")
                 .interval("10s")
@@ -79,16 +89,21 @@ async fn main() {
         ),
     ).await;
 
+    // 2. 用已绑定的 listener 提供健康检查服务。
     let health_service = tokio::spawn({
-        let health_host = health_host.clone();
         let health_handle = health_handle.clone();
         async move {
-            let _ = HealthHandle::start_health_service(health_host, health_handle).await;
+            if let Err(e) = HealthHandle::serve(listener, health_handle).await {
+                error!("health service error: {}", e);
+            }
         }
     });
     
     server.run().await;
     server.join().await;
+
+    // 3. 退出前主动注销。
+    consul_impl.deregister(_name.clone()).await;
     health_service.abort();
 
     info!("dbproxy exit!");

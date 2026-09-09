@@ -9,7 +9,7 @@ use tracing::{trace, warn, error};
 use thrift::protocol::{TCompactInputProtocol, TSerializable};
 use thrift::transport::TBufferChannel;
 
-use net::{NetReaderCallback, NetReaderCloseCallback, NetReader, NetWriter};
+use net::{NetReaderCallback, NetReader, NetWriter};
 use tcp::tcp_socket::{TcpReader, TcpWriter};
 use tcp::tcp_server::TcpListenCallback;
 use redis_service::redis_mq_channel::RedisMQReader;
@@ -163,10 +163,6 @@ impl ConnCallbackMsgHandle {
 
     pub fn set_rt_handle(&mut self, handle: tokio::runtime::Handle) {
         self.rt_handle = Some(handle);
-    }
-
-    pub fn get_conn_mgr(&self) -> Arc<Mutex<ConnManager>> {
-        self.conn_mgr.clone()
     }
 
     fn enque_event(&mut self, ev: ConnEvent) {
@@ -669,55 +665,6 @@ impl ConnProxyReaderCallback {
     }
 }
 
-pub struct ConnProxyCloseCallback {
-    connproxy: Arc<Mutex<ConnProxy>>,
-    conn_mgr: Arc<Mutex<ConnManager>>,
-    name: Option<String>,
-}
-
-impl ConnProxyCloseCallback {
-    pub fn new(_connproxy: Arc<Mutex<ConnProxy>>, _conn_mgr: Arc<Mutex<ConnManager>>, _name: Option<String>) -> ConnProxyCloseCallback {
-        ConnProxyCloseCallback {
-            connproxy: _connproxy,
-            conn_mgr: _conn_mgr,
-            name: _name,
-        }
-    }
-}
-
-#[async_trait]
-impl NetReaderCloseCallback for ConnProxyCloseCallback {
-    async fn on_close(&mut self) {
-        let wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>;
-        let mut peer_name = self.name.clone();
-        {
-            let mut _conn = self.connproxy.as_ref().lock().await;
-            wr = _conn.wr.clone();
-            if peer_name.is_none() {
-                if let Some(gp) = &_conn.gateproxy {
-                    let g = gp.as_ref().lock().await;
-                    peer_name = g.gate_name.clone();
-                }
-            }
-            if peer_name.is_none() {
-                if let Some(hp) = &_conn.hubproxy {
-                    let h = hp.as_ref().lock().await;
-                    peer_name = h.hub_name.clone();
-                }
-            }
-        }
-
-        let mut _wr = wr.as_ref().lock().await;
-        _wr.close().await;
-        drop(_wr);
-
-        if let Some(n) = peer_name {
-            let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
-            _conn_mgr.remove_conn_proxy(&n);
-        }
-    }
-}
-
 pub struct ConnProxyManager {
     conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>, 
     join_list: Vec<JoinHandle<()>>
@@ -726,7 +673,6 @@ pub struct ConnProxyManager {
 #[async_trait]
 impl RedisMQListenCallback for ConnProxyManager {
     async fn redis_mq_cb(&mut self, rd: Arc<Mutex<RedisMQReader>>, wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>){
-        self.prune_joins();
         let _connproxy = Arc::new(Mutex::new(ConnProxy::new(wr, self.conn_msg_handle.clone())));
         let mut _rd_ref = rd.as_ref().lock().await;
         self.join_list.push(_rd_ref.start(Arc::new(Mutex::new(Box::new(ConnProxyReaderCallback::new(_connproxy))))));
@@ -736,25 +682,13 @@ impl RedisMQListenCallback for ConnProxyManager {
 #[async_trait]
 impl TcpListenCallback for ConnProxyManager {
     async fn cb(&mut self, rd: TcpReader, wr: TcpWriter) {
-        self.prune_joins();
         let _wr_arc: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>> = Arc::new(Mutex::new(Box::new(wr)));
         let _connproxy = Arc::new(Mutex::new(ConnProxy::new(_wr_arc, self.conn_msg_handle.clone())));
-        let conn_mgr = {
-            let h = self.conn_msg_handle.as_ref().lock().unwrap_or_else(|e| e.into_inner());
-            h.get_conn_mgr()
-        };
-        let _close_cb: Arc<Mutex<Box<dyn NetReaderCloseCallback + Send + 'static>>> =
-            Arc::new(Mutex::new(Box::new(ConnProxyCloseCallback::new(_connproxy.clone(), conn_mgr, None))));
-        self.join_list.push(rd.start(Arc::new(Mutex::new(Box::new(ConnProxyReaderCallback::new(_connproxy)))), Some(_close_cb)));
+        self.join_list.push(rd.start(Arc::new(Mutex::new(Box::new(ConnProxyReaderCallback::new(_connproxy))))));
     }
 }
 
 impl ConnProxyManager {
-    /// 清理已结束的 reader 任务句柄，避免连接重连时 `join_list` 无限增长。
-    fn prune_joins(&mut self) {
-        self.join_list.retain(|j| !j.is_finished());
-    }
-
     pub fn new_tcp_callback(_conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>) 
         -> Arc<Mutex<Box<dyn TcpListenCallback + Send + 'static>>> 
     {

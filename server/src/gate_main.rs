@@ -10,7 +10,6 @@ use tracing::{trace, info, error};
 use health::HealthHandle;
 use consul::ConsulImpl;
 use config::{load_data_from_file, load_cfg_from_data};
-use local_ip::get_local_ip;
 
 use gate::{WSSCfg, GateServer};
 
@@ -19,6 +18,7 @@ struct GateCfg {
     name: String,
     consul_url: String,
     health_port: u16,
+    advertise_ip: String,
     jaeger_url: Option<String>,
     redis_url: String,
     service_port: u16,
@@ -70,8 +70,18 @@ async fn main() {
     let client_tcp_host = cfg.client_tcp_port.map(|port| format!("0.0.0.0:{}", port));
     let client_ws_host = cfg.client_ws_port.map(|port| format!("0.0.0.0:{}", port));
 
-    let _local_ip = get_local_ip();
-    let _health_host = format!("http://{_local_ip}:{health_port}/health");
+    let _advertise_ip = cfg.advertise_ip.clone();
+    let _health_host = format!("http://{_advertise_ip}:{health_port}/health");
+
+    // 1. 先绑定健康检查端口，失败直接退出，避免“已注册但端点不可用”的竞态。
+    let listener = match HealthHandle::bind(health_host.clone()).await {
+        Ok(l) => l,
+        Err(e) => {
+            error!("Gate health bind failed {}!", e);
+            return;
+        }
+    };
+
     let mut consul_impl = match ConsulImpl::new(cfg.consul_url) {
         Err(e) => {
             error!("Gate ConsulImpl new faild {}!", e);
@@ -83,7 +93,7 @@ async fn main() {
         RegisterServiceRequest::builder()
             .name("gate")
             .id(_name.clone())
-            .address(_local_ip)
+            .address(_advertise_ip)
             .port(cfg.service_port)
             .check(AgentServiceCheckBuilder::default()
                 .name("health_check")
@@ -100,6 +110,7 @@ async fn main() {
 
     trace!("server new consul_impl!");
     let _consul_impl_arc = Arc::new(Mutex::new(consul_impl));
+    let _consul_impl_for_shutdown = _consul_impl_arc.clone();
     let mut server = match GateServer::new(
         _name.clone(), 
         host, 
@@ -118,17 +129,25 @@ async fn main() {
     };
     trace!("server new server!");
 
+    // 2. 用已绑定的 listener 提供健康检查服务。
     let health_service = tokio::spawn({
-        let health_host = health_host.clone();
         let health_handle = health_handle.clone();
         async move {
-            let _ = HealthHandle::start_health_service(health_host, health_handle).await;
+            if let Err(e) = HealthHandle::serve(listener, health_handle).await {
+                error!("health service error: {}", e);
+            }
         }
     });
 
     trace!("server start run!");
     server.run().await;
     server.join().await;
+
+    // 3. 退出前主动注销，避免 Consul 中的幽灵服务。
+    {
+        let mut _consul = _consul_impl_for_shutdown.lock().await;
+        _consul.deregister(_name.clone()).await;
+    }
     health_service.abort();
 
     info!("gate exit!");

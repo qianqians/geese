@@ -14,7 +14,6 @@ use tracing::{info, error, trace};
 use health::HealthHandle;
 use consul::ConsulImpl;
 use config::{load_data_from_file, load_cfg_from_data};
-use local_ip::get_local_ip;
 use time::OffsetTime;
 
 use proto::common::{
@@ -90,6 +89,7 @@ struct HubCfg {
     name: String,
     consul_url: String,
     health_port: u16,
+    advertise_ip: String,
     redis_url: String,
     save_time_interval: u32,
     migrate_time_interval: u32,
@@ -105,6 +105,7 @@ pub struct HubContext {
     hub_name: String,
     service_port: u16,
     health_port: u16,
+    advertise_ip: String,
     save_time_interval: u32,
     migrate_time_interval: u32,
     _guard: WorkerGuard, 
@@ -159,6 +160,7 @@ impl HubContext {
         let _health_port = cfg.health_port;
         let _health_host = format!("0.0.0.0:{}", _health_port);
         let _health_handle = HealthHandle::new(_health_host.clone());
+        let _advertise_ip = cfg.advertise_ip.clone();
     
         let consul_impl = match ConsulImpl::new(cfg.consul_url) {
             Err(e) => {
@@ -188,10 +190,20 @@ impl HubContext {
         server.as_ref().blocking_lock().set_conn_rt_handle(rt.handle().clone());
         
         let rt_join_health = tokio::runtime::Runtime::new().unwrap();
+        // 先绑定健康检查端口，失败则在注册 consul 前直接报错退出。
+        let _health_listener = match rt_join_health.block_on(HealthHandle::bind(_health_host.clone())) {
+            Ok(l) => l,
+            Err(e) => {
+                error!("Hub health bind failed {}!", e);
+                return Err(PyValueError::new_err("Hub health bind failed!"));
+            }
+        };
         let _join_health = rt_join_health.spawn({
             let _health_handle_clone = _health_handle.clone();
             async move {
-                let _ = HealthHandle::start_health_service(_health_host.clone(), _health_handle_clone).await;
+                if let Err(e) = HealthHandle::serve(_health_listener, _health_handle_clone).await {
+                    error!("health service error: {}", e);
+                }
             }
         });
 
@@ -199,6 +211,7 @@ impl HubContext {
             hub_name: _name,
             service_port: cfg.service_port,
             health_port: _health_port,
+            advertise_ip: _advertise_ip,
             save_time_interval: cfg.save_time_interval,
             migrate_time_interval: cfg.migrate_time_interval,
             offset_time: offset_time,
@@ -258,17 +271,17 @@ impl HubContext {
         let _consul_impl_clone = slf.consul_impl.clone();
         let _name = slf.hub_name.clone();
         let _service_port = slf.service_port;
+        let _advertise_ip = slf.advertise_ip.clone();
 
         slf._listen_rt.handle().block_on(async move {
-            let _local_ip = get_local_ip();
-            let _health_host = format!("http://{_local_ip}:{_health_port}/health");
+            let _health_host = format!("http://{_advertise_ip}:{_health_port}/health");
     
             let mut _consul_impl = _consul_impl_clone.as_ref().lock().await;
             _consul_impl.register(service.clone(), Some(
                 RegisterServiceRequest::builder()
                     .name(service.clone())
                     .id(_name)
-                    .address(_local_ip)
+                    .address(_advertise_ip)
                     .port(_service_port)
                     .check(AgentServiceCheckBuilder::default()
                         .name("health_check")
@@ -283,6 +296,18 @@ impl HubContext {
                 ),
             ).await;
         })
+    }
+
+    pub fn deregister_service(slf: PyRefMut<'_, Self>) {
+        trace!("deregister_service begin!");
+
+        let _consul_impl_clone = slf.consul_impl.clone();
+        let _id = slf.hub_name.clone();
+
+        slf._listen_rt.handle().block_on(async move {
+            let mut _consul_impl = _consul_impl_clone.as_ref().lock().await;
+            _consul_impl.deregister(_id).await;
+        });
     }
 
     pub fn set_health_state(slf: PyRefMut<'_, Self>, _status: bool) {
