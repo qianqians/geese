@@ -6,9 +6,9 @@ use tracing::warn;
 
 use tcp::tcp_connect::TcpConnect;
 use close_handle::CloseHandle;
-use net::{NetReader, NetWriter};
+use net::{NetReaderCloseCallback, NetReader, NetWriter};
 
-use crate::hub_service_manager::{ConnProxyReaderCallback, ConnProxy, ConnCallbackMsgHandle};
+use crate::hub_service_manager::{ConnProxyReaderCallback, ConnProxyCloseCallback, ConnProxy, ConnCallbackMsgHandle};
 use crate::dbproxy_manager::DBProxyProxy;
 use crate::hub_proxy_manager::HubProxy;
 use crate::gate_proxy_manager::GateProxy;
@@ -65,8 +65,15 @@ impl ConnManager {
             let _conn_proxy = Arc::new(Mutex::new(
                 ConnProxy::new(_wr_arc.clone(), _handle.clone())));
 
+            let _conn_mgr_arc: Arc<Mutex<ConnManager>> = {
+                let _h = _handle.as_ref().lock().unwrap_or_else(|e| e.into_inner());
+                _h.get_conn_mgr()
+            };
+            let _close_cb: Arc<Mutex<Box<dyn NetReaderCloseCallback + Send + 'static>>> =
+                Arc::new(Mutex::new(Box::new(ConnProxyCloseCallback::new(
+                    _conn_proxy.clone(), _conn_mgr_arc, Some(name.clone())))));
             let _ = rd.start(Arc::new(Mutex::new(Box::new(
-                ConnProxyReaderCallback::new(_conn_proxy.clone())))));
+                ConnProxyReaderCallback::new(_conn_proxy.clone())))), Some(_close_cb));
 
             self.wrs.insert(name.clone(), _wr_arc.clone());
             self.connproxys.insert(name.clone(), _conn_proxy.clone());
@@ -112,5 +119,13 @@ impl ConnManager {
 
     pub fn get_gate_proxy(&mut self, _gate_name: &String) -> Option<&Arc<Mutex<GateProxy>>> {
         self.gateproxys.get(_gate_name)
+    }
+
+    /// 连接断开后回收：按对端名称移除 writer、连接 proxy 及其关联的 hub/gate proxy。
+    pub fn remove_conn_proxy(&mut self, name: &String) {
+        self.wrs.remove(name);
+        self.connproxys.remove(name);
+        self.hubproxys.remove(name);
+        self.gateproxys.remove(name);
     }
 }

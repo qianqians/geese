@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
-use uuid::Uuid;
 use consulrs::api::check::common::AgentServiceCheckBuilder;
 use consulrs::api::service::requests::RegisterServiceRequest;
 use pyo3::prelude::*;
