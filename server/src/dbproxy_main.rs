@@ -70,6 +70,7 @@ async fn main() {
                 .name("health_check")
                 .interval("10s")
                 .timeout("3s")
+                .deregister_critical_service_after("20s")
                 .http(_health_host)
                 .status("passing")
                 .build()
