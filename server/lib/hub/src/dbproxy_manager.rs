@@ -9,6 +9,7 @@ use thrift::protocol::{TCompactOutputProtocol, TSerializable};
 use thrift::transport::{TIoChannel, TBufferChannel};
 
 use net::{NetReaderCallback, NetWriter};
+use redis_service::redis_mq_channel::{RedisMQReader, RedisMQWriter};
 use redis_service::redis_service::{RedisService, create_channel_key};
 use close_handle::CloseHandle;
 use consul::{ConsulImpl, ServiceInfo};
@@ -63,6 +64,7 @@ pub async fn entry_dbproxy_service(
                     DBProxyProxy::new(
                         service.id.clone(), 
                         wr.clone(), 
+                        rd.clone(),
                         _dbproxy_msg_handle)));
 
                 let mut _rd_ref = rd.as_ref().lock().await;
@@ -89,14 +91,16 @@ pub async fn entry_dbproxy_service(
 pub struct DBProxyProxy {
     pub dbproxy_name: String,
     pub wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>,
+    pub rd: Arc<Mutex<RedisMQReader>>,
     msg_handle: Arc<StdMutex<DBCallbackMsgHandle>>
 }
 
 impl DBProxyProxy {
-    pub fn new(_name: String, _wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>, _handle: Arc<StdMutex<DBCallbackMsgHandle>>) -> DBProxyProxy {
+    pub fn new(_name: String, _wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>, _rd: Arc<Mutex<RedisMQReader>>, _handle: Arc<StdMutex<DBCallbackMsgHandle>>) -> DBProxyProxy {
         DBProxyProxy {
             dbproxy_name: _name,
             wr: _wr,
+            rd: _rd,
             msg_handle: _handle
         }
     }
