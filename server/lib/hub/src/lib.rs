@@ -310,8 +310,6 @@ impl HubContext {
     }
 
     pub fn set_health_state(slf: PyRefMut<'_, Self>, _status: bool) {
-        trace!("set_health_state begin!");
-
         let _health_handle = slf.health_handle.clone();
         slf._listen_rt.handle().block_on(async move {
             let mut _handle = _health_handle.as_ref().lock().await;
