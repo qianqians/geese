@@ -158,13 +158,30 @@ impl DBEvGetObjectCount {
 /// 要求 Send 以确保可跨线程传递，并提供 Any 向下转型能力。
 pub trait DBEventData: Any + Send {
     fn as_any(&self) -> &dyn Any;
+    fn event_type(&self) -> DBEventType;
 }
 
-impl<T: Any + Send> DBEventData for T {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
+macro_rules! impl_db_event_data {
+    ($ty:ty, $event_type:expr) => {
+        impl DBEventData for $ty {
+            fn as_any(&self) -> &dyn Any {
+                self
+            }
+
+            fn event_type(&self) -> DBEventType {
+                $event_type
+            }
+        }
+    };
 }
+
+impl_db_event_data!(DBEvGetGuid, DBEventType::EvGetGuid);
+impl_db_event_data!(DBEvCreateObject, DBEventType::EvCreateObject);
+impl_db_event_data!(DBEvUpdataObject, DBEventType::EvUpdataObject);
+impl_db_event_data!(DBEvFindAndModify, DBEventType::EvFindAndModify);
+impl_db_event_data!(DBEvRemoveObject, DBEventType::EvRemoveObject);
+impl_db_event_data!(DBEvGetObjectInfo, DBEventType::EvGetObjectInfo);
+impl_db_event_data!(DBEvGetObjectCount, DBEventType::EvGetObjectCount);
 
 pub struct DBEvent {
     pub send_proxy: Weak<Mutex<Box<dyn NetWriter + Send + 'static>>>,
@@ -176,10 +193,13 @@ pub struct DBEvent {
 }
 
 impl DBEvent {
-    pub fn new(_send_proxy: Weak<Mutex<Box<dyn NetWriter + Send + 'static>>>, _ev_type: DBEventType, _db: String, _collection: String,  _callback_id: String, _ev_data: Box<dyn DBEventData>) -> DBEvent {
+    pub fn new(_send_proxy: Weak<Mutex<Box<dyn NetWriter + Send + 'static>>>, _event_type: DBEventType, _db: String, _collection: String,  _callback_id: String, _ev_data: Box<dyn DBEventData>) -> DBEvent {
+        // The payload is authoritative. Keeping the event tag derived from the
+        // concrete payload prevents a mismatched tag from making downcast fail.
+        let event_type = _ev_data.event_type();
         DBEvent {
             send_proxy: _send_proxy,
-            ev_type: _ev_type,
+            ev_type: event_type,
             db: _db,
             collection: _collection,
             callback_id: _callback_id,
@@ -298,19 +318,12 @@ impl DBEvent {
                 self.send_batched_docs(&mut p_send, &cb, wsize).await;
             }
             else {
-                let mut idx = 0;
-                while idx < docs.len() {
-                    let idx1 = cmp::min(docs.len(), idx + 32);
-                    let mut tmp: Vec<Document> = Vec::new();
-                    tmp.clone_from_slice(&docs[idx..idx1]);
-                    let doc = doc!{"__list__": tmp};
-                    idx = idx1;
-                    let mut bin: Vec<u8> = Vec::new();
-                    let _ = doc.to_writer(&mut bin);
-                    let wsize = (bin.len() + 2047) / 1024 * 1024;
-                    let cb = DbCallback::GetObjectInfo(AckGetObjectInfo::new(self.callback_id.to_string(), bin));
-                    self.send_batched_docs(&mut p_send, &cb, wsize).await;
-                }
+                let doc = doc!{"__list__": docs.to_vec()};
+                let mut bin: Vec<u8> = Vec::new();
+                let _ = doc.to_writer(&mut bin);
+                let wsize = (bin.len() + 2047) / 1024 * 1024;
+                let cb = DbCallback::GetObjectInfo(AckGetObjectInfo::new(self.callback_id.to_string(), bin));
+                self.send_batched_docs(&mut p_send, &cb, wsize).await;
             }
             let cb = DbCallback::GetObjectInfoEnd(AckGetObjectInfoEnd::new(self.callback_id.to_string()));
             self.send_batched_docs(&mut p_send, &cb, 1024).await;
