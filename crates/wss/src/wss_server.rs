@@ -15,7 +15,7 @@ use tokio_tungstenite::tungstenite::Result;
 use async_trait::async_trait;
 
 use close_handle::CloseHandle;
-use crate::wss_socket::{WSSReader, WSSWriter};
+use crate::wss_socket::{WssConnection, WSSReader, WSSWriter};
 
 pub struct WSSServer{
     join: JoinHandle<()>
@@ -59,11 +59,12 @@ impl WSSServer {
                 let _s_listen = _listener.accept().await;
                 let (_s, addr) = match _s_listen {
                     Err(e) => {
-                        error!("wss listener loop err:{}!", e);
+                        error!("TcpServer listener loop err:{}!", e);
                         continue;
                     },
                     Ok(_s) => _s
                 };
+
                 trace!("wss accept client ip:{:?}", addr);
 
                 let _acc_s = match _tokio_acceptor.accept(_s).await {
@@ -84,7 +85,7 @@ impl WSSServer {
                 };
 
                 let (write, read) = _websocket.split();
-                let write = Arc::new(Mutex::new(write));
+                let write = WssConnection::new(write);
 
                 let mut f_handle = _f_clone.as_ref().lock().await;
                 f_handle.cb(WSSReader::new(read, write.clone()), WSSWriter::new(write)).await;
@@ -132,7 +133,7 @@ impl WSSServer {
                     Ok(s) => s
                 };
                 let (write, read) = _websocket.split();
-                let write = Arc::new(Mutex::new(write));
+                let write = WssConnection::new(write);
                 
                 let mut f_handle = _f_clone.as_ref().lock().await;
                 f_handle.cb(WSSReader::new(read, write.clone()), WSSWriter::new(write)).await;      
