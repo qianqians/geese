@@ -1,5 +1,4 @@
 use std::any::Any;
-use std::cmp;
 use std::sync::Weak;
 
 use tokio::sync::Mutex;
@@ -8,7 +7,7 @@ use thrift::protocol::{TCompactOutputProtocol, TSerializable};
 use thrift::transport::{TIoChannel, TBufferChannel};
 
 use tracing::{trace, error};
-use mongodb::bson::{doc, Document};
+use mongodb::bson::doc;
 
 /// Macro that extracts the common pattern shared by most `do_*` methods:
 /// trace log → downcast ev_data → call mongo operation → build callback → serialize & send.

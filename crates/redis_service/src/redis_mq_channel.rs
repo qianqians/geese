@@ -37,6 +37,7 @@ impl RedisMQReader {
         f: Arc<Mutex<Box<dyn NetReaderCallback + Send + 'static>>>) -> JoinHandle<()>
     {
         self.cb_handle = Some(f);
+
         tokio::spawn(async move {})
     }
 }

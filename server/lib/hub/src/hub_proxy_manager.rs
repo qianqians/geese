@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use rand::Rng;
 use tokio::sync::Mutex;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 use thrift::protocol::{TCompactOutputProtocol, TSerializable};
 use thrift::transport::{TIoChannel, TBufferChannel};
@@ -59,6 +59,7 @@ pub async fn entry_direct_hub_server(
         _hub_name.clone(), 
         _hub_host, 
         _conn_msg_handle.clone(), 
+        _conn_mgr.clone(),
         _close.clone()).await
     {
         let _hubproxy = Arc::new(Mutex::new(HubProxy::new(_wr_arc)));
@@ -93,6 +94,7 @@ pub async fn entry_hub_service(
             None => return String::new(),
             Some(s) => s
         };
+        info!("entry_hub_service:{}-{}", service.id, service.name);
         let mut _conn_mgr_handle = _conn_mgr.as_ref().lock().await;
         if let Some(_hubproxy) = _conn_mgr_handle.get_hub_proxy(&service.id) {
             return service.id.clone();
@@ -122,6 +124,7 @@ pub async fn entry_hub_service(
                 service.id.clone(), 
                 format!("{}:{}", service.addr, service.port), 
                 _conn_msg_handle.clone(), 
+                _conn_mgr.clone(),
                 _close.clone()).await
             {
                 let _hubproxy = Arc::new(Mutex::new(HubProxy::new(_wr_arc)));

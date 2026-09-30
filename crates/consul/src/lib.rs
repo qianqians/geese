@@ -74,10 +74,10 @@ impl ConsulImpl  {
                                 continue;
                             }
                         };
-                        let service_address = match service.service_address.clone() {
+                        let address = match service.address.clone() {
                             Some(addr) => addr,
                             None => {
-                                warn!("Consul service entry missing service_address, skipping");
+                                warn!("Consul service entry missing address, skipping");
                                 continue;
                             }
                         };
@@ -91,7 +91,7 @@ impl ConsulImpl  {
                         let _service_info = ServiceInfo{
                             id: service_id,
                             name: service_name,
-                            addr: service_address,
+                            addr: address,
                             port: service_port,
                         };
                         infos.push(_service_info);

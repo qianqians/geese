@@ -182,11 +182,14 @@ impl HubContext {
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         let _s = server.clone();
+        let rt_handle = rt.handle().clone();
         rt.block_on(async move {
             let mut _s_handle = _s.as_ref().lock().await;
             _s_handle.listen_hub_service().await;
+            _s_handle.set_conn_rt_handle(rt_handle);
         });
-        server.as_ref().blocking_lock().set_conn_rt_handle(rt.handle().clone());
+        //server.as_ref().blocking_lock().set_conn_rt_handle(rt.handle().clone());
+        trace!("listen_hub_service rt.block_on end!");
         
         let rt_join_health = tokio::runtime::Runtime::new().unwrap();
         // 先绑定健康检查端口，失败则在注册 consul 前直接报错退出。
@@ -197,6 +200,7 @@ impl HubContext {
                 return Err(PyValueError::new_err("Hub health bind failed!"));
             }
         };
+        trace!("_health_listener end!");
         let _join_health = rt_join_health.spawn({
             let _health_handle_clone = _health_handle.clone();
             async move {
@@ -205,6 +209,7 @@ impl HubContext {
                 }
             }
         });
+        trace!("_join_health rt_join_health.spawn end!");
 
         Ok(HubContext {
             hub_name: _name,

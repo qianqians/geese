@@ -62,18 +62,17 @@ async fn main() {
 
     info!("gate log init!");
 
+    let _advertise_ip = cfg.advertise_ip.clone();
     let health_port = cfg.health_port;
-    let health_host = format!("0.0.0.0:{}", health_port);
-    let health_handle = HealthHandle::new(health_host.clone());
+    let _health_host = format!("http://{_advertise_ip}:{health_port}/health");
 
-    let host = format!("0.0.0.0:{}", cfg.service_port);
+    let service_port = cfg.service_port;
+    let host = format!("{_advertise_ip}:{service_port}");
     let client_tcp_host = cfg.client_tcp_port.map(|port| format!("0.0.0.0:{}", port));
     let client_ws_host = cfg.client_ws_port.map(|port| format!("0.0.0.0:{}", port));
 
-    let _advertise_ip = cfg.advertise_ip.clone();
-    let _health_host = format!("http://{_advertise_ip}:{health_port}/health");
-
     // 1. 先绑定健康检查端口，失败直接退出，避免“已注册但端点不可用”的竞态。
+    let health_host = format!("0.0.0.0:{}", health_port);
     let listener = match HealthHandle::bind(health_host.clone()).await {
         Ok(l) => l,
         Err(e) => {
@@ -81,6 +80,16 @@ async fn main() {
             return;
         }
     };
+    // 2. 用已绑定的 listener 提供健康检查服务。
+    let health_handle = HealthHandle::new(health_host.clone());
+    let health_service = tokio::spawn({
+        let _health_handle = health_handle.clone();
+        async move {
+            if let Err(e) = HealthHandle::serve(listener, _health_handle).await {
+                error!("health service error: {}", e);
+            }
+        }
+    });
 
     let mut consul_impl = match ConsulImpl::new(cfg.consul_url) {
         Err(e) => {
@@ -119,7 +128,7 @@ async fn main() {
         client_ws_host, 
         cfg.client_wss_cfg, 
         _consul_impl_arc, 
-        health_handle.clone()).await
+        health_handle).await
     {
         Err(e) => {
             error!("Gate GateServer new faild {}!", e);
@@ -128,16 +137,6 @@ async fn main() {
         Ok(_s) => _s
     };
     trace!("server new server!");
-
-    // 2. 用已绑定的 listener 提供健康检查服务。
-    let health_service = tokio::spawn({
-        let health_handle = health_handle.clone();
-        async move {
-            if let Err(e) = HealthHandle::serve(listener, health_handle).await {
-                error!("health service error: {}", e);
-            }
-        }
-    });
 
     trace!("server start run!");
     server.run().await;

@@ -230,6 +230,7 @@ impl HubServer {
                 _gate_name.clone(), 
                 gate_host, 
                 self.conn_msg_handle.clone(), 
+                self.conn_mgr.clone(),
                 self.close.clone()).await 
             {
                 let _wr_arc_clone = wr.clone();
@@ -351,22 +352,25 @@ impl HubServer {
     }
 
     pub async fn send_gate_msg(&mut self, gate_name: String, msg: GateHubService) -> bool {
+        trace!("send_gate_msg gate_name:{}", gate_name);
         {
             let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
             if let Some(_gate_arc) = _conn_mgr.get_gate_proxy(&gate_name) {
                 let mut _gate = _gate_arc.as_ref().lock().await;
                 return _gate.send_gate_msg(msg).await;
             }
+            trace!("send_gate_msg gate_name:{} _conn_mgr.get_gate_proxy faild!", gate_name);
         }
 
         {
             self.entry_gate_service(gate_name.clone()).await;
-
+            trace!("send_gate_msg gate_name:{} entry_gate_service!", gate_name);
             let mut _conn_mgr = self.conn_mgr.as_ref().lock().await;
             if let Some(_gate_arc) = _conn_mgr.get_gate_proxy(&gate_name) {
                 let mut _gate = _gate_arc.as_ref().lock().await;
                 return _gate.send_gate_msg(msg).await;
             }
+            trace!("send_gate_msg gate_name:{} _conn_mgr.get_gate_proxy faild again!", gate_name);
         }
 
         return false;

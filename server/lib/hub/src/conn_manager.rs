@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::collections::BTreeMap;
 
 use tokio::sync::Mutex;
-use tracing::warn;
+use tracing::{trace, warn};
 
 use tcp::tcp_connect::TcpConnect;
 use close_handle::CloseHandle;
@@ -52,32 +52,35 @@ impl ConnManager {
         }
     }
 
-    pub async fn direct_connect_server(&mut self, name: String, host: String, _handle: Arc<StdMutex<ConnCallbackMsgHandle>>, _close: Arc<Mutex<CloseHandle>>) 
+    pub async fn direct_connect_server(&mut self, name: String, host: String, _handle: Arc<StdMutex<ConnCallbackMsgHandle>>, _conn_mgr_arc: Arc<Mutex<ConnManager>>, _close: Arc<Mutex<CloseHandle>>) 
         -> Option<Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>>
     {
+        trace!("direct_connect_server name:{} host:{}", name, host);
+
         if let Some(wr) = self.wrs.get(&name) {
+            trace!("direct_connect_server wr self.wrs name:{}", name);
             return Some(wr.clone());
         }
 
         if let Ok((rd, wr)) = TcpConnect::connect(host.clone()).await {
+            trace!("direct_connect_server TcpConnect::connect name:{} host:{}", name, host);
+            
             let _wr_arc: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>> = Arc::new(Mutex::new(Box::new(wr)));
                                     
             let _conn_proxy = Arc::new(Mutex::new(
                 ConnProxy::new(_wr_arc.clone(), _handle.clone())));
 
-            let _conn_mgr_arc: Arc<Mutex<ConnManager>> = {
-                let _h = _handle.as_ref().lock().unwrap_or_else(|e| e.into_inner());
-                _h.get_conn_mgr()
-            };
             let _close_cb: Arc<Mutex<Box<dyn NetReaderCloseCallback + Send + 'static>>> =
                 Arc::new(Mutex::new(Box::new(ConnProxyCloseCallback::new(
                     _conn_proxy.clone(), _conn_mgr_arc, Some(name.clone())))));
             let _ = rd.start(Arc::new(Mutex::new(Box::new(
                 ConnProxyReaderCallback::new(_conn_proxy.clone())))), Some(_close_cb));
+            trace!("direct_connect_server TcpConnect::connect rd.start");
 
             self.wrs.insert(name.clone(), _wr_arc.clone());
             self.connproxys.insert(name.clone(), _conn_proxy.clone());
 
+            trace!("direct_connect_server _wr_arc name:{}", name);
             return Some(_wr_arc);
         }
 
