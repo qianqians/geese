@@ -62,9 +62,13 @@ class context(object):
         self.ctx.utc_unix_time_with_offset()
     
     def flush_hub_host_cache(self):
-        __tick__ = Timer(10, self.flush_hub_host_cache)
-        __tick__.start()
-        return self.ctx.flush_hub_host_cache()
+        try:
+            __tick__ = Timer(10, self.flush_hub_host_cache)
+            __tick__.start()
+            self.ctx.flush_hub_host_cache()
+        except Exception as e:
+            from .app import app
+            app().error(f"flush_hub_host_cache python error:{e}")
         
     def reg_hub_to_hub(self, hub_name:str) -> bool:
         return self.ctx.reg_hub_to_hub(hub_name)

@@ -39,6 +39,8 @@ class player(ABC, base_entity):
 
         app().player_mgr.add_player(self)
 
+        app().trace("player __init__ end!")
+
     @abstractmethod
     def full_info(self) -> dict:
         pass
@@ -98,9 +100,12 @@ class player(ABC, base_entity):
         self.on_migrate_to_other_hub()
 
     def create_main_remote_entity(self):
-        from .app import app
-        app().ctx.hub_call_client_create_remote_entity(self.client_gate_name, self.is_migrate, [], self.client_conn_id, self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))
-    
+        try:
+            from .app import app
+            app().ctx.hub_call_client_create_remote_entity(self.client_gate_name, self.is_migrate, [], self.client_conn_id, self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))
+        except Exception as e:
+            app().trace(f"create_main_remote_entity err:{e}")
+
     def create_remote_entity(self, gate_name:str, conn_id:list[str]):
         if gate_name not in self.conn_client_gate:
             self.conn_client_gate.append(gate_name)

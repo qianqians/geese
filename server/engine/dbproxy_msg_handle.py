@@ -71,11 +71,11 @@ class dbproxy_msg_handle(object):
         cb = self.__get_object_info_callback__[callback_id]
         obj_doc = decode(objs)
         cb(obj_doc["__list__"])
-        del self.__get_object_info_callback__[callback_id]
         
     def on_ack_get_object_info_end(self, callback_id:str):
         cb = self.__get_object_info_end_callback__[callback_id]
         cb()
+        del self.__get_object_info_callback__[callback_id]
         del self.__get_object_info_end_callback__[callback_id]
         
 

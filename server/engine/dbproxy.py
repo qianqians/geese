@@ -70,7 +70,7 @@ class dbproxy(object):
         app().trace(f"__get_object_one_callback_data__ data_list:{data_list}")
         if len(data_list) == 1:
             app().run_coroutine_async(__get_object_one_callback_set_future__(future, data_list[0]))
-        elif len(data_list) == 0:
+        elif data_list == None or len(data_list) == 0:
             app().run_coroutine_async(__get_object_one_callback_set_future__(future, None))
         else:
             app().run_coroutine_async(__get_object_one_callback_set_future_error__(future, DBExtensionError(db, collection, "db error more then one object")))
