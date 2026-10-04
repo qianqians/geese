@@ -80,10 +80,19 @@ pub async fn entry_hub_service(
     _close: Arc<Mutex<CloseHandle>>) -> String
 {
     let mut _impl = _consul_impl.as_ref().lock().await;
+    let _service_name = _service.clone();
     let mut services = match _impl.services(_service).await {
         None => return String::new(),
         Some(s) => s
     };
+    // consul 里可能一个实例都查不到（服务没启动 / 服务名对不上 / consul -dev 重启丢了注册）。
+    // 此时下面的 gen_range(0..0) 会 panic，而 pyo3-async-runtimes 会把 panic 转成
+    // "rust future panicked: unknown error" 抛回 Python，调用方拿不到任何有用信息，
+    // 所以必须先判空并返回空串（Python 侧按服务不存在处理）。
+    if services.is_empty() {
+        error!("entry_hub_service '{}' has no available instance!", _service_name);
+        return String::new();
+    }
     loop {
         let index:usize;
         {

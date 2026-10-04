@@ -14,10 +14,11 @@ class conn_msg_handle(object):
     
     def do_transfer_msg_end(self, conn_id:str, is_kick_off:bool):
         from .app import app
-        _t = app().ctx.transfer_timeout[conn_id]
-        if _t!= None:
+        # 用 pop(默认值)：conn_id 不在表里时会 KeyError（比如重连触发的 transfer），
+        # 异常会一路冒到 Rust 侧只留一行 error 日志。
+        _t = app().ctx.transfer_timeout.pop(conn_id, None)
+        if _t != None:
             _t.cancel()
-            app().ctx.transfer_timeout.pop(conn_id)
 
     def on_transfer_entity_control(self, entity_id:str, is_main:bool, is_reconnect:bool, gate_name:str, conn_id:str):
         from .app import app

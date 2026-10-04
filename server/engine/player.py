@@ -57,7 +57,11 @@ class player(ABC, base_entity):
         from .app import app
         app().entity_mgr.del_entity(self.entity_id)
         app().save_mgr.del_save_entity(self.entity_id)
-    
+
+    def on_transfer_conn(self, gate_name:str, conn_id:str):
+        """客户端连接被转移到新的 gate/conn（换设备登录、掉线重连）后的回调，子类按需覆盖。"""
+        pass
+
     def try_migrate_entity(self):
         if not self.is_dynamic:
             return
@@ -102,7 +106,10 @@ class player(ABC, base_entity):
     def create_main_remote_entity(self):
         try:
             from .app import app
-            app().ctx.hub_call_client_create_remote_entity(self.client_gate_name, self.is_migrate, [], self.client_conn_id, self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))
+            # 返回值是"hub → gate"这一跳有没有发出去（gate proxy 不存在 / 写失败时是 False）。
+            # 以前直接丢掉返回值，客户端收不到 entity 时服务端没有任何日志，非常难查。
+            if not app().ctx.hub_call_client_create_remote_entity(self.client_gate_name, self.is_migrate, [], self.client_conn_id, self.entity_id, self.entity_type, msgpack.dumps(self.client_info())):
+                app().error(f"create_main_remote_entity faild send to gate! gate_name:{self.client_gate_name} conn_id:{self.client_conn_id} entity_id:{self.entity_id}")
         except Exception as e:
             app().trace(f"create_main_remote_entity err:{e}")
 
@@ -110,7 +117,8 @@ class player(ABC, base_entity):
         if gate_name not in self.conn_client_gate:
             self.conn_client_gate.append(gate_name)
         from .app import app
-        app().ctx.hub_call_client_create_remote_entity(gate_name, self.is_migrate, conn_id, "", self.entity_id, self.entity_type, msgpack.dumps(self.client_info()))
+        if not app().ctx.hub_call_client_create_remote_entity(gate_name, self.is_migrate, conn_id, "", self.entity_id, self.entity_type, msgpack.dumps(self.client_info())):
+            app().error(f"create_remote_entity faild send to gate! gate_name:{gate_name} conn_id:{conn_id} entity_id:{self.entity_id}")
     
     def create_remote_hub_entity(self, hub_name:str):
         if hub_name not in self.conn_hub_server:
@@ -218,7 +226,7 @@ class player(ABC, base_entity):
     def call_client_mutilcast(self, method:str, argvs:bytes):
         from .app import app
         for gate_name in self.conn_client_gate:
-            app().ctx.hub_call_client_ntf(gate_name, None, self.entity_id, method, argvs)
+            app().ctx.hub_call_client_ntf(gate_name, "", self.entity_id, method, argvs)
 
 class player_event_handle(ABC):
     @abstractmethod
@@ -232,12 +240,29 @@ class player_manager(object):
         self.conn_id_players:dict[str, list[player]] = {}
         
     def add_player(self, _player:player):
+        # 同一个 entity_id 出现新实例（重新登录 / 掉线重连 / 老会话还没清干净就重进）时，
+        # 必须把旧实例从 conn_id_players 里摘掉：否则旧连接断开时 on_kick_off_client /
+        # on_client_disconnnect 会按旧 conn_id 找到旧实例，把它（以及 scene.players、
+        # group.players 里同 key 的新会话）一起当成离线踢掉，表现就是"第二次登录进去又没反应"。
+        _old = self.players.get(_player.entity_id)
+        if _old is not None and _old is not _player:
+            self.__detach_player_conn__(_old)
+
         self.players[_player.entity_id] = _player
-        
+
         if not _player.client_conn_id in self.conn_id_players:
             self.conn_id_players[_player.client_conn_id] = []
         if not _player in self.conn_id_players[_player.client_conn_id]:
             self.conn_id_players[_player.client_conn_id].append(_player)
+
+    def __detach_player_conn__(self, _player:player):
+        _p_list = self.conn_id_players.get(_player.client_conn_id)
+        if _p_list is None:
+            return
+        if _player in _p_list:
+            _p_list.remove(_player)
+        if len(_p_list) <= 0:
+            del self.conn_id_players[_player.client_conn_id]
 
     def get_player(self, entity_id:str) -> player:
         if entity_id in self.players:
@@ -245,35 +270,43 @@ class player_manager(object):
         return None
     
     def update_player_conn(self, entity_id:str, is_main:bool, is_reconnect:bool, gate_name:str, conn_id:str) -> bool:
-        _player = self.players[entity_id]
-        if not _player:
+        _player = self.players.get(entity_id)
+        if _player is None:
             return False
-        
-        _p_list = self.conn_id_players[_player.client_conn_id]
-            
+
+        _old_conn_id = _player.client_conn_id
+        _p_list = self.conn_id_players.get(_old_conn_id, [])
+        if _player not in _p_list:
+            _p_list.append(_player)
+
         if gate_name not in _player.conn_client_gate:
             _player.conn_client_gate.append(gate_name)
-        
-        _player.client_conn_id = conn_id
-        _player.client_gate_name = gate_name
-        
+
         for _p in _p_list:
             if gate_name not in _p.conn_client_gate:
                 _p.conn_client_gate.append(gate_name)
-        
+
             _p.client_conn_id = conn_id
             _p.client_gate_name = gate_name
-            
-        self.conn_id_players[_player.client_conn_id] = _p_list
-        
+            _p.on_transfer_conn(gate_name, conn_id)
+
+        # 旧的 conn_id 索引必须删掉：否则旧连接断开时 player_offline(旧conn_id) 仍然能在
+        # conn_id_players 里找到这批玩家，把刚刚转移到新连接的玩家当成离线踢下线。
+        if _old_conn_id != conn_id:
+            self.conn_id_players.pop(_old_conn_id, None)
+        self.conn_id_players[conn_id] = _p_list
+
         from .app import app
         if is_reconnect:
-            app().ctx.hub_call_client_refresh_entity(gate_name, _player.is_migrate, conn_id, is_main, _player.entity_id, _player.entity_type, msgpack.dumps(_player.client_info()))
+            if not app().ctx.hub_call_client_refresh_entity(gate_name, _player.is_migrate, conn_id, is_main, _player.entity_id, _player.entity_type, msgpack.dumps(_player.client_info())):
+                app().error(f"update_player_conn refresh_entity faild send to gate! gate_name:{gate_name} conn_id:{conn_id} entity_id:{_player.entity_id}")
         else:
             if is_main:
-                app().ctx.hub_call_client_create_remote_entity(gate_name, _player.is_migrate, [], conn_id, _player.entity_id, _player.entity_type, msgpack.dumps(_player.client_info()))
+                if not app().ctx.hub_call_client_create_remote_entity(gate_name, _player.is_migrate, [], conn_id, _player.entity_id, _player.entity_type, msgpack.dumps(_player.client_info())):
+                    app().error(f"update_player_conn create_remote_entity faild send to gate! gate_name:{gate_name} conn_id:{conn_id} entity_id:{_player.entity_id}")
             else:
-                app().ctx.hub_call_client_create_remote_entity(gate_name, _player.is_migrate, [conn_id], "", _player.entity_id, _player.entity_type, msgpack.dumps(_player.client_info()))
+                if not app().ctx.hub_call_client_create_remote_entity(gate_name, _player.is_migrate, [conn_id], "", _player.entity_id, _player.entity_type, msgpack.dumps(_player.client_info())):
+                    app().error(f"update_player_conn create_remote_entity faild send to gate! gate_name:{gate_name} conn_id:{conn_id} entity_id:{_player.entity_id}")
         
         return True
     
@@ -282,19 +315,29 @@ class player_manager(object):
             return self.conn_id_players[conn_id]
         return []
     
-    def del_player(self, entity_id:str):
-        if entity_id in self.players:
-            del self.players[entity_id]
-            
+    def del_player(self, entity_id:str, _player:player = None):
+        if entity_id not in self.players:
+            return
+        # 只有在册的就是这个实例时才删，避免把已经接管该 entity_id 的新会话删掉
+        if _player is not None and self.players[entity_id] is not _player:
+            return
+        del self.players[entity_id]
+
     def del_player_list(self, conn_id:str):
          if conn_id in self.conn_id_players:
              del self.conn_id_players[conn_id]
         
     def player_offline(self, conn_id:str):
         _player_list = self.get_player_by_conn_id(conn_id)
-        for _player in _player_list:
+        for _player in list(_player_list):
+            # 玩家可能已经转移到新连接，或者该 entity_id 已经被新实例接管（重登/重连），
+            # 旧连接的断开事件不能再动它，否则会把新会话一起踢掉。
+            if _player.client_conn_id != conn_id:
+                continue
+            if self.players.get(_player.entity_id) is not _player:
+                continue
             self.__player_event_handle__.player_offline(_player)
-            self.del_player(_player.entity_id)
+            self.del_player(_player.entity_id, _player)
         self.del_player_list(conn_id)
             
         

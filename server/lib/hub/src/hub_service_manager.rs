@@ -1,21 +1,21 @@
 use std::sync::{Arc, Weak};
 
+use async_trait::async_trait;
+use pyo3::prelude::*;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
-use pyo3::prelude::*;
-use async_trait::async_trait;
-use tracing::{trace, warn, error};
+use tracing::{error, trace, warn};
 
 use thrift::protocol::{TCompactInputProtocol, TSerializable};
 use thrift::transport::TBufferChannel;
 
-use net::{NetReaderCallback, NetReaderCloseCallback, NetReader, NetWriter};
-use tcp::tcp_socket::{TcpReader, TcpWriter};
-use tcp::tcp_server::TcpListenCallback;
-use redis_service::redis_mq_channel::RedisMQReader;
-use redis_service::redis_service::{create_lock_key, RedisService, RedisMQListenCallback};
 use close_handle::CloseHandle;
+use net::{NetReader, NetReaderCallback, NetReaderCloseCallback, NetWriter};
 use queue::Queue;
+use redis_service::redis_mq_channel::RedisMQReader;
+use redis_service::redis_service::{RedisMQListenCallback, RedisService, create_lock_key};
+use tcp::tcp_server::TcpListenCallback;
+use tcp::tcp_socket::{TcpReader, TcpWriter};
 
 use proto::common::{RegServer, RegServerCallback};
 use proto::gate::{GateHubService, HubCallTransferEntityComplete};
@@ -23,11 +23,11 @@ use proto::hub::HubService;
 
 pub type StdMutex<T> = std::sync::Mutex<T>;
 
-use crate::hub_proxy_manager::HubProxy;
-use crate::hub_msg_handle::HubCallbackMsgHandle;
-use crate::gate_proxy_manager::GateProxy;
-use crate::gate_msg_handle::GateCallbackMsgHandle;
 use crate::conn_manager::ConnManager;
+use crate::gate_msg_handle::GateCallbackMsgHandle;
+use crate::gate_proxy_manager::GateProxy;
+use crate::hub_msg_handle::HubCallbackMsgHandle;
+use crate::hub_proxy_manager::HubProxy;
 
 async fn get_hub_name_async(conn_proxy: &Arc<Mutex<ConnProxy>>) -> String {
     let mut _conn_proxy = conn_proxy.as_ref().lock().await;
@@ -63,7 +63,10 @@ fn handle_hub_event<F>(
     match ev_data.connproxy.upgrade() {
         Some(conn_proxy) => {
             let hub_name = rt.block_on(get_hub_name_async(&conn_proxy));
-            let mut handle = hub_msg_handle.as_ref().lock().unwrap_or_else(|e| e.into_inner());
+            let mut handle = hub_msg_handle
+                .as_ref()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             f(&mut handle, py, py_handle, hub_name);
         }
         None => error!("{}", err_msg),
@@ -84,7 +87,10 @@ fn handle_gate_event<F>(
     match ev_data.connproxy.upgrade() {
         Some(conn_proxy) => {
             let gate_name = rt.block_on(get_gate_name_async(&conn_proxy));
-            let mut handle = gate_msg_handle.as_ref().lock().unwrap_or_else(|e| e.into_inner());
+            let mut handle = gate_msg_handle
+                .as_ref()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             f(&mut handle, py, py_handle, gate_name);
         }
         None => error!("{}", err_msg),
@@ -95,19 +101,19 @@ pub struct ConnProxy {
     pub wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>,
     pub hubproxy: Option<Arc<Mutex<HubProxy>>>,
     pub gateproxy: Option<Arc<Mutex<GateProxy>>>,
-    msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>
+    msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>,
 }
 
 impl ConnProxy {
     pub fn new(
         _wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>,
-        _msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>) -> ConnProxy
-    {
+        _msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>,
+    ) -> ConnProxy {
         ConnProxy {
             wr: _wr,
             hubproxy: None,
             gateproxy: None,
-            msg_handle: _msg_handle
+            msg_handle: _msg_handle,
         }
     }
 
@@ -147,8 +153,8 @@ impl ConnCallbackMsgHandle {
         _hub_msg_handle: Arc<StdMutex<HubCallbackMsgHandle>>,
         _gate_msg_handle: Arc<StdMutex<GateCallbackMsgHandle>>,
         _conn_mgr: Arc<Mutex<ConnManager>>,
-        _close: Arc<Mutex<CloseHandle>>) -> Arc<StdMutex<ConnCallbackMsgHandle>> 
-    {
+        _close: Arc<Mutex<CloseHandle>>,
+    ) -> Arc<StdMutex<ConnCallbackMsgHandle>> {
         Arc::new(StdMutex::new(ConnCallbackMsgHandle {
             hub_name: _hub_name,
             hub_msg_handle: _hub_msg_handle,
@@ -183,26 +189,33 @@ impl ConnCallbackMsgHandle {
                 error!("GateClientMsgHandle do_event err:{}", e);
                 return;
             }
-            Ok(d) => d
+            Ok(d) => d,
         };
         let _handle_arc = _p.get_msg_handle();
-        let mut _handle = _handle_arc.as_ref().lock().unwrap_or_else(|e| e.into_inner());
-        _handle.enque_event(ConnEvent{
+        let mut _handle = _handle_arc
+            .as_ref()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        _handle.enque_event(ConnEvent {
             connproxy: Arc::downgrade(&_proxy_clone),
-            ev: _ev
+            ev: _ev,
         })
     }
 
-    pub fn poll(_handle: Arc<StdMutex<ConnCallbackMsgHandle>>, py: Python<'_>, py_handle: Py<PyAny>) -> bool {
+    pub fn poll(
+        _handle: Arc<StdMutex<ConnCallbackMsgHandle>>,
+        py: Python<'_>,
+        py_handle: Py<PyAny>,
+    ) -> bool {
         let mut _self = _handle.as_ref().lock().unwrap_or_else(|e| e.into_inner());
         let _handle_clone = _handle.clone();
         let rt = _self.rt_handle.as_ref().expect("rt_handle not set").clone();
         let opt_ev_data = _self.queue.deque();
         let ev_data = match opt_ev_data {
             None => return false,
-            Some(ev_data) => ev_data
+            Some(ev_data) => ev_data,
         };
-        
+
         match ev_data.ev {
             // hub msg handle
             HubService::RegServer(ev) => {
@@ -216,69 +229,95 @@ impl ConnCallbackMsgHandle {
 
                             let svr_name = ev.name.clone().unwrap_or_default();
                             let svr_type = ev.type_.clone().unwrap_or_default();
-                            
+
                             let cb_msg = RegServerCallback::new(_self.hub_name.clone());
 
                             if svr_type == "hub" {
-                                let _proxy = Arc::new(Mutex::new(
-                                    HubProxy::new(_conn_proxy.wr.clone())
-                                ));
-    
+                                let _proxy =
+                                    Arc::new(Mutex::new(HubProxy::new(_conn_proxy.wr.clone())));
+
                                 let mut _proxy_tmp = _proxy.as_ref().lock().await;
                                 _proxy_tmp.hub_name = Some(svr_name.clone());
-                                
+
                                 let mut _conn_mgr = _self.conn_mgr.as_ref().lock().await;
-                                _conn_mgr.add_hub_proxy(svr_name.clone(), _proxy.clone()).await;
+                                _conn_mgr
+                                    .add_hub_proxy(svr_name.clone(), _proxy.clone())
+                                    .await;
                                 _conn_proxy.hubproxy = Some(_proxy.clone());
-    
-                                _proxy_tmp.send_hub_msg(HubService::RegServerCallback(cb_msg)).await;
+
+                                _proxy_tmp
+                                    .send_hub_msg(HubService::RegServerCallback(cb_msg))
+                                    .await;
                             } else if svr_type == "gate" {
                                 let _gate_name_tmp = svr_name.clone();
                                 let mut _gate_tmp = GateProxy::new(_conn_proxy.wr.clone());
-                            
+
                                 _gate_tmp.gate_name = Some(svr_name.clone());
-                                _gate_tmp.send_gate_msg(GateHubService::RegServerCallback(cb_msg)).await;
-                
+                                _gate_tmp
+                                    .send_gate_msg(GateHubService::RegServerCallback(cb_msg))
+                                    .await;
+
                                 let _gateproxy = Arc::new(Mutex::new(_gate_tmp));
                                 let mut _conn_mgr = _self.conn_mgr.as_ref().lock().await;
                                 _conn_mgr.add_gate_proxy(_gate_name_tmp, _gateproxy).await;
                             }
                         }
                     });
-                    let mut _hub_msg_handle = _hub_msg_handle_c.as_ref().lock().unwrap_or_else(|e| e.into_inner());
+                    let mut _hub_msg_handle = _hub_msg_handle_c
+                        .as_ref()
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner());
                     _hub_msg_handle.do_reg_hub(py, py_handle, ev_tmp);
-                }
-                else {
+                } else {
                     error!("hub reg hub conn_proxy is destory!");
                 }
-            },
+            }
             HubService::RegServerCallback(ev) => {
                 trace!("ev_data.ev HubService::RegServerCallback!");
                 rt.block_on(async move {
                     let mut _conn_mgr = _self.conn_mgr.as_ref().lock().await;
-                    let lock_key = create_lock_key(_self.hub_name.clone(), ev.name.clone().unwrap_or_default());
+                    let lock_key = create_lock_key(
+                        _self.hub_name.clone(),
+                        ev.name.clone().unwrap_or_default(),
+                    );
                     let value = _conn_mgr.remove_lock(lock_key.clone());
                     let _redis_service = match _self.redis_service.clone() {
-                                                        Some(s) => s,
-                                                        None => {
-                                                            error!("Missing redis_service in msg handle");
-                                                            return;
-                                                        }
-                                                    };
+                        Some(s) => s,
+                        None => {
+                            error!("Missing redis_service in msg handle");
+                            return;
+                        }
+                    };
                     let mut _service = _redis_service.as_ref().lock().await;
                     if let Err(e) = _service.release_lock(lock_key.clone(), value, None).await {
                         error!("Failed to release lock '{}': {}", lock_key, e);
                     }
                 });
-            },
+            }
             HubService::QueryEntity(ref ev) => {
                 trace!("ev_data.ev HubService::QueryEntity!");
-                handle_hub_event(&ev_data, &rt, "hub query entity conn_proxy is destory!", py, py_handle, &_self.hub_msg_handle, |h, py, pyh, name| h.do_query_service_entity(py, pyh, name, ev.clone()));
-            },
+                handle_hub_event(
+                    &ev_data,
+                    &rt,
+                    "hub query entity conn_proxy is destory!",
+                    py,
+                    py_handle,
+                    &_self.hub_msg_handle,
+                    |h, py, pyh, name| h.do_query_service_entity(py, pyh, name, ev.clone()),
+                );
+            }
             HubService::CreateServiceEntity(ref ev) => {
                 trace!("ev_data.ev HubService::CreateServiceEntity!");
-                handle_hub_event(&ev_data, &rt, "hub create service entity conn_proxy is destory!", py, py_handle, &_self.hub_msg_handle, |h, py, pyh, name| h.do_create_service_entity(py, pyh, name, ev.clone()));
-            },
+                handle_hub_event(
+                    &ev_data,
+                    &rt,
+                    "hub create service entity conn_proxy is destory!",
+                    py,
+                    py_handle,
+                    &_self.hub_msg_handle,
+                    |h, py, pyh, name| h.do_create_service_entity(py, pyh, name, ev.clone()),
+                );
+            }
             HubService::HubForwardClientRequestService(ev) => {
                 trace!("ev_data.ev HubService::HubForwardClientRequestService!");
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
@@ -332,18 +371,18 @@ impl ConnCallbackMsgHandle {
                                     _conn_mgr.add_lock(_lock_key, value);
 
                                     if let Some(_wr_arc) = _conn_mgr.direct_connect_server(
-                                        _gate_name.clone(), 
-                                        _gate_host.clone(), 
-                                        _handle_clone, 
+                                        _gate_name.clone(),
+                                        _gate_host.clone(),
+                                        _handle_clone,
                                         _self.get_conn_mgr(),
                                         _close).await
                                     {
                                         let _wr_arc_clone = _wr_arc.clone();
-                                        
+
                                         let _gate_name_tmp = _gate_name.clone();
                                         let mut _gate_tmp = GateProxy::new(_wr_arc_clone);
                                         _gate_tmp.send_gate_msg(GateHubService::RegServer(RegServer::new(_conn_mgr.get_hub_name(), "hub".to_string()))).await;
-                                    
+
                                         _gate_tmp.gate_name = Some(_gate_name);
                                         _gate_tmp.gate_host = Some(_gate_host);
 
@@ -368,14 +407,20 @@ impl ConnCallbackMsgHandle {
                         return hub_name;
                     });
 
-                    trace!("ev_data.ev HubService::HubForwardClientRequestService! hub_name:{}", hub_name);
-                    let mut _hub_msg_handle = _hub_msg_handle_c.as_ref().lock().unwrap_or_else(|e| e.into_inner());
-                    _hub_msg_handle.do_forward_client_request_service(py, py_handle, hub_name, ev_tmp);
-                }
-                else {
+                    trace!(
+                        "ev_data.ev HubService::HubForwardClientRequestService! hub_name:{}",
+                        hub_name
+                    );
+                    let mut _hub_msg_handle = _hub_msg_handle_c
+                        .as_ref()
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner());
+                    _hub_msg_handle
+                        .do_forward_client_request_service(py, py_handle, hub_name, ev_tmp);
+                } else {
                     error!("hub forward client request service conn_proxy is destory!");
                 }
-            },
+            }
             HubService::HubForwardClientRequestServiceExt(ev) => {
                 trace!("ev_data.ev HubService::HubForwardClientRequestServiceExt!");
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
@@ -389,7 +434,7 @@ impl ConnCallbackMsgHandle {
                             if let Some(_hub_proxy) = _conn_proxy.hubproxy.clone() {
                                 let _proxy_tmp = _hub_proxy.as_ref().lock().await;
                                 hub_name = _proxy_tmp.hub_name.clone().unwrap_or_default();
-                                
+
                                 for info in ev.request_infos.unwrap_or_default() {
                                     let _gate_name = match info.gate_name.clone() {
                                         Some(n) => n,
@@ -424,18 +469,18 @@ impl ConnCallbackMsgHandle {
                                         _conn_mgr.add_lock(_lock_key, value);
 
                                         if let Some(_wr_arc) = _conn_mgr.direct_connect_server(
-                                            _gate_name.clone(), 
-                                            _gate_host.clone(), 
-                                            _handle_clone.clone(), 
+                                            _gate_name.clone(),
+                                            _gate_host.clone(),
+                                            _handle_clone.clone(),
                                             _self.get_conn_mgr(),
                                             _close).await
                                         {
                                             let _wr_arc_clone = _wr_arc.clone();
-                                            
+
                                             let _gate_name_tmp = _gate_name.clone();
                                             let mut _gate_tmp = GateProxy::new(_wr_arc_clone);
                                             _gate_tmp.send_gate_msg(GateHubService::RegServer(RegServer::new(_conn_mgr.get_hub_name(), "hub".to_string()))).await;
-                                        
+
                                             _gate_tmp.gate_name = Some(_gate_name);
                                             _gate_tmp.gate_host = Some(_gate_host);
 
@@ -458,45 +503,112 @@ impl ConnCallbackMsgHandle {
                         return hub_name;
                     });
 
-                    let mut _hub_msg_handle = _hub_msg_handle_c.as_ref().lock().unwrap_or_else(|e| e.into_inner());
-                    _hub_msg_handle.do_forward_client_request_service_ext(py, py_handle, hub_name, ev_tmp);
-                }
-                else {
+                    let mut _hub_msg_handle = _hub_msg_handle_c
+                        .as_ref()
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner());
+                    _hub_msg_handle
+                        .do_forward_client_request_service_ext(py, py_handle, hub_name, ev_tmp);
+                } else {
                     error!("hub forward client request service conn_proxy is destory!");
                 }
-            },
+            }
             HubService::HubCallRpc(ref ev) => {
                 trace!("ev_data.ev HubService::HubCallRpc!");
-                handle_hub_event(&ev_data, &rt, "hub call rpc conn_proxy is destory!", py, py_handle, &_self.hub_msg_handle, |h, py, pyh, name| h.do_call_hub_rpc(py, pyh, name, ev.clone()));
-            },
+                handle_hub_event(
+                    &ev_data,
+                    &rt,
+                    "hub call rpc conn_proxy is destory!",
+                    py,
+                    py_handle,
+                    &_self.hub_msg_handle,
+                    |h, py, pyh, name| h.do_call_hub_rpc(py, pyh, name, ev.clone()),
+                );
+            }
             HubService::HubCallRsp(ref ev) => {
                 trace!("ev_data.ev HubService::HubCallRsp!");
-                handle_hub_event(&ev_data, &rt, "hub call rsp conn_proxy is destory!", py, py_handle, &_self.hub_msg_handle, |h, py, pyh, name| h.do_call_hub_rsp(py, pyh, name, ev.clone()));
-            },
+                handle_hub_event(
+                    &ev_data,
+                    &rt,
+                    "hub call rsp conn_proxy is destory!",
+                    py,
+                    py_handle,
+                    &_self.hub_msg_handle,
+                    |h, py, pyh, name| h.do_call_hub_rsp(py, pyh, name, ev.clone()),
+                );
+            }
             HubService::HubCallErr(ref ev) => {
                 trace!("ev_data.ev HubService::HubCallErr!");
-                handle_hub_event(&ev_data, &rt, "hub call err conn_proxy is destory!", py, py_handle, &_self.hub_msg_handle, |h, py, pyh, name| h.do_call_hub_err(py, pyh, name, ev.clone()));
-            },
+                handle_hub_event(
+                    &ev_data,
+                    &rt,
+                    "hub call err conn_proxy is destory!",
+                    py,
+                    py_handle,
+                    &_self.hub_msg_handle,
+                    |h, py, pyh, name| h.do_call_hub_err(py, pyh, name, ev.clone()),
+                );
+            }
             HubService::HubCallNtf(ref ev) => {
                 trace!("ev_data.ev HubService::HubCallNtf!");
-                handle_hub_event(&ev_data, &rt, "hub call ntf conn_proxy is destory!", py, py_handle, &_self.hub_msg_handle, |h, py, pyh, name| h.do_call_hub_ntf(py, pyh, name, ev.clone()));
-            },
+                handle_hub_event(
+                    &ev_data,
+                    &rt,
+                    "hub call ntf conn_proxy is destory!",
+                    py,
+                    py_handle,
+                    &_self.hub_msg_handle,
+                    |h, py, pyh, name| h.do_call_hub_ntf(py, pyh, name, ev.clone()),
+                );
+            }
             HubService::WaitMigrateEntity(ref ev) => {
                 trace!("ev_data.ev HubService::WaitMigrateEntity!");
-                handle_hub_event(&ev_data, &rt, "wait migrate entity conn_proxy is destory!", py, py_handle, &_self.hub_msg_handle, |h, py, pyh, name| h.do_wait_migrate_entity(py, pyh, name, ev.clone()));
-            },
+                handle_hub_event(
+                    &ev_data,
+                    &rt,
+                    "wait migrate entity conn_proxy is destory!",
+                    py,
+                    py_handle,
+                    &_self.hub_msg_handle,
+                    |h, py, pyh, name| h.do_wait_migrate_entity(py, pyh, name, ev.clone()),
+                );
+            }
             HubService::MigrateEntity(ref ev) => {
                 trace!("ev_data.ev HubService::MigrateEntity!");
-                handle_hub_event(&ev_data, &rt, "migrate entity conn_proxy is destory!", py, py_handle, &_self.hub_msg_handle, |h, py, pyh, name| h.do_migrate_entity(py, pyh, name, ev.clone()));
-            },
+                handle_hub_event(
+                    &ev_data,
+                    &rt,
+                    "migrate entity conn_proxy is destory!",
+                    py,
+                    py_handle,
+                    &_self.hub_msg_handle,
+                    |h, py, pyh, name| h.do_migrate_entity(py, pyh, name, ev.clone()),
+                );
+            }
             HubService::CreateMigrateEntity(ref ev) => {
                 trace!("ev_data.ev HubService::CreateMigrateEntity!");
-                handle_hub_event(&ev_data, &rt, "migrate entity complete conn_proxy is destory!", py, py_handle, &_self.hub_msg_handle, |h, py, pyh, name| h.do_create_migrate_entity(py, pyh, name, ev.clone()));
-            },
+                handle_hub_event(
+                    &ev_data,
+                    &rt,
+                    "migrate entity complete conn_proxy is destory!",
+                    py,
+                    py_handle,
+                    &_self.hub_msg_handle,
+                    |h, py, pyh, name| h.do_create_migrate_entity(py, pyh, name, ev.clone()),
+                );
+            }
             HubService::MigrateEntityComplete(ref ev) => {
                 trace!("ev_data.ev HubService::MigrateEntityComplete!");
-                handle_hub_event(&ev_data, &rt, "migrate entity complete conn_proxy is destory!", py, py_handle, &_self.hub_msg_handle, |h, py, pyh, name| h.do_migrate_entity_complete(py, pyh, name, ev.clone()));
-            },
+                handle_hub_event(
+                    &ev_data,
+                    &rt,
+                    "migrate entity complete conn_proxy is destory!",
+                    py,
+                    py_handle,
+                    &_self.hub_msg_handle,
+                    |h, py, pyh, name| h.do_migrate_entity_complete(py, pyh, name, ev.clone()),
+                );
+            }
 
             // gate msg handle
             HubService::ClientRequestLogin(ev) => {
@@ -510,16 +622,19 @@ impl ConnCallbackMsgHandle {
                             let _gate_name = match ev.gate_name.clone() {
                                 Some(n) => n,
                                 None => {
-                                    error!("Missing required field 'gate_name' in ClientRequestLogin");
+                                    error!(
+                                        "Missing required field 'gate_name' in ClientRequestLogin"
+                                    );
                                     return;
                                 }
                             };
-                            let _proxy = Arc::new(Mutex::new(
-                                GateProxy::new(_conn_proxy.wr.clone())
-                            ));
+                            let _proxy =
+                                Arc::new(Mutex::new(GateProxy::new(_conn_proxy.wr.clone())));
 
                             let mut _conn_mgr = _self.conn_mgr.as_ref().lock().await;
-                            _conn_mgr.add_gate_proxy(_gate_name.clone(), _proxy.clone()).await;
+                            _conn_mgr
+                                .add_gate_proxy(_gate_name.clone(), _proxy.clone())
+                                .await;
                             _conn_proxy.gateproxy = Some(_proxy.clone());
 
                             let mut _proxy_tmp = _proxy.as_ref().lock().await;
@@ -532,13 +647,15 @@ impl ConnCallbackMsgHandle {
                         }
                     });
 
-                    let mut _gate_msg_handle = _gate_msg_handle_c.as_ref().lock().unwrap_or_else(|e| e.into_inner());
+                    let mut _gate_msg_handle = _gate_msg_handle_c
+                        .as_ref()
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner());
                     _gate_msg_handle.do_client_request_login(py, py_handle, ev_tmp);
-                }
-                else {
+                } else {
                     error!("gate client request login conn_proxy is destory!");
                 }
-            },
+            }
             HubService::ClientRequestReconnect(ev) => {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let _gate_msg_handle_c = _self.gate_msg_handle.clone();
@@ -573,23 +690,37 @@ impl ConnCallbackMsgHandle {
                         }
                     });
 
-                    let mut _gate_msg_handle = _gate_msg_handle_c.as_ref().lock().unwrap_or_else(|e| e.into_inner());
+                    let mut _gate_msg_handle = _gate_msg_handle_c
+                        .as_ref()
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner());
                     _gate_msg_handle.do_client_request_reconnect(py, py_handle, _ev_tmp);
-                }
-                else {
+                } else {
                     error!("gate client request reconnect conn_proxy is destory!");
                 }
-            },
+            }
             HubService::TransferMsgEnd(ev) => {
-                let mut _gate_msg_handle_c = _self.gate_msg_handle.as_ref().lock().unwrap_or_else(|e| e.into_inner());
+                let mut _gate_msg_handle_c = _self
+                    .gate_msg_handle
+                    .as_ref()
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
                 _gate_msg_handle_c.do_transfer_msg_end(py, py_handle, ev);
-
-            },
+            }
             HubService::TransferEntityControl(ev) => {
+                trace!(
+                    "TransferEntityControl conn_id={:?} entity_id={:?}",
+                    ev.conn_id, ev.entity_id
+                );
+
                 let conn_id = ev.conn_id.clone();
                 let entity_id = ev.entity_id.clone();
 
-                let mut _gate_msg_handle = _self.gate_msg_handle.as_ref().lock().unwrap_or_else(|e| e.into_inner());
+                let mut _gate_msg_handle = _self
+                    .gate_msg_handle
+                    .as_ref()
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
                 _gate_msg_handle.do_transfer_entity_control(py, py_handle, ev);
 
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
@@ -598,23 +729,48 @@ impl ConnCallbackMsgHandle {
 
                         if let Some(_gate_proxy) = &_conn_proxy.gateproxy {
                             let mut _proxy_tmp = _gate_proxy.as_ref().lock().await;
-                            _proxy_tmp.send_gate_msg(GateHubService::TransferComplete(HubCallTransferEntityComplete::new(conn_id.unwrap_or_default(), entity_id.unwrap_or_default()))).await;
-                        }
-                        else {
+                            _proxy_tmp
+                                .send_gate_msg(GateHubService::TransferComplete(
+                                    HubCallTransferEntityComplete::new(
+                                        conn_id.unwrap_or_default(),
+                                        entity_id.unwrap_or_default(),
+                                    ),
+                                ))
+                                .await;
+                        } else {
                             error!("HubService::TransferEntityControl! wrong msg handle!");
                         }
+
+                        trace!("TransferEntityControl send_gate_msg end!");
                     });
-                }
-                else {
+                } else {
                     error!("gate client Transfer Entity Control conn_proxy is destory!");
                 }
+
+                trace!("TransferEntityControl end!");
             }
             HubService::KickOffClient(ref ev) => {
-                handle_gate_event(&ev_data, &rt, "gate client kick off conn_proxy is destory!", py, py_handle, &_self.gate_msg_handle, |h, py, pyh, name| h.do_client_kick_off(py, pyh, name, ev.clone()));
-            },
+                handle_gate_event(
+                    &ev_data,
+                    &rt,
+                    "gate client kick off conn_proxy is destory!",
+                    py,
+                    py_handle,
+                    &_self.gate_msg_handle,
+                    |h, py, pyh, name| h.do_client_kick_off(py, pyh, name, ev.clone()),
+                );
+            }
             HubService::ClientDisconnnect(ref ev) => {
-                handle_gate_event(&ev_data, &rt, "gate client disconnect conn_proxy is destory!", py, py_handle, &_self.gate_msg_handle, |h, py, pyh, name| h.do_client_disconnnect(py, pyh, name, ev.clone()));
-            },
+                handle_gate_event(
+                    &ev_data,
+                    &rt,
+                    "gate client disconnect conn_proxy is destory!",
+                    py,
+                    py_handle,
+                    &_self.gate_msg_handle,
+                    |h, py, pyh, name| h.do_client_disconnnect(py, pyh, name, ev.clone()),
+                );
+            }
             HubService::ClientRequestService(ev) => {
                 if let Some(conn_proxy) = ev_data.connproxy.upgrade() {
                     let _gate_msg_handle_c = _self.gate_msg_handle.clone();
@@ -627,21 +783,21 @@ impl ConnCallbackMsgHandle {
                             if let Some(_gate_proxy) = _conn_proxy.gateproxy.clone() {
                                 let _proxy_tmp = _gate_proxy.as_ref().lock().await;
                                 gate_name = _proxy_tmp.gate_name.clone().unwrap_or_default();
-                            }
-                            else {
+                            } else {
                                 gate_name = ev.gate_name.unwrap_or_default();
-                                let _proxy = Arc::new(Mutex::new(
-                                    GateProxy::new(_conn_proxy.wr.clone())
-                                ));
+                                let _proxy =
+                                    Arc::new(Mutex::new(GateProxy::new(_conn_proxy.wr.clone())));
                                 let mut _proxy_tmp = _proxy.as_ref().lock().await;
-    
+
                                 _proxy_tmp.gate_name = Some(gate_name.clone());
                                 _proxy_tmp.gate_host = ev.gate_host;
-    
+
                                 let mut _conn_mgr = _self.conn_mgr.as_ref().lock().await;
-                                _conn_mgr.add_gate_proxy(gate_name.clone(), _proxy.clone()).await;
+                                _conn_mgr
+                                    .add_gate_proxy(gate_name.clone(), _proxy.clone())
+                                    .await;
                                 _conn_proxy.gateproxy = Some(_proxy.clone());
-    
+
                                 let cb_msg = RegServerCallback::new(_self.hub_name.clone());
                                 let msg = GateHubService::RegServerCallback(cb_msg);
                                 _proxy_tmp.send_gate_msg(msg).await;
@@ -651,38 +807,72 @@ impl ConnCallbackMsgHandle {
                         }
                         return gate_name;
                     });
-                    let mut _gate_msg_handle = _gate_msg_handle_c.as_ref().lock().unwrap_or_else(|e| e.into_inner());
+                    let mut _gate_msg_handle = _gate_msg_handle_c
+                        .as_ref()
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner());
                     _gate_msg_handle.do_client_request_service(py, py_handle, gate_name, _ev_tmp);
-                }
-                else {
+                } else {
                     error!("gate client request service conn_proxy is destory!");
                 }
             }
             HubService::ClientCallRpc(ref ev) => {
-                handle_gate_event(&ev_data, &rt, "gate client call rpc conn_proxy is destory!", py, py_handle, &_self.gate_msg_handle, |h, py, pyh, name| h.do_client_call_rpc(py, pyh, name, ev.clone()));
-            },
+                handle_gate_event(
+                    &ev_data,
+                    &rt,
+                    "gate client call rpc conn_proxy is destory!",
+                    py,
+                    py_handle,
+                    &_self.gate_msg_handle,
+                    |h, py, pyh, name| h.do_client_call_rpc(py, pyh, name, ev.clone()),
+                );
+            }
             HubService::ClientCallRsp(ref ev) => {
-                handle_gate_event(&ev_data, &rt, "gate client call rsp conn_proxy is destory!", py, py_handle, &_self.gate_msg_handle, |h, py, pyh, name| h.do_client_call_rsp(py, pyh, name, ev.clone()));
-            },
+                handle_gate_event(
+                    &ev_data,
+                    &rt,
+                    "gate client call rsp conn_proxy is destory!",
+                    py,
+                    py_handle,
+                    &_self.gate_msg_handle,
+                    |h, py, pyh, name| h.do_client_call_rsp(py, pyh, name, ev.clone()),
+                );
+            }
             HubService::ClientCallErr(ref ev) => {
-                handle_gate_event(&ev_data, &rt, "gate client call err conn_proxy is destory!", py, py_handle, &_self.gate_msg_handle, |h, py, pyh, name| h.do_client_call_err(py, pyh, name, ev.clone()));
-            },
+                handle_gate_event(
+                    &ev_data,
+                    &rt,
+                    "gate client call err conn_proxy is destory!",
+                    py,
+                    py_handle,
+                    &_self.gate_msg_handle,
+                    |h, py, pyh, name| h.do_client_call_err(py, pyh, name, ev.clone()),
+                );
+            }
             HubService::ClientCallNtf(ref ev) => {
-                handle_gate_event(&ev_data, &rt, "gate client call ntf conn_proxy is destory!", py, py_handle, &_self.gate_msg_handle, |h, py, pyh, name| h.do_client_call_ntf(py, pyh, name, ev.clone()));
-            },
+                handle_gate_event(
+                    &ev_data,
+                    &rt,
+                    "gate client call ntf conn_proxy is destory!",
+                    py,
+                    py_handle,
+                    &_self.gate_msg_handle,
+                    |h, py, pyh, name| h.do_client_call_ntf(py, pyh, name, ev.clone()),
+                );
+            }
         };
-        
+
         return true;
     }
 }
 
 pub struct ConnProxyReaderCallback {
-    connproxy: Arc<Mutex<ConnProxy>>
+    connproxy: Arc<Mutex<ConnProxy>>,
 }
 
 #[async_trait]
 impl NetReaderCallback for ConnProxyReaderCallback {
-    async fn cb(&mut self, data:Vec<u8>) {
+    async fn cb(&mut self, data: Vec<u8>) {
         ConnCallbackMsgHandle::on_event(self.connproxy.clone(), data).await
     }
 }
@@ -690,7 +880,7 @@ impl NetReaderCallback for ConnProxyReaderCallback {
 impl ConnProxyReaderCallback {
     pub fn new(_connproxy: Arc<Mutex<ConnProxy>>) -> ConnProxyReaderCallback {
         ConnProxyReaderCallback {
-            connproxy: _connproxy
+            connproxy: _connproxy,
         }
     }
 }
@@ -702,7 +892,11 @@ pub struct ConnProxyCloseCallback {
 }
 
 impl ConnProxyCloseCallback {
-    pub fn new(_connproxy: Arc<Mutex<ConnProxy>>, _conn_mgr: Arc<Mutex<ConnManager>>, _name: Option<String>) -> ConnProxyCloseCallback {
+    pub fn new(
+        _connproxy: Arc<Mutex<ConnProxy>>,
+        _conn_mgr: Arc<Mutex<ConnManager>>,
+        _name: Option<String>,
+    ) -> ConnProxyCloseCallback {
         ConnProxyCloseCallback {
             connproxy: _connproxy,
             conn_mgr: _conn_mgr,
@@ -745,17 +939,24 @@ impl NetReaderCloseCallback for ConnProxyCloseCallback {
 }
 
 pub struct ConnProxyManager {
-    conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>, 
-    join_list: Vec<JoinHandle<()>>
+    conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>,
+    join_list: Vec<JoinHandle<()>>,
 }
 
 #[async_trait]
 impl RedisMQListenCallback for ConnProxyManager {
-    async fn redis_mq_cb(&mut self, rd: Arc<Mutex<RedisMQReader>>, wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>){
+    async fn redis_mq_cb(
+        &mut self,
+        rd: Arc<Mutex<RedisMQReader>>,
+        wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>,
+    ) {
         self.prune_joins();
         let _connproxy = Arc::new(Mutex::new(ConnProxy::new(wr, self.conn_msg_handle.clone())));
         let mut _rd_ref = rd.as_ref().lock().await;
-        self.join_list.push(_rd_ref.start(Arc::new(Mutex::new(Box::new(ConnProxyReaderCallback::new(_connproxy))))));
+        self.join_list
+            .push(_rd_ref.start(Arc::new(Mutex::new(Box::new(
+                ConnProxyReaderCallback::new(_connproxy),
+            )))));
     }
 }
 
@@ -763,15 +964,32 @@ impl RedisMQListenCallback for ConnProxyManager {
 impl TcpListenCallback for ConnProxyManager {
     async fn cb(&mut self, rd: TcpReader, wr: TcpWriter) {
         self.prune_joins();
-        let _wr_arc: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>> = Arc::new(Mutex::new(Box::new(wr)));
-        let _connproxy = Arc::new(Mutex::new(ConnProxy::new(_wr_arc, self.conn_msg_handle.clone())));
+        let _wr_arc: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>> =
+            Arc::new(Mutex::new(Box::new(wr)));
+        let _connproxy = Arc::new(Mutex::new(ConnProxy::new(
+            _wr_arc,
+            self.conn_msg_handle.clone(),
+        )));
         let conn_mgr = {
-            let h = self.conn_msg_handle.as_ref().lock().unwrap_or_else(|e| e.into_inner());
+            let h = self
+                .conn_msg_handle
+                .as_ref()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             h.get_conn_mgr()
         };
         let _close_cb: Arc<Mutex<Box<dyn NetReaderCloseCallback + Send + 'static>>> =
-            Arc::new(Mutex::new(Box::new(ConnProxyCloseCallback::new(_connproxy.clone(), conn_mgr, None))));
-        self.join_list.push(rd.start(Arc::new(Mutex::new(Box::new(ConnProxyReaderCallback::new(_connproxy)))), Some(_close_cb)));
+            Arc::new(Mutex::new(Box::new(ConnProxyCloseCallback::new(
+                _connproxy.clone(),
+                conn_mgr,
+                None,
+            ))));
+        self.join_list.push(rd.start(
+            Arc::new(Mutex::new(Box::new(ConnProxyReaderCallback::new(
+                _connproxy,
+            )))),
+            Some(_close_cb),
+        ));
     }
 }
 
@@ -781,21 +999,21 @@ impl ConnProxyManager {
         self.join_list.retain(|j| !j.is_finished());
     }
 
-    pub fn new_tcp_callback(_conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>) 
-        -> Arc<Mutex<Box<dyn TcpListenCallback + Send + 'static>>> 
-    {
+    pub fn new_tcp_callback(
+        _conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>,
+    ) -> Arc<Mutex<Box<dyn TcpListenCallback + Send + 'static>>> {
         Arc::new(Mutex::new(Box::new(ConnProxyManager {
             conn_msg_handle: _conn_msg_handle,
-            join_list: Vec::new()
+            join_list: Vec::new(),
         })))
     }
 
-    pub fn new_redis_mq_callback(_conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>) 
-        -> Arc<Mutex<Box<dyn RedisMQListenCallback + Send + 'static>>> 
-    {
+    pub fn new_redis_mq_callback(
+        _conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>,
+    ) -> Arc<Mutex<Box<dyn RedisMQListenCallback + Send + 'static>>> {
         Arc::new(Mutex::new(Box::new(ConnProxyManager {
             conn_msg_handle: _conn_msg_handle,
-            join_list: Vec::new()
+            join_list: Vec::new(),
         })))
     }
 }

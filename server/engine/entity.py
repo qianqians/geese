@@ -159,7 +159,7 @@ class entity(ABC, base_entity):
     def call_client_mutilcast(self, method:str, argvs:bytes):
         from .app import app
         for gate_name in self.conn_client_gate:
-            app().ctx.hub_call_client_ntf(gate_name, None, self.entity_id, method, argvs)
+            app().ctx.hub_call_client_ntf(gate_name, "", self.entity_id, method, argvs)
     
 class entity_manager(object):
     def __init__(self):
@@ -178,9 +178,11 @@ class entity_manager(object):
         
         from .app import app
         if is_reconnect:
-            app().ctx.hub_call_client_refresh_entity(gate_name, _entity.is_migrate, conn_id, False, _entity.entity_id, _entity.entity_type, msgpack.dumps(_entity.client_info()))
+            if not app().ctx.hub_call_client_refresh_entity(gate_name, _entity.is_migrate, conn_id, False, _entity.entity_id, _entity.entity_type, msgpack.dumps(_entity.client_info())):
+                app().error(f"update_entity_conn refresh_entity faild send to gate! gate_name:{gate_name} conn_id:{conn_id} entity_id:{_entity.entity_id}")
         else:
-            app().ctx.hub_call_client_create_remote_entity(gate_name, _entity.is_migrate, [conn_id], "", _entity.entity_id, _entity.entity_type, msgpack.dumps(_entity.client_info()))
+            if not app().ctx.hub_call_client_create_remote_entity(gate_name, _entity.is_migrate, [conn_id], "", _entity.entity_id, _entity.entity_type, msgpack.dumps(_entity.client_info())):
+                app().error(f"update_entity_conn create_remote_entity faild send to gate! gate_name:{gate_name} conn_id:{conn_id} entity_id:{_entity.entity_id}")
                 
         return True
         

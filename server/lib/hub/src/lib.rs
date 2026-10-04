@@ -291,7 +291,11 @@ impl HubContext {
                         .name("health_check")
                         .interval("10s")
                         .timeout("15s")
-                        .deregister_critical_service_after("30s")
+                        // 原来是 30s：主循环累计卡顿被健康检查判 critical 后，consul 会把服务摘掉，
+                        // 而注册只在启动时做一次 —— 被摘掉就再也回不来（进程活着但
+                        // entry_hub_service 查不到）。放长到 10 分钟，给重新注册/恢复留时间；
+                        // Python 侧 flush_hub_host_cache 每 10s 会重新注册一次。
+                        .deregister_critical_service_after("600s")
                         .http(_health_host)
                         .status("passing")
                         .build()

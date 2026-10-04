@@ -41,6 +41,13 @@ pub async fn entry_dbproxy_service(
         };
     }
 
+    // 同 entry_hub_service：查不到实例时 gen_range(0..0) 会 panic，
+    // 先判空返回空串，避免 panic 变成 "rust future panicked: unknown error"。
+    if services.is_empty() {
+        error!("entry_dbproxy_service has no available instance!");
+        return String::new();
+    }
+
     loop {
         let mut rng = rand::thread_rng();
         let index = rng.gen_range(0..services.len());

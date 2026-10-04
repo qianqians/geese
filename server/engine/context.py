@@ -5,14 +5,16 @@ from .pyhub import HubContext
 
 def transfer_timeout(new_gate_name:str, new_conn_id:str, sdk_uuid:str, argvs:dict):
     from .app import app
-    _t = app().ctx.transfer_timeout[new_conn_id]
-    if _t!= None:
-        app().ctx.transfer_timeout.pop(new_conn_id)
-        app().login_handle.reconnect(new_gate_name, new_conn_id, sdk_uuid, argvs)
+    _t = app().ctx.transfer_timeout.pop(new_conn_id, None)
+    if _t != None:
+        # reconnect 是协程：必须丢进事件循环执行。直接调用只会得到一个从未 await 的
+        # 协程对象（同时报 RuntimeWarning），超时兜底等于没做。
+        app().run_coroutine_async(app().login_handle.reconnect(new_gate_name, new_conn_id, sdk_uuid, argvs))
 
 class context(object):
     def __init__(self, cfg_file:str) -> None:
         self.ctx = HubContext(cfg_file)
+        self.reg_service_name:str = None
         self.flush_hub_host_cache()
         self.transfer_timeout:dict[str, Timer] = {}
 
@@ -29,6 +31,7 @@ class context(object):
         self.ctx.log(level, content)
         
     def register_service(self, service:str):
+        self.reg_service_name = service
         self.ctx.register_service(service)
         
     def set_health_state(self, status:bool):
@@ -49,8 +52,10 @@ class context(object):
     def check_connect_hub_server(self, hub_name:str) -> bool:
         return self.ctx.check_connect_hub_server(hub_name)
     
-    async def entry_gate_service(self, gate_name:str, gate_host:str):
-        return await self.ctx.entry_gate_service(gate_name, gate_host)
+    async def entry_gate_service(self, gate_name:str, gate_host:str = ""):
+        # 注意：Rust 侧签名是 entry_gate_service($self, gate_name)，gate_host 由引擎
+        # 自己从 redis host 缓存里取；多传一个参数会直接 TypeError。
+        return await self.ctx.entry_gate_service(gate_name)
     
     def gate_host(self, gate_name:str):
         return self.ctx.gate_host(gate_name)
@@ -66,6 +71,16 @@ class context(object):
             __tick__ = Timer(10, self.flush_hub_host_cache)
             __tick__.start()
             self.ctx.flush_hub_host_cache()
+
+            # 顺便周期性重新注册一次 consul。
+            # 引擎里 consul 注册只在启动时做一次，而 consul 侧的健康检查是
+            # interval 10s / deregister_critical_service_after 30s，
+            # 主循环只要累计卡顿（HEALTHY_GRACE=5s 没心跳 / 被判 busy）就会被摘掉；
+            # 被摘掉之后进程一直活着也再查不到，login 那边就是
+            # "entry_hub_service 'yunmeng_marsh_1' has no available instance!"。
+            # 每 10s 重新注册一次，consul 会把 check 状态复位，服务就不会真的消失。
+            if self.reg_service_name is not None:
+                self.ctx.register_service(self.reg_service_name)
         except Exception as e:
             from .app import app
             app().error(f"flush_hub_host_cache python error:{e}")

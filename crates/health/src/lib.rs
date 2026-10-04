@@ -11,8 +11,11 @@ use axum::{
 use tracing::{debug, error};
 
 /// 主循环若超过该时长未“心跳”，即判定为不健康。
-/// 需小于 Consul 检查的 interval（10s），这里取 5s。
-const HEALTHY_GRACE: Duration = Duration::from_secs(5);
+/// 原来取 5s（要求小于 Consul 检查的 interval 10s），但主循环里任何一次阻塞
+/// （大存档 save、地图/tmj 解析、物理构建、同步 redis 调用……）都可能超过 5s，
+/// 触发 Consul 的 critical + deregister（服务被摘掉后就再也回不来）。
+/// 这里放宽到 25s，只用来兜“主循环真的卡死”这种情况。
+const HEALTHY_GRACE: Duration = Duration::from_secs(25);
 
 pub struct HealthHandle {
     _addr: String,

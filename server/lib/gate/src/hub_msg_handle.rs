@@ -780,31 +780,51 @@ impl GateHubMsgHandle {
             let conn_id = ev.conn_id.unwrap();
             let new_gate_name = ev.new_gate.unwrap();
             let new_conn_id = ev.new_conn_id.unwrap();
+            let is_reconnect = ev.is_reconnect.unwrap_or_default();
+            let prompt_info = ev.prompt_info.clone().unwrap_or_default();
             trace!("do_hub_event transfer_client conn_id:{conn_id} ,new_gate_name:{new_gate_name}, new_conn_id:{new_conn_id}");
+
+            // ⚠ 不能在持有 `_client`（_client_arc 的 guard）的情况下再 `_client_arc.lock().await`：
+            // tokio::sync::Mutex 不可重入，第二次 lock 会永远等自己释放锁，
+            // 导致 gate 主循环（lib.rs 里 hub_msg_handle/client_msg_handle 的 poll）整体卡死，
+            // 表现就是 TransferMsgEnd 发不出去、其它 hub 的 TransferEntityControl 也发不出去，
+            // 新客户端永远收不到 entity 消息。
+            // 因此这里先把 (hub, entity, is_main) 收集到本地 vec，释放锁之后再发送。
+            let mut transfers: Vec<(Arc<Mutex<HubProxy>>, String, bool)> = Vec::new();
             {
                 let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
                 if let Some(_client_arc) = _conn_mgr.get_client_proxy(&conn_id) {
                     let mut _client = _client_arc.as_ref().lock().await;
-                    let _ = _client.send_client_msg(ClientService::KickOff(KickOff::new(ev.prompt_info.unwrap()))).await;
-                        
+                    let _ = _client.send_client_msg(ClientService::KickOff(KickOff::new(prompt_info))).await;
+
                     for (_, _hub_proxy) in &_client.hub_proxies {
-                        let mut _hub = _hub_proxy.as_ref().lock().await;
-                        let _hub_name = _hub.get_hub_name();
+                        let _hub_name = {
+                            let _hub = _hub_proxy.as_ref().lock().await;
+                            _hub.get_hub_name()
+                        };
                         for _entity_id in &_client.entities {
                             if let Some(entity) = _conn_mgr.get_entity(_entity_id) {
                                 if entity.get_hub_name().eq(&_hub_name) {
                                     let is_main = entity.get_main_conn_id().unwrap_or_default() == conn_id;
-                                    _hub.send_hub_msg(HubService::TransferEntityControl(TransferEntityControl::new(
-                                        _entity_id.clone(), is_main, ev.is_reconnect.unwrap(), new_gate_name.clone(), new_conn_id.clone()))).await;
-                                    
-                                    let mut _client_tmp = _client_arc.as_ref().lock().await;
-                                    _client_tmp.set_wait_transfer_entity(_entity_id.clone());
+                                    transfers.push((_hub_proxy.clone(), _entity_id.clone(), is_main));
                                 }
                             }
                         }
                     }
+
+                    for (_, _entity_id, _) in transfers.iter() {
+                        _client.set_wait_transfer_entity(_entity_id.clone());
+                    }
                 }
             }
+
+            for (_hub_proxy, _entity_id, is_main) in transfers {
+                let mut _hub = _hub_proxy.as_ref().lock().await;
+                trace!("do_hub_event transfer_client send TransferEntityControl entity_id:{_entity_id} is_main:{is_main}");
+                _hub.send_hub_msg(HubService::TransferEntityControl(TransferEntityControl::new(
+                    _entity_id, is_main, is_reconnect, new_gate_name.clone(), new_conn_id.clone()))).await;
+            }
+
             {
                 let mut _p = _proxy_clone.as_ref().lock().await;
                 _p.send_hub_msg(HubService::TransferMsgEnd(TransferMsgEnd::new(new_conn_id, true))).await;

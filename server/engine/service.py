@@ -41,25 +41,40 @@ class service_manager(object):
 async def query_service(service_name:str):
     from .app import app
     hub_name = await app().ctx.entry_hub_service(service_name)
+    if hub_name is None or hub_name == "":
+        app().error(f"query_service service not found! service_name:{service_name}")
+        return
     if app().ctx.hub_name() == hub_name:
         _service = app().service_mgr.get_service(service_name)
         _service.hub_query_service_entity(hub_name)
     else:
         app().ctx.query_service(hub_name, service_name)
         
-async def forward_client_query_service(service_name:str, gate_name:str, gate_host:str, conn_id:str, argvs:dict):
+async def forward_client_query_service(service_name:str, gate_name:str, gate_host:str, conn_id:str, argvs:dict) -> bool:
     from .app import app
+    app().info("forward_client_query_service begin!")
     hub_name = await app().ctx.entry_hub_service(service_name)
+    if hub_name is None or hub_name == "":
+        # consul 里查不到这个服务（服务没启动 / 名字对不上 / consul 丢了注册），
+        # 引擎会返回空串，这里必须当成失败返回，调用方要回错误码给客户端。
+        app().error(f"forward_client_query_service service not found! service_name:{service_name} gate_name:{gate_name} conn_id:{conn_id}")
+        return False
+    app().info(f"forward_client_query_service begin!, hub_name:{hub_name}")
     if app().ctx.hub_name() == hub_name:
         await app().ctx.entry_gate_service(gate_name, gate_host)
         _service = app().service_mgr.get_service(service_name)
         _service.client_query_service_entity(gate_name, conn_id, argvs)
     else:
+        app().info(f"forward_client_query_service hub_name:{hub_name}, service_name:{service_name}, gate_name:{gate_name}, gate_host:{gate_host}, conn_id:{conn_id}")
         app().ctx.forward_client_request_service(hub_name, service_name, gate_name, gate_host, conn_id, dumps(argvs))
+    return True
 
-async def forward_client_query_service_ext(service_name:str, info:list[(str, str, str, dict)]):
+async def forward_client_query_service_ext(service_name:str, info:list[(str, str, str, dict)]) -> bool:
     from .app import app
     hub_name = await app().ctx.entry_hub_service(service_name)
+    if hub_name is None or hub_name == "":
+        app().error(f"forward_client_query_service_ext service not found! service_name:{service_name}")
+        return False
     if app().ctx.hub_name() == hub_name:
         _service = app().service_mgr.get_service(service_name)
         info_ext = []
@@ -73,3 +88,4 @@ async def forward_client_query_service_ext(service_name:str, info:list[(str, str
             gate_name, gate_host, conn_id, argvs = _info
             info_ext.append((gate_name, gate_host, conn_id, dumps(argvs)))
         app().ctx.forward_client_request_service_ext(hub_name, service_name, info_ext)
+    return True
