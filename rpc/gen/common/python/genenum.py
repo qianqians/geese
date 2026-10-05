@@ -8,7 +8,7 @@ def genenum(pretreatment):
     
     code = "# this enum code is codegen by geese codegen for python\n\n"
     for enum_name, enums in enum.items():
-        code += "class " + enum_name + "(Enum):\n"
+        code += "class " + enum_name + "(IntFlag):\n"
         names = []
         count = 0
         for key, value in enums:

@@ -11,7 +11,7 @@ from parser import jparser
 def gen_python_import_c(_import):
     code = "from threading import Timer\n"
     code += "from collections.abc import Callable\n"
-    code += "from enum import Enum\n"
+    code += "from enum import *\n"
     code += "from .engine import *\n"
     code += "from .engine.msgpack import *\n"
     for _i in _import:
@@ -22,7 +22,7 @@ def gen_python_import_c(_import):
 def gen_python_import_h(_import):
     code = "from threading import Timer\n"
     code += "from collections.abc import Callable\n"
-    code += "from enum import Enum\n"
+    code += "from enum import *\n"
     code += "from .engine import *\n"
     code += "from .engine.msgpack import *\n"
     for _i in _import:

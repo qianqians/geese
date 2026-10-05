@@ -11,7 +11,7 @@ def gen_entity_module(module_name, funcs, dependent_struct, dependent_enum, enum
     code_constructor = "class " + module_name + "_module(object):\n"
     code_constructor += "    def __init__(self, entity:player|entity):\n"
     code_constructor += "        self.entity = entity\n\n"
-        
+
     rsp_code = ""
     code_func = ""
     for i in funcs:
@@ -25,23 +25,23 @@ def gen_entity_module(module_name, funcs, dependent_struct, dependent_enum, enum
                 if count < len(i[2]):
                     func_type += ", "
             func_type += "], None]"
-            
+
             code_constructor += "        self.on_" + func_name + ":list[" + func_type + "] = []\n"
             code_constructor += "        self.entity.reg_client_notify_callback(\"" + func_name + "\", self." + func_name + ")\n"
 
             code_func += "    def " + func_name + "(self, gate_name:str, bin:bytes):\n"
             code_func += "        inArray = loads(bin)\n"
-            count = 0 
+            count = 0
             for _type, _name, _parameter in i[2]:
                 type_ = check_type(_type, dependent_struct, dependent_enum)
                 code_func += gen_type_code_module(
-                    2, 
-                    count, 
-                    _type, 
-                    type_, 
-                    _name, 
-                    func_name, 
-                    dependent_struct, 
+                    2,
+                    count,
+                    _type,
+                    type_,
+                    _name,
+                    func_name,
+                    dependent_struct,
                     dependent_enum)
                 count += 1
             code_func += "        s = session(gate_name)\n"
@@ -63,10 +63,10 @@ def gen_entity_module(module_name, funcs, dependent_struct, dependent_enum, enum
                 if count < len(i[2]):
                     func_type += ", "
             func_type += "], None]"
-            
+
             code_constructor += "        self.on_" + func_name + ":list[" + func_type + "] = []\n"
             code_constructor += "        self.entity.reg_client_request_callback(\"" + func_name + "\", self." + func_name + ")\n"
-            
+
             code_func += "    def " + func_name + "(self, gate_name:str, conn_id:str, msg_cb_id:int, bin:bytes):\n"
             code_func += "        inArray = loads(bin)\n"
             count = 0
@@ -74,13 +74,13 @@ def gen_entity_module(module_name, funcs, dependent_struct, dependent_enum, enum
                 type_ = check_type(_type, dependent_struct, dependent_enum)
                 type_ = check_type(_type, dependent_struct, dependent_enum)
                 code_func += gen_type_code_module(
-                    2, 
-                    count, 
-                    _type, 
-                    type_, 
-                    _name, 
-                    func_name, 
-                    dependent_struct, 
+                    2,
+                    count,
+                    _type,
+                    type_,
+                    _name,
+                    func_name,
+                    dependent_struct,
                     dependent_enum)
                 count += 1
             code_func += "        rsp = " + module_name + "_" + func_name + "_rsp(gate_name, conn_id, msg_cb_id, self.entity)\n"
@@ -95,7 +95,6 @@ def gen_entity_module(module_name, funcs, dependent_struct, dependent_enum, enum
             code_func += ")\n\n"
 
             _hub_uuid = '_'.join(str(uuid.uuid3(uuid.NAMESPACE_DNS, func_name)).split('-'))
-            _rsp_uuid = '_'.join(str(uuid.uuid3(uuid.NAMESPACE_X500, func_name)).split('-'))
             rsp_code += "class " + module_name + "_" + func_name + "_rsp(session):\n"
             rsp_code += "    def __init__(self, gate_name:str, conn_id:str, msg_cb_id:int, entity:player|entity):\n"
             rsp_code += "        session.__init__(self, gate_name)\n"
@@ -122,15 +121,15 @@ def gen_entity_module(module_name, funcs, dependent_struct, dependent_enum, enum
             for _type, _name, _parameter in i[4]:
                 type_ = check_type(_type, dependent_struct, dependent_enum)
                 rsp_code += gen_type_code_type_to_protcol(
-                    2, 
-                    "_argv_" + _argv_uuid, 
-                    "list", 
-                    _type, 
-                    type_, 
-                    "", 
-                    _name, 
-                    func_name, 
-                    dependent_struct, 
+                    2,
+                    "_argv_" + _argv_uuid,
+                    "list",
+                    _type,
+                    type_,
+                    "",
+                    _name,
+                    func_name,
+                    dependent_struct,
                     dependent_enum)
             rsp_code += "        self.entity.call_client_response(self.source, self.conn_id, self.msg_cb_id, dumps(_argv_" + _argv_uuid + "))\n\n"
 
@@ -149,19 +148,19 @@ def gen_entity_module(module_name, funcs, dependent_struct, dependent_enum, enum
             rsp_code += "            return\n"
             rsp_code += "        self.is_rsp = True\n\n"
             _argv_uuid = '_'.join(str(uuid.uuid3(uuid.NAMESPACE_DNS, func_name)).split('-'))
-            rsp_code += "        _argv_" + _argv_uuid + " = [self.uuid_" + _rsp_uuid + "]\n"
+            rsp_code += "        _argv_" + _argv_uuid + " = []\n"
             for _type, _name, _parameter in i[6]:
                 type_ = check_type(_type, dependent_struct, dependent_enum)
                 rsp_code += gen_type_code_type_to_protcol(
-                    2, 
-                    "_argv_" + _argv_uuid, 
-                    "list", 
-                    _type, 
-                    type_, 
-                    "", 
-                    _name, 
-                    func_name, 
-                    dependent_struct, 
+                    2,
+                    "_argv_" + _argv_uuid,
+                    "list",
+                    _type,
+                    type_,
+                    "",
+                    _name,
+                    func_name,
+                    dependent_struct,
                     dependent_enum)
             rsp_code += "        self.entity.call_client_response_error(self.source, self.conn_id, self.msg_cb_id, dumps(_argv_" + _argv_uuid + "))\n\n"
 
@@ -170,6 +169,5 @@ def gen_entity_module(module_name, funcs, dependent_struct, dependent_enum, enum
 
     code_constructor_end = "\n"
     code = "\n"
-        
+
     return rsp_code + code_constructor + code_constructor_end + code_func + code
-        
