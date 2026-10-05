@@ -1,12 +1,12 @@
 from threading import Timer
 from collections.abc import Callable
-from enum import Enum
+from enum import *
 from .engine import *
 from .engine.msgpack import *
 
 # this enum code is codegen by geese codegen for python
 
-class error_code(Enum):
+class error_code(IntFlag):
     success = 0
 
 

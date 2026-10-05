@@ -1,6 +1,6 @@
 from threading import Timer
 from collections.abc import Callable
-from enum import Enum
+from enum import *
 from .engine import *
 from .engine.msgpack import *
 from .common_cli import *

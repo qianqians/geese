@@ -1,6 +1,6 @@
 from threading import Timer
 from collections.abc import Callable
-from enum import Enum
+from enum import *
 from .engine import *
 from .engine.msgpack import *
 from .common_svr import *
@@ -31,7 +31,7 @@ class login_login_rsp(session):
             return
         self.is_rsp = True
 
-        _argv_d3bb20a7_d0fc_3440_bb9e_b3cc0630e2d1 = [self.uuid_4ca8d1d2_e4d6_3ac0_875b_d35c29f54aad]
+        _argv_d3bb20a7_d0fc_3440_bb9e_b3cc0630e2d1 = []
         _argv_d3bb20a7_d0fc_3440_bb9e_b3cc0630e2d1.append(err)
         self.entity.call_client_response_error(self.source, self.conn_id, self.msg_cb_id, dumps(_argv_d3bb20a7_d0fc_3440_bb9e_b3cc0630e2d1))
 

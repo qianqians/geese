@@ -1,6 +1,6 @@
 from threading import Timer
 from collections.abc import Callable
-from enum import Enum
+from enum import *
 from .engine import *
 from .engine.msgpack import *
 from .common_svr import *
@@ -65,7 +65,7 @@ class update_rank_call_update_rank_rsp(session):
             return
         self.is_rsp = True
 
-        _argv_00ceffc5_7c14_306e_af59_48f2ba7a8702 = [self.uuid_0d040228_1392_3e8e_b7fd_548fb8073ed7]
+        _argv_00ceffc5_7c14_306e_af59_48f2ba7a8702 = []
         _argv_00ceffc5_7c14_306e_af59_48f2ba7a8702.append(err)
         self.entity.call_hub_response_error(self.source, self.msg_cb_id, dumps(_argv_00ceffc5_7c14_306e_af59_48f2ba7a8702))
 

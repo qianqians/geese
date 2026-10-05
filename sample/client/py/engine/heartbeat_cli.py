@@ -1,6 +1,6 @@
 from threading import Timer
 from collections.abc import Callable
-from enum import Enum
+from enum import *
 from .engine import *
 from .engine.msgpack import *
 from .common_cli import *
@@ -30,7 +30,7 @@ class heartbeat_call_heartbeat_rsp(session):
             return
         self.is_rsp = True
 
-        _argv_8e2b295f_c4a8_3b9d_91eb_91a5bec35b0f = [self.uuid_bdac5a44_ce76_324d_b00d_2889c5d260ee]
+        _argv_8e2b295f_c4a8_3b9d_91eb_91a5bec35b0f = []
         _argv_8e2b295f_c4a8_3b9d_91eb_91a5bec35b0f.append(err)
         self.entity.call_hub_response_error(self.msg_cb_id, dumps(_argv_8e2b295f_c4a8_3b9d_91eb_91a5bec35b0f))
 

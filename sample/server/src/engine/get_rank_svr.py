@@ -1,6 +1,6 @@
 from threading import Timer
 from collections.abc import Callable
-from enum import Enum
+from enum import *
 from .engine import *
 from .engine.msgpack import *
 from .common_svr import *
@@ -31,7 +31,7 @@ class get_rank_get_self_rank_rsp(session):
             return
         self.is_rsp = True
 
-        _argv_e22ae90d_2428_3197_a8fb_549203f714e0 = [self.uuid_bff5b988_bcec_3884_b455_04b0df3c021f]
+        _argv_e22ae90d_2428_3197_a8fb_549203f714e0 = []
         _argv_e22ae90d_2428_3197_a8fb_549203f714e0.append(err)
         self.entity.call_client_response_error(self.source, self.conn_id, self.msg_cb_id, dumps(_argv_e22ae90d_2428_3197_a8fb_549203f714e0))
 
@@ -60,7 +60,7 @@ class get_rank_get_rank_rsp(session):
             return
         self.is_rsp = True
 
-        _argv_e869f1c8_1f14_384f_aba6_2af2b54335e7 = [self.uuid_9762adaa_b308_3609_9584_d6a45884469b]
+        _argv_e869f1c8_1f14_384f_aba6_2af2b54335e7 = []
         _argv_e869f1c8_1f14_384f_aba6_2af2b54335e7.append(err)
         self.entity.call_client_response_error(self.source, self.conn_id, self.msg_cb_id, dumps(_argv_e869f1c8_1f14_384f_aba6_2af2b54335e7))
 
