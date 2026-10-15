@@ -4,8 +4,6 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from threading import Timer
 
-from engine.engine.app import app
-
 from .base_dbproxy_handle import base_dbproxy_handle
 from .dbproxy import DBExtensionError
 
