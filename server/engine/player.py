@@ -226,7 +226,7 @@ class player(ABC, base_entity):
     def call_client_mutilcast(self, method:str, argvs:bytes):
         from .app import app
         for gate_name in self.conn_client_gate:
-            app().ctx.hub_call_client_ntf(gate_name, "", self.entity_id, method, argvs)
+            app().ctx.hub_call_client_ntf(gate_name, None, self.entity_id, method, argvs)
 
 class player_event_handle(ABC):
     @abstractmethod
