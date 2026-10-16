@@ -71,7 +71,7 @@ struct hub_call_client_err {
  * hub send ntf msg to client.
  */
 struct hub_call_client_ntf {
-	1:string conn_id,
+	1:optional string conn_id,
 	2:string entity_id,
 	3:common.msg message
 }

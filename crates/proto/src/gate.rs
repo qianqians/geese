@@ -656,7 +656,7 @@ impl HubCallClientNtf {
 impl TSerializable for HubCallClientNtf {
   fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<HubCallClientNtf> {
     i_prot.read_struct_begin()?;
-    let mut f_1: Option<String> = Some("".to_owned());
+    let mut f_1: Option<String> = None;
     let mut f_2: Option<String> = Some("".to_owned());
     let mut f_3: Option<common::Msg> = None;
     loop {

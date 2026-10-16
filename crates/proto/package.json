@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@creditkarma/thrift-typescript": "^3.7.6"
+  }
+}
