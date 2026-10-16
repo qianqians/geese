@@ -663,7 +663,7 @@ impl HubContext {
     pub fn hub_call_client_ntf(
         slf: PyRefMut<'_, Self>, 
         gate_name: String, 
-        conn_id: String, 
+        conn_id: Option<String>, 
         entity_id: String, 
         method: String, 
         argvs: Vec<u8>) -> bool 
