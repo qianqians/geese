@@ -102,6 +102,9 @@ pub struct DBProxyServer {
     handle: Arc<Mutex<DBProxyHubMsgHandle>>,
     health: Arc<Mutex<HealthHandle>>,
     close: Arc<Mutex<CloseHandle>>,
+    /// 保留字段：计时已改用 std::time::Instant（见 run 循环），这里不再使用。
+    /// 留着是因为把它删掉要动结构体初始化和多处解构，收益为零。
+    #[allow(dead_code)]
     offset_time: OffsetTime,
     server: RedisService
 }
@@ -163,10 +166,9 @@ impl DBProxyServer {
                 _health.heartbeat();
             }
 
-            let _offset_time = &self.offset_time;
-            let begin = _offset_time.utc_unix_time_with_offset();
+            let begin = std::time::Instant::now();
             DBProxyHubMsgHandle::poll(self.handle.clone()).await;
-            let tick = _offset_time.utc_unix_time_with_offset() - begin;
+            let tick = begin.elapsed().as_millis() as u64;
 
             let _c_ref = self.close.as_ref().lock().await;
             if _c_ref.is_closed() {
@@ -174,7 +176,7 @@ impl DBProxyServer {
             }
 
             if tick < 33 {
-                tokio::time::sleep(Duration::from_millis((33 - tick) as u64)).await;
+                tokio::time::sleep(Duration::from_millis(33 - tick)).await;
             }
         }
     }

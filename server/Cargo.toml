@@ -40,3 +40,8 @@ path="./src/dbproxy_main.rs"
 [[bin]]
 name="gate"
 path="./src/gate_main.rs"
+
+# 修补第三方 crate：consulrs_derive 0.1.0 用到了"私有宏"（rust-lang/rust#120192），
+# 未来 Rust 版本会直接报错。见 vendor/consulrs_derive/README.md。
+[patch.crates-io]
+consulrs_derive = { path = "../vendor/consulrs_derive" }

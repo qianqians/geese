@@ -3,7 +3,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use thrift::protocol::{TCompactOutputProtocol, TSerializable};
-use thrift::transport::{TIoChannel, TBufferChannel};
 use redis::{Connection, Commands};
 use async_trait::async_trait;
 use tracing::{error, trace};
@@ -12,8 +11,6 @@ use net::{NetReaderCallback, NetWriter};
 
 use proto::common::RedisMsg;
 
-/// Thrift 序列化缓冲区容量（1MB）
-const THRIFT_BUFFER_CAPACITY: usize = 1_048_576;
 
 pub struct RedisMQReader {
     cb_handle: Option<Arc<Mutex<Box<dyn NetReaderCallback + Send + 'static>>>>, 
@@ -45,7 +42,9 @@ impl RedisMQReader {
 pub struct RedisMQWriter {
     wr: Arc<Mutex<Connection>>, 
     lname: String,
-    rname: String
+    rname: String,
+    /// 序列化用的可复用缓冲（自动扩容，见 net::vec_transport）
+    tx_buf: Arc<std::sync::Mutex<Vec<u8>>>
 }
 
 impl RedisMQWriter {
@@ -53,7 +52,8 @@ impl RedisMQWriter {
         RedisMQWriter {
             wr: _wr,
             lname: _lname,
-            rname: _rname
+            rname: _rname,
+            tx_buf: net::vec_transport::new_buf()
         }
     }
 
@@ -80,20 +80,22 @@ impl NetWriter for RedisMQWriter {
 
         let msg = RedisMsg::new(self.lname.clone(), buf.to_vec());
 
-        let t = TBufferChannel::with_capacity(0, THRIFT_BUFFER_CAPACITY);
-        let (rd, wr) = match t.split() {
-            Ok(_t) => (_t.0, _t.1),
-            Err(_e) => {
-                error!("RedisMQWriter send t.split error {}", _e);
-                return false;
+        // 复用缓冲 + 自动扩容：这是**每条跨进程消息**都要走的路（位置通知 20Hz），
+        // 原来每条都预分配 1MB。这里序列化出来的 Vec 要交给 lpush（需要 owned），
+        // 所以每次按实际大小分配一次（~100B），不再有 1MB 的浪费。
+        let tmp = match net::vec_transport::serialize_to_bytes(&self.tx_buf, |transport| {
+            let mut o_prot = TCompactOutputProtocol::new(transport);
+            match RedisMsg::write_to_out_protocol(&msg, &mut o_prot) {
+                Ok(_) => true,
+                Err(e) => {
+                    error!("Failed to serialize Thrift message in RedisMQWriter send: {}", e);
+                    false
+                }
             }
+        }) {
+            Some(v) => v,
+            None => return false,
         };
-        let mut o_prot = TCompactOutputProtocol::new(wr);
-        if let Err(e) = RedisMsg::write_to_out_protocol(&msg, &mut o_prot) {
-            error!("Failed to serialize Thrift message in RedisMQWriter send: {}", e);
-            return false;
-        }
-        let tmp = rd.write_bytes();
 
         match self._redis_mq_send(tmp).await {
             Ok(_) => {

@@ -1,3 +1,5 @@
+pub mod vec_transport;
+
 use std::sync::Arc;
 
 use tokio::sync::Mutex;

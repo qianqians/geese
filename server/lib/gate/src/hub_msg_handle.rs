@@ -50,6 +50,7 @@ use proto::hub::{
 
 use queue::Queue;
 
+use crate::client_proxy_manager::ClientProxy;
 use crate::entity_manager::Entity;
 use crate::conn_manager::ConnManager;
 use crate::hub_proxy_manager::HubProxy;
@@ -594,93 +595,112 @@ impl GateHubMsgHandle {
         trace!("do_hub_event call_client_rpc end!");
     }
 
+    /// 位置通知（20Hz 最高频路径）。
+    ///
+    /// 这一版把两件事修掉了：
+    ///   1) **不再持全局锁做 I/O**：原来在 `ConnManager` 锁里 `await send_client_msg`，
+    ///      一个慢连接会把整个 gate 的连接表堵住（别的玩家登录/断开/每帧 poll 全在等）。
+    ///   2) **全局锁次数 2+n → 1**：一次锁把"要发给谁 + 连接句柄"都取出来，之后整段发送不碰全局锁。
+    ///
+    /// 顺带修了一个老 bug：以前发送失败时是对 `Entity` 的**副本**调 `set_main_conn_id(None)`，
+    /// 等于什么都没做；这里改成 `get_entity_mut` 在真表上清。
     pub async fn do_call_client_ntf(_proxy: Weak<Mutex<HubProxy>>, ev: HubCallClientNtf) {
         trace!("do_hub_event call_client_ntf begin!");
 
-        if let Some(_proxy_handle) = _proxy.upgrade() {
-            let _conn_mgr_arc: Arc<Mutex<ConnManager>>;
-            let hub_name: String;
-            {
-                let mut _p = _proxy_handle.as_ref().lock().await;
-                _conn_mgr_arc = _p.get_conn_mgr();
-                hub_name = _p.get_hub_name();
+        let Some(_proxy_handle) = _proxy.upgrade() else {
+            error!("do_call_client_ntf HubProxy is destory!");
+            return;
+        };
+
+        let (_conn_mgr_arc, hub_name): (Arc<Mutex<ConnManager>>, String) = {
+            let mut _p = _proxy_handle.as_ref().lock().await;
+            (_p.get_conn_mgr(), _p.get_hub_name())
+        };
+
+        let (Some(entity_id), Some(event)) = (ev.entity_id, ev.message) else {
+            return;
+        };
+
+        // ---- 一次锁：快照"发给谁" + 取连接句柄（同一把锁内完成，锁外不碰全局表）----
+        let explicit_conn = ev.conn_id.is_some();
+        let (main_conn_id, clients): (Option<String>, Vec<(String, Arc<Mutex<ClientProxy>>)>) = {
+            let _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
+
+            if let Some(ref conn_id) = ev.conn_id {
+                // 指定连接：只发给它
+                let clients = _conn_mgr.get_client_proxy(conn_id)
+                    .map(|c| vec![(conn_id.clone(), c.clone())])
+                    .unwrap_or_default();
+                (None, clients)
+            } else {
+                let Some(_entity) = _conn_mgr.get_entity(&entity_id) else {
+                    return;
+                };
+                let main_conn_id = _entity.get_main_conn_id();
+                let ids = _entity.get_conn_ids().clone();
+
+                let mut clients: Vec<(String, Arc<Mutex<ClientProxy>>)> = Vec::with_capacity(ids.len() + 1);
+                if let Some(ref mid) = main_conn_id {
+                    if let Some(c) = _conn_mgr.get_client_proxy(mid) {
+                        clients.push((mid.clone(), c.clone()));
+                    }
+                }
+                for id in ids.iter() {
+                    if main_conn_id.as_ref() == Some(id) {
+                        continue;                       // 已经在上面加过，避免重复发
+                    }
+                    if let Some(c) = _conn_mgr.get_client_proxy(id) {
+                        clients.push((id.clone(), c.clone()));
+                    }
+                }
+                (main_conn_id, clients)
             }
-            
-            let entity_id = ev.entity_id.unwrap();
-            let entity_id_clone = entity_id.clone();
-            let event = ev.message.unwrap();
-            if let Some(_entity_tmp) = get_mut_entity(_conn_mgr_arc.clone(), entity_id.clone()).await {
-                let mut _entity = _entity_tmp;
+        };
 
-                if let Some(conn_id) = ev.conn_id {
-                    let mut conn_send_ret = false;
-                    {
-                        let mut _conn_mgr_tmp = _conn_mgr_arc.as_ref().lock().await;
-                        if let Some(_client_arc) = _conn_mgr_tmp.get_client_proxy(&conn_id) {
-                            let mut _client = _client_arc.as_ref().lock().await;
-                            if _client.send_client_msg(ClientService::CallNtf(CallNtf::new(hub_name.clone(), entity_id.clone(), event.clone()))).await {
-                                conn_send_ret = true;
-                            }
-                        }
-                    }
-                    if !conn_send_ret {
-                        _entity.set_main_conn_id(None);
-                        let mut _conn_mgr_tmp = _conn_mgr_arc.as_ref().lock().await;
-                        _conn_mgr_tmp.delete_client_proxy(&conn_id);
-                        
-                        info!("do_call_client_ntf conn_id delete_client_proxy!");
-                    }
-                }
-                else {
-                    if let Some(main_conn_id) = _entity.get_main_conn_id() {
-                        let mut main_send_ret = false;
-                        {
-                            let mut _conn_mgr_tmp = _conn_mgr_arc.as_ref().lock().await;
-                            if let Some(_client_arc) = _conn_mgr_tmp.get_client_proxy(&main_conn_id) {
-                                let mut _client = _client_arc.as_ref().lock().await;
-                                if _client.send_client_msg(ClientService::CallNtf(CallNtf::new(hub_name.clone(), entity_id, event.clone()))).await {
-                                    main_send_ret = true;
-                                }
-                            }
-                        }
-                        if !main_send_ret {
-                            _entity.set_main_conn_id(None);
-                            let mut _conn_mgr_tmp = _conn_mgr_arc.as_ref().lock().await;
-                            _conn_mgr_tmp.delete_client_proxy(&main_conn_id);
-                        
-                            info!("do_call_client_ntf main_conn_id delete_client_proxy!");
-                        }
-                    }
-
-                    let mut invalid_ids: Vec<String> = vec![];
-                    for id in _entity.get_conn_ids().iter() {
-                        let mut send_ret = false;
-                        {
-                            let mut _conn_mgr_tmp = _conn_mgr_arc.as_ref().lock().await;
-                            if let Some(_client_arc) = _conn_mgr_tmp.get_client_proxy(id) {
-                                let mut _client = _client_arc.as_ref().lock().await;
-                                let _entity_id_tmp = entity_id_clone.clone();
-                                if _client.send_client_msg(ClientService::CallNtf(CallNtf::new(hub_name.clone(), _entity_id_tmp, event.clone()))).await {
-                                    send_ret = true;
-                                }
-                            }
-                        }
-                        if !send_ret {
-                            invalid_ids.push(id.to_string());
-                            let mut _conn_mgr_tmp = _conn_mgr_arc.as_ref().lock().await;
-                            _conn_mgr_tmp.delete_client_proxy(id);
-                        
-                            info!("do_call_client_ntf get_conn_ids delete_client_proxy!");
-                        }
-                    }
-                    for invalid_id in invalid_ids.iter() {
-                        _entity.delete_conn_id(invalid_id);
-                    }
-                }
+        // ---- 发送：这里**不持任何全局锁**（只锁每连接自己的写端）----
+        let mut failed: Vec<String> = Vec::new();
+        for (id, client_arc) in clients.iter() {
+            let _ok = {
+                let mut _client = client_arc.as_ref().lock().await;
+                _client.send_client_msg(ClientService::CallNtf(CallNtf::new(
+                    hub_name.clone(), entity_id.clone(), event.clone()))).await
+            };
+            if !_ok {
+                failed.push(id.clone());
             }
         }
-        else {
-            error!("do_call_client_ntf HubProxy is destory!");
+
+        // 主连接"找不到句柄"也算失效（原逻辑会清 main_conn_id）
+        let main_missing = main_conn_id.as_ref()
+            .map(|mid| !clients.iter().any(|(id, _)| id == mid))
+            .unwrap_or(false);
+        let main_failed = main_conn_id.as_ref()
+            .map(|mid| failed.iter().any(|id| id == mid))
+            .unwrap_or(false);
+
+        // ---- 清理：一次锁 ----
+        if !failed.is_empty() || main_missing {
+            let mut _conn_mgr = _conn_mgr_arc.as_ref().lock().await;
+
+            for id in failed.iter() {
+                _conn_mgr.delete_client_proxy(id);
+                info!("do_call_client_ntf conn delete_client_proxy!");
+            }
+            if main_missing {
+                if let Some(ref mid) = main_conn_id {
+                    _conn_mgr.delete_client_proxy(mid);
+                    info!("do_call_client_ntf main_conn_id delete_client_proxy!");
+                }
+            }
+
+            if let Some(_entity) = _conn_mgr.get_entity_mut(&entity_id) {
+                if explicit_conn || main_failed || main_missing {
+                    _entity.set_main_conn_id(None);
+                }
+                for id in failed.iter() {
+                    _entity.delete_conn_id(id);
+                }
+            }
         }
 
         trace!("do_hub_event call_client_ntf end!");

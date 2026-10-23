@@ -4,19 +4,18 @@ use tokio::sync::Mutex;
 use tracing::error;
 
 use thrift::protocol::{TCompactOutputProtocol, TSerializable};
-use thrift::transport::{TIoChannel, TBufferChannel};
 
 use net::NetWriter;
 
 use proto::gate::GateHubService;
 
-/// Thrift 序列化缓冲区容量（1MB）
-const THRIFT_BUFFER_CAPACITY: usize = 1_048_576;
 
 pub struct GateProxy {
     pub gate_name: Option<String>,
     pub gate_host: Option<String>,
-    pub wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>
+    pub wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>,
+    /// 序列化用的可复用缓冲（自动扩容，见 net::vec_transport）
+    tx_buf: Arc<std::sync::Mutex<Vec<u8>>>
 }
 
 impl GateProxy {
@@ -25,26 +24,23 @@ impl GateProxy {
         GateProxy {
             gate_name: None,
             gate_host: None,
-            wr: _wr
+            wr: _wr,
+            tx_buf: net::vec_transport::new_buf()
         }
     }
 
     pub async fn send_gate_msg(&mut self, msg: GateHubService) -> bool {
-        let t = TBufferChannel::with_capacity(0, THRIFT_BUFFER_CAPACITY);
-        let (rd, wr) = match t.split() {
-            Ok(_t) => (_t.0, _t.1),
-            Err(_e) => {
-                error!("send_gate_msg t.split error {}", _e);
-                return false;
+        // 复用缓冲 + 自动扩容（原来每条消息预分配 1MB，且超容量会被静默截断）
+        let tx_buf = self.tx_buf.clone();
+        net::vec_transport::send_via_buffer(&self.wr, &tx_buf, |transport| {
+            let mut o_prot = TCompactOutputProtocol::new(transport);
+            match GateHubService::write_to_out_protocol(&msg, &mut o_prot) {
+                Ok(_) => true,
+                Err(e) => {
+                    error!("Failed to serialize Thrift message in send_gate_msg: {}", e);
+                    false
+                }
             }
-        };
-        let mut o_prot = TCompactOutputProtocol::new(wr);
-        if let Err(e) = GateHubService::write_to_out_protocol(&msg, &mut o_prot) {
-            error!("Failed to serialize Thrift message in send_gate_msg: {}", e);
-            return false;
-        }
-        let wr = self.wr.clone();
-        let mut p_send = wr.as_ref().lock().await;
-        p_send.send(&rd.write_bytes()).await
+        }).await
     }
 }

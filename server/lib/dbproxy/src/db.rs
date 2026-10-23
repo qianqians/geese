@@ -4,7 +4,6 @@ use std::sync::Weak;
 use tokio::sync::Mutex;
 use net::NetWriter;
 use thrift::protocol::{TCompactOutputProtocol, TSerializable};
-use thrift::transport::{TIoChannel, TBufferChannel};
 
 use tracing::{trace, error};
 use mongodb::bson::doc;
@@ -206,31 +205,31 @@ impl DBEvent {
         }
     }
 
-    async fn serialize_and_send(&self, cb: &DbCallback, buffer_cap: usize, context: &str) {
-        let t = TBufferChannel::with_capacity(0, buffer_cap);
-        let (rd, wr) = match t.split() {
-            Ok(v) => v,
-            Err(e) => { error!("{} t.split error {}", context, e); return; }
-        };
-        let mut o_prot = TCompactOutputProtocol::new(wr);
-        let _ = DbCallback::write_to_out_protocol(cb, &mut o_prot);
-        if let Some(p) = self.send_proxy.upgrade() {
-            let mut p_send = p.as_ref().lock().await;
-            let _ = p_send.send(&rd.write_bytes()).await;
-        } else {
-            error!("{} send_proxy is destroy!", context);
+    async fn serialize_and_send(&self, cb: &DbCallback, _buffer_cap: usize, context: &str) {
+        // 复用缓冲 + 自动扩容（原来每条消息预分配 buffer_cap 字节，最大 16MB，
+        // 而且超过容量会被静默截断）
+        let tx_buf = net::vec_transport::new_buf();
+        match self.send_proxy.upgrade() {
+            Some(p) => {
+                net::vec_transport::send_via_buffer(&p, &tx_buf, |transport| {
+                    let mut o_prot = TCompactOutputProtocol::new(transport);
+                    DbCallback::write_to_out_protocol(cb, &mut o_prot).is_ok()
+                }).await;
+            }
+            None => error!("{} send_proxy is destroy!", context),
         }
     }
 
-    async fn send_batched_docs(&self, p_send: &mut Box<dyn NetWriter + Send + 'static>, cb: &DbCallback, buffer_cap: usize) {
-        let t = TBufferChannel::with_capacity(0, buffer_cap);
-        let (rd, wr) = match t.split() {
-            Ok(v) => v,
-            Err(e) => { error!("do_get_object_info t.split error {}", e); return; }
-        };
-        let mut o_prot = TCompactOutputProtocol::new(wr);
-        let _ = DbCallback::write_to_out_protocol(cb, &mut o_prot);
-        let _ = p_send.send(&rd.write_bytes()).await;
+    async fn send_batched_docs(&self, p_send: &mut Box<dyn NetWriter + Send + 'static>, cb: &DbCallback, _buffer_cap: usize) {
+        // 同上：可复用缓冲 + 自动扩容
+        let tx_buf = net::vec_transport::new_buf();
+        if let Some(mut bytes) = net::vec_transport::serialize_to_bytes(&tx_buf, |transport| {
+            let mut o_prot = TCompactOutputProtocol::new(transport);
+            DbCallback::write_to_out_protocol(cb, &mut o_prot).is_ok()
+        }) {
+            let _ = p_send.send(&bytes).await;
+            bytes.clear();
+        }
     }
 
     async fn do_get_guid(&mut self, mongo_proxy: &mut MongoProxy) {

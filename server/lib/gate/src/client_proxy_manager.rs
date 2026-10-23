@@ -8,7 +8,6 @@ use uuid::Uuid;
 use async_trait::async_trait;
 
 use thrift::protocol::{TCompactOutputProtocol, TSerializable};
-use thrift::transport::{TIoChannel, TBufferChannel};
 
 use net::{NetReaderCallback, NetReaderCloseCallback, NetReader, NetWriter};
 use tcp::tcp_socket::{TcpReader, TcpWriter};
@@ -22,6 +21,8 @@ use tracing::{trace, info, error};
 use crate::conn_manager::ConnManager;
 use crate::client_msg_handle::GateClientMsgHandle;
 use crate::hub_proxy_manager::{HubProxy, HubReaderCallback, HubProxyCloseCallback};
+
+use net::vec_transport::TVecTransport;
 
 use proto::common::RegServer;
 
@@ -155,7 +156,16 @@ pub struct ClientProxy {
     pub last_heartbeats_timetmp: i64,
     pub entities: BTreeSet<String>,
     pub wait_transfer_entity: BTreeSet<String>,
-    conn_mgr: Arc<Mutex<ConnManager>>
+    conn_mgr: Arc<Mutex<ConnManager>>,
+    /// 序列化用的可复用写缓冲（按连接一块，自动扩容）。
+    ///
+    /// 原来每条消息都 `TBufferChannel::with_capacity(0, 16384)`：
+    /// 一次 `vec![0; 16384]`（16KB 清零），而一条位置通知只有 60~90 字节。
+    /// 100 个移动玩家 × 20Hz ≈ 2000 条/秒 → 32MB/s 的纯浪费。
+    ///
+    /// ⚠ 不能用小容量的 TBufferChannel：它写满是**短写**（静默截断），
+    ///    超过容量的包会被截断。这里用 TVecTransport（自动扩容）+ Vec 复用（零拷贝）。
+    tx_buf: Arc<std::sync::Mutex<Vec<u8>>>
 }
 
 impl ClientProxy {
@@ -168,7 +178,8 @@ impl ClientProxy {
             entities: BTreeSet::new(),
             wait_transfer_entity: BTreeSet::new(),
             conn_mgr: _conn_mgr,
-            last_heartbeats_timetmp: start_time
+            last_heartbeats_timetmp: start_time,
+            tx_buf: Arc::new(std::sync::Mutex::new(Vec::with_capacity(256)))
         }
     }
 
@@ -221,18 +232,34 @@ impl ClientProxy {
     }
 
     pub async fn send_client_msg(&mut self, msg: ClientService) -> bool {
-        let t = TBufferChannel::with_capacity(0, 16384);
-        let (rd, wr) = match t.split() {
-            Ok(_t) => (_t.0, _t.1),
-            Err(_e) => {
-                error!("do_get_guid t.split error {}", _e);
-                return false;
+        // 序列化进可复用、**自动扩容**的 Vec（不会像 TBufferChannel 那样静默截断）
+        {
+            let mut o_prot = TCompactOutputProtocol::new(TVecTransport::new(self.tx_buf.clone()));
+            let _ = ClientService::write_to_out_protocol(&msg, &mut o_prot);
+        }
+
+        // 零拷贝取出已序列化的字节（mem::take 只搬指针），发完把容量还回去复用
+        let mut bytes = std::mem::take(&mut *self.tx_buf.lock().unwrap());
+        if bytes.is_empty() {
+            // 序列化失败（协议不完整）就不要发半个包；容量还回去
+            let mut _g = self.tx_buf.lock().unwrap();
+            if _g.capacity() < bytes.capacity() {
+                *_g = bytes;
             }
-        };
-        let mut o_prot = TCompactOutputProtocol::new(wr);
-        let _ = ClientService::write_to_out_protocol(&msg, &mut o_prot);
+            return false;
+        }
+
         let mut p_send = self.wr.as_ref().lock().await;
-        p_send.send(&rd.write_bytes()).await
+        let _ok = p_send.send(&bytes).await;
+
+        bytes.clear();
+        {
+            let mut _g = self.tx_buf.lock().unwrap();
+            if _g.capacity() < bytes.capacity() {
+                *_g = bytes;   // 保留已经扩容出来的容量，下一条消息不用再分配
+            }
+        }
+        _ok
     }
 
     pub fn set_timetmp(&mut self, timetmp: i64) {

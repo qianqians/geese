@@ -6,7 +6,6 @@ use async_trait::async_trait;
 use tracing::{error, trace};
 
 use thrift::protocol::{TCompactOutputProtocol, TSerializable};
-use thrift::transport::{TIoChannel, TBufferChannel};
 
 use net::{NetReaderCallback, NetWriter};
 use redis_service::redis_service::{RedisService, create_channel_key};
@@ -22,8 +21,6 @@ use crate::hub_service_manager::StdMutex;
 use crate::dbproxy_msg_handle::DBCallbackMsgHandle;
 use crate::conn_manager::ConnManager;
 
-/// DBProxy Thrift 序列化缓冲区容量（16MB，数据库消息可能包含批量数据）
-const DB_THRIFT_BUFFER_CAPACITY: usize = 16_777_216;
 
 pub async fn entry_dbproxy_service(
     _dbproxy_msg_handle: Arc<StdMutex<DBCallbackMsgHandle>>, 
@@ -96,7 +93,9 @@ pub async fn entry_dbproxy_service(
 pub struct DBProxyProxy {
     pub dbproxy_name: String,
     pub wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>,
-    msg_handle: Arc<StdMutex<DBCallbackMsgHandle>>
+    msg_handle: Arc<StdMutex<DBCallbackMsgHandle>>,
+    /// 序列化用的可复用缓冲（自动扩容，见 net::vec_transport）
+    tx_buf: Arc<std::sync::Mutex<Vec<u8>>>
 }
 
 impl DBProxyProxy {
@@ -104,7 +103,8 @@ impl DBProxyProxy {
         DBProxyProxy {
             dbproxy_name: _name,
             wr: _wr,
-            msg_handle: _handle
+            msg_handle: _handle,
+            tx_buf: net::vec_transport::new_buf()
         }
     }
 
@@ -114,22 +114,19 @@ impl DBProxyProxy {
 
     pub async fn send_db_msg(&mut self, msg: DbEvent) -> bool {
         trace!("DBProxyProxy send_db_msg begin!");
-        let t = TBufferChannel::with_capacity(0, DB_THRIFT_BUFFER_CAPACITY);
-        let (rd, wr) = match t.split() {
-            Ok(_t) => (_t.0, _t.1),
-            Err(_e) => {
-                error!("do_get_guid t.split error {}", _e);
-                return false;
+        // 复用缓冲 + 自动扩容：**原来每条消息预分配 16MB**（DB_THRIFT_BUFFER_CAPACITY），
+        // 而且超过容量会被静默截断。现在按实际大小增长，稳态零分配。
+        let tx_buf = self.tx_buf.clone();
+        net::vec_transport::send_via_buffer(&self.wr, &tx_buf, |transport| {
+            let mut o_prot = TCompactOutputProtocol::new(transport);
+            match DbEvent::write_to_out_protocol(&msg, &mut o_prot) {
+                Ok(_) => true,
+                Err(e) => {
+                    error!("Failed to serialize Thrift message in send_db_msg: {}", e);
+                    false
+                }
             }
-        };
-        let mut o_prot = TCompactOutputProtocol::new(wr);
-        if let Err(e) = DbEvent::write_to_out_protocol(&msg, &mut o_prot) {
-            error!("Failed to serialize Thrift message in send_db_msg: {}", e);
-            return false;
-        }
-        let mut p_send = self.wr.as_ref().lock().await;
-        trace!("DBProxyProxy send_db_msg p_send lock!");
-        p_send.send(&rd.write_bytes()).await
+        }).await
     }
 }
 

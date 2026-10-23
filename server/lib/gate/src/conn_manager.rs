@@ -133,8 +133,8 @@ impl ConnManager {
     }
 
     pub fn get_all_client_proxy(&mut self) -> Vec<Arc<Mutex<ClientProxy>>> {
-        let _client_clone = self.clients.clone();
-        _client_clone.into_values().collect()
+        // 不复制整张 HashMap：只要 values 的 Arc 克隆（原来 self.clients.clone() 会分配一个新表）
+        self.clients.values().cloned().collect()
     }
 
     pub async fn add_hub_proxy(&mut self, name: String, proxy: Arc<Mutex<HubProxy>>) {
@@ -173,34 +173,40 @@ impl ConnManager {
         _offset_time.utc_unix_time_with_offset()
     }
 
-    pub async fn poll(&mut self) {
-        let _timetmp = self.get_utc_unix_time_with_offset().await;
-        let _clients = self.get_all_client_proxy();
-        for _client_arc in _clients.iter() {
-            let _client_conn_id:String;
-            {
-                let _client = _client_arc.as_ref().lock().await;
-                if (_timetmp - _client.last_heartbeats_timetmp) < 6000 {
-                    continue;
-                }
-                _client_conn_id = _client.conn_id.clone();
+    /// 挑出心跳超时的连接（只做筛选，不做关闭 —— 关闭要发消息，会很慢）。
+    ///
+    /// 拆成两步的原因：原来 `poll()` 在**调用方持有全局锁的情况下**一路做到
+    /// "关连接 + 给每个 hub 发 ClientDisconnnect"，一个慢 hub 就能把整个 gate 堵住
+    /// （别的玩家登录、断开、主循环全在等这把锁）。现在调用方只在"筛选"时持锁，
+    /// 之后逐个连接各自短暂持锁处理。
+    pub async fn collect_stale_clients(&mut self, now_timetmp: i64) -> Vec<String> {
+        let mut stale: Vec<String> = Vec::new();
+        for (_conn_id, _client_arc) in self.clients.iter() {
+            let _client = _client_arc.as_ref().lock().await;
+            if (now_timetmp - _client.last_heartbeats_timetmp) < 6000 {
+                continue;
             }
-            
-            info!("ConnManager poll close_client!");
-            self.close_client(&_client_conn_id).await;
-            if let Some(vec_hub) = self.entities.delete_client(&_client_conn_id) {
-                let mut invaild_hubs: Vec<String> = Vec::new();
-                for hub_name in vec_hub.iter() {
-                    if let Some(_hub_arc) = self.get_hub_proxy(hub_name) {
-                        let mut _hub = _hub_arc.as_ref().lock().await;
-                        if !_hub.send_hub_msg(HubService::ClientDisconnnect(ClientDisconnnect::new(_client_conn_id.clone()))).await {
-                            invaild_hubs.push(hub_name.to_string());
-                        }
+            stale.push(_conn_id.clone());
+        }
+        stale
+    }
+
+    /// 关闭一个超时连接，并通知它所属的 hub（调用方按连接逐个调用，不要在一把大锁里循环）
+    pub async fn close_stale_client(&mut self, _client_conn_id: &String) {
+        info!("ConnManager poll close_client!");
+        self.close_client(_client_conn_id).await;
+        if let Some(vec_hub) = self.entities.delete_client(_client_conn_id) {
+            let mut invaild_hubs: Vec<String> = Vec::new();
+            for hub_name in vec_hub.iter() {
+                if let Some(_hub_arc) = self.get_hub_proxy(hub_name) {
+                    let mut _hub = _hub_arc.as_ref().lock().await;
+                    if !_hub.send_hub_msg(HubService::ClientDisconnnect(ClientDisconnnect::new(_client_conn_id.clone()))).await {
+                        invaild_hubs.push(hub_name.to_string());
                     }
                 }
-                for invaild_hub_name in invaild_hubs {
-                    self.delete_hub_proxy(&invaild_hub_name);
-                }
+            }
+            for invaild_hub_name in invaild_hubs {
+                self.delete_hub_proxy(&invaild_hub_name);
             }
         }
     }

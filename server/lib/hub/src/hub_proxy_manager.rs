@@ -5,7 +5,6 @@ use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
 use thrift::protocol::{TCompactOutputProtocol, TSerializable};
-use thrift::transport::{TIoChannel, TBufferChannel};
 
 use net::NetWriter;
 use redis_service::redis_service::{create_lock_key, create_host_cache_key, RedisService};
@@ -18,8 +17,6 @@ use proto::hub::HubService;
 use crate::hub_service_manager::{ConnCallbackMsgHandle, StdMutex};
 use crate::conn_manager::ConnManager;
 
-/// Thrift 序列化缓冲区容量（1MB）
-const THRIFT_BUFFER_CAPACITY: usize = 1_048_576;
 
 pub async fn entry_direct_hub_server(
     _hub_name: String,
@@ -156,7 +153,9 @@ pub async fn entry_hub_service(
 
 pub struct HubProxy {
     pub hub_name: Option<String>,
-    pub wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>
+    pub wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>,
+    /// 序列化用的可复用缓冲（自动扩容，见 net::vec_transport）
+    tx_buf: Arc<std::sync::Mutex<Vec<u8>>>
 }
 
 impl HubProxy {
@@ -164,26 +163,23 @@ impl HubProxy {
     {
         HubProxy {
             hub_name: None,
-            wr: _wr
+            wr: _wr,
+            tx_buf: net::vec_transport::new_buf()
         }
     }
 
     pub async fn send_hub_msg(&mut self, msg: HubService) -> bool {
-        let t = TBufferChannel::with_capacity(0, THRIFT_BUFFER_CAPACITY);
-        let (rd, wr) = match t.split() {
-            Ok(_t) => (_t.0, _t.1),
-            Err(_e) => {
-                error!("send_hub_msg t.split error {}", _e);
-                return false;
+        // 复用缓冲 + 自动扩容（原来每条消息预分配 1MB，且超容量会被静默截断）
+        let tx_buf = self.tx_buf.clone();
+        net::vec_transport::send_via_buffer(&self.wr, &tx_buf, |transport| {
+            let mut o_prot = TCompactOutputProtocol::new(transport);
+            match HubService::write_to_out_protocol(&msg, &mut o_prot) {
+                Ok(_) => true,
+                Err(e) => {
+                    error!("Failed to serialize Thrift message in send_hub_msg: {}", e);
+                    false
+                }
             }
-        };
-        let mut o_prot = TCompactOutputProtocol::new(wr);
-        if let Err(e) = HubService::write_to_out_protocol(&msg, &mut o_prot) {
-            error!("Failed to serialize Thrift message in send_hub_msg: {}", e);
-            return false;
-        }
-        let wr = self.wr.clone();
-        let mut p_send = wr.as_ref().lock().await;
-        p_send.send(&rd.write_bytes()).await
+        }).await
     }
 }

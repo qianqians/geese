@@ -4,7 +4,6 @@ use tokio::sync::Mutex;
 use tracing::{error, trace};
 
 use thrift::protocol::{TCompactOutputProtocol, TSerializable};
-use thrift::transport::{TIoChannel, TBufferChannel};
 use async_trait::async_trait;
 
 use proto::hub::HubService;
@@ -19,7 +18,9 @@ use crate::hub_msg_handle::GateHubMsgHandle;
 pub struct HubProxy {
     pub name: Option<String>,
     wr: Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>,
-    conn_mgr: Arc<Mutex<ConnManager>>
+    conn_mgr: Arc<Mutex<ConnManager>>,
+    /// 序列化用的可复用缓冲（自动扩容，见 net::vec_transport）
+    tx_buf: Arc<std::sync::Mutex<Vec<u8>>>
 }
 
 impl HubProxy {
@@ -27,7 +28,8 @@ impl HubProxy {
         HubProxy {
             name: None,
             wr: _wr,
-            conn_mgr: _conn_mgr
+            conn_mgr: _conn_mgr,
+            tx_buf: net::vec_transport::new_buf()
         }
     }
 
@@ -55,19 +57,17 @@ impl HubProxy {
     }
 
     pub async fn send_hub_msg(&mut self, msg: HubService) -> bool {
-        let t = TBufferChannel::with_capacity(0, 16384);
-        let (rd, wr) = match t.split() {
-            Ok(_t) => (_t.0, _t.1),
-            Err(_e) => {
-                error!("do_get_guid t.split error {}", _e);
-                return false;
+        let tx_buf = self.tx_buf.clone();
+        net::vec_transport::send_via_buffer(&self.wr, &tx_buf, |transport| {
+            let mut o_prot = TCompactOutputProtocol::new(transport);
+            match HubService::write_to_out_protocol(&msg, &mut o_prot) {
+                Ok(_) => true,
+                Err(e) => {
+                    error!("send_hub_msg serialize error {}", e);
+                    false
+                }
             }
-        };
-        let mut o_prot = TCompactOutputProtocol::new(wr);
-        let _ = HubService::write_to_out_protocol(&msg, &mut o_prot);
-        let mut p_send = self.wr.as_ref().lock().await;
-        trace!("send_hub_msg send bytes len:{}", rd.write_bytes().len());
-        p_send.send(&rd.write_bytes()).await
+        }).await
     }
 }
 

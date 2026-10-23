@@ -17,6 +17,8 @@ use time::OffsetTime;
 
 mod client_proxy_manager;
 mod hub_proxy_manager;
+#[cfg(test)]
+mod vec_transport_test;
 mod conn_manager;
 mod hub_msg_handle;
 mod client_msg_handle;
@@ -52,8 +54,20 @@ async fn start_conn_heartbeats_poll(conn_mgr: Arc<Mutex<ConnManager>>) {
     let mut interval = interval(Duration::from_secs(10));
     loop {
         interval.tick().await;
-        let mut conn_mgr = conn_mgr.lock().await;
-        conn_mgr.poll().await;
+
+        // 第一步：只持锁"挑出超时的连接"（纯筛选，很快）
+        let stale = {
+            let mut mgr = conn_mgr.lock().await;
+            let now = mgr.get_utc_unix_time_with_offset().await;
+            mgr.collect_stale_clients(now).await
+        };
+
+        // 第二步：逐个关闭。每次只短暂持锁，中间留给登录/断开/主循环抢锁的机会。
+        // （原来是把整段"关连接 + 通知 hub"都放在一把锁里，一个慢 hub 就堵死全服。）
+        for id in stale.iter() {
+            let mut mgr = conn_mgr.lock().await;
+            mgr.close_stale_client(id).await;
+        }
     }
 }
 
@@ -156,7 +170,10 @@ impl GateServer {
     }
 
     pub async fn run(&mut self) {
-        let mut flush_gate_key_time = self.get_utc_unix_time_with_offset().await;
+        // 计时一律用**单调时钟** Instant：不受 NTP 校时 / 时区切换影响，
+        // 并且不用为了取时间反复锁 offset_time（原来一帧要锁 3 次 async mutex）。
+        // offset_time 只服务于"游戏内时间"（日志时间戳、业务计时），不参与限帧。
+        let mut flush_gate_key_time = std::time::Instant::now();
         loop {
             // 每轮心跳：表示“主循环仍在正常运转”。
             {
@@ -164,7 +181,7 @@ impl GateServer {
                 _health.heartbeat();
             }
 
-            let begin = self.get_utc_unix_time_with_offset().await;
+            let begin = std::time::Instant::now();
             
             let hub_msg_handle:Option<Arc<Mutex<GateHubMsgHandle>>>;
             let client_msg_handle: Option<Arc<Mutex<GateClientMsgHandle>>>;
@@ -182,7 +199,7 @@ impl GateServer {
                 _handle_l.poll().await;
             }
 
-            let tick = self.get_utc_unix_time_with_offset().await - begin;
+            let tick = begin.elapsed().as_millis() as u64;
 
             let _c_ref = self.close.as_ref().lock().await;
             if _c_ref.is_closed() {
@@ -190,11 +207,11 @@ impl GateServer {
             }
 
             if tick < 33 {
-                tokio::time::sleep(Duration::from_millis((33 - tick) as u64)).await;
+                tokio::time::sleep(Duration::from_millis(33 - tick)).await;
             }
 
-            if (self.get_utc_unix_time_with_offset().await - flush_gate_key_time) > 1000 * 10 {
-                flush_gate_key_time = self.get_utc_unix_time_with_offset().await;
+            if flush_gate_key_time.elapsed() > Duration::from_secs(10) {
+                flush_gate_key_time = std::time::Instant::now();
                 let mut _r = self.redis.as_ref().lock().await;
                 let _ = _r.expire(self.gate_name.clone(), 10, None).await;
             }

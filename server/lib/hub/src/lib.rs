@@ -120,10 +120,18 @@ pub struct HubContext {
 /// Helper macro: clones the server Arc, blocks on the tokio runtime,
 /// acquires the server lock, and executes `$body` with `$handle` bound
 /// to `&mut HubServer`.
+///
+/// ⚠ 绑定上的 `#[allow(unused_mut)]` 是必须的：
+///   宏里统一写成 `let mut $handle`，但调用点里有的方法只取 `&self`
+///   （例如 `check_connect_hub_server`），那些展开处就会报
+///   "variable does not need to be mutable"。宏没法按调用点决定要不要 `mut`，
+///   所以在这里统一允许；需要 `&mut` 的调用点（`send_gate_msg` / `send_db_msg` /
+///   `flush_hub_host_cache` 等）依然能正常借用。
 macro_rules! with_server {
     ($slf:expr, |$handle:ident| $body:expr) => {{
         let _server = $slf.server.clone();
         $slf._listen_rt.handle().block_on(async move {
+            #[allow(unused_mut)]
             let mut $handle = _server.as_ref().lock().await;
             $body
         })
