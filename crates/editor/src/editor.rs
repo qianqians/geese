@@ -232,8 +232,8 @@ impl Editor {
         // 1.3 处理面板请求的 Prefab 操作
         self.process_prefab_actions();
 
-        // 1.5 资源数据库扫描
-        if self.asset_needs_scan || self.asset_browser.needs_rescan() {
+        // 1.5 资源数据库全量扫描（仅启动 / 导入 / 显式刷新时触发）
+        if self.asset_needs_scan || self.asset_browser.needs_db_refresh() {
             let report = self.asset_database.refresh();
             if !report.errors.is_empty() {
                 for err in &report.errors {
@@ -244,9 +244,16 @@ impl Editor {
                 "[Editor] Asset scan: {} new, {} removed, {} updated",
                 report.new_assets, report.removed, report.updated
             );
+            self.asset_browser.clear_db_refresh();
+            // 数据库刷新后 UUID / 类型可能变化，重新列出当前目录
+            self.asset_browser.mark_dirty();
+            self.asset_needs_scan = false;
+        }
+
+        // 1.6 资源浏览器目录刷新（导航或刷新按钮触发，只重列当前目录，不重扫数据库）
+        if self.asset_browser.needs_rescan() {
             self.asset_browser.scan_directory(&self.asset_database);
             self.asset_browser.clear_dirty();
-            self.asset_needs_scan = false;
         }
 
         // 2. 同步可拾取对象列表到视口

@@ -53,6 +53,11 @@ impl AssetType {
         matches!(self, AssetType::Model | AssetType::Prefab)
     }
 
+    /// 从文件名推断资源类型（无 .meta 信息时使用）。
+    fn from_filename(name: &str) -> Self {
+        Self::from_kind(AssetTypeKind::from_filename(name))
+    }
+
     /// 从 AssetTypeKind 转换。
     fn from_kind(kind: AssetTypeKind) -> Self {
         match kind {
@@ -123,6 +128,19 @@ impl AssetFilter {
             AssetFilter::Prefabs => matches!(asset_type, AssetType::Prefab),
         }
     }
+
+    /// 工具栏下拉框展示的全部选项。
+    fn all() -> &'static [AssetFilter] {
+        &[
+            AssetFilter::All,
+            AssetFilter::Models,
+            AssetFilter::Textures,
+            AssetFilter::Audio,
+            AssetFilter::Scenes,
+            AssetFilter::Avatars,
+            AssetFilter::Prefabs,
+        ]
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -153,16 +171,20 @@ pub struct AssetBrowser {
     folder_expanded: HashMap<String, bool>,
     /// 类型过滤器
     filter: AssetFilter,
-    /// 选中条目索引（在 entries 中的位置）
-    selected_index: Option<usize>,
+    /// 选中条目的路径（相对项目根目录，如 "assets/scenes/default.scene.json"）
+    selected_path: Option<String>,
     /// 视图模式
     view_mode: ViewMode,
     /// 搜索文本
     search_text: String,
     /// 左侧文件夹面板宽度占比（0.0 ~ 1.0）
     folder_split_ratio: f32,
-    /// 导航后需要重新扫描的标志
+    /// 导航后需要重新列出当前目录的标志
     path_dirty: bool,
+    /// 是否请求全量重扫 AssetDatabase（外部新增文件需要生成 .meta）
+    db_refresh_requested: bool,
+    /// 当前目录读取失败时的错误信息（供 UI 提示）
+    error: Option<String>,
 }
 
 impl AssetBrowser {
@@ -173,17 +195,24 @@ impl AssetBrowser {
             folder_tree: FolderNode::new("assets".into()),
             folder_expanded: HashMap::new(),
             filter: AssetFilter::All,
-            selected_index: None,
+            selected_path: None,
             view_mode: ViewMode::Grid,
             search_text: String::new(),
             folder_split_ratio: 0.28,
             path_dirty: false,
+            db_refresh_requested: false,
+            error: None,
         }
     }
 
-    /// 是否需要因导航变化而重新扫描。
+    /// 是否需要重新列出当前目录。
     pub fn needs_rescan(&self) -> bool {
         self.path_dirty
+    }
+
+    /// 标记当前目录需要重新列出（不影响资源数据库）。
+    pub fn mark_dirty(&mut self) {
+        self.path_dirty = true;
     }
 
     /// 清除导航脏标志（在重新扫描后调用）。
@@ -191,77 +220,106 @@ impl AssetBrowser {
         self.path_dirty = false;
     }
 
-    /// 从 AssetDatabase 扫描当前目录，填充 entries 并构建文件夹树。
+    /// 是否请求全量重扫 AssetDatabase。
+    pub fn needs_db_refresh(&self) -> bool {
+        self.db_refresh_requested
+    }
+
+    /// 清除数据库重扫请求（在重扫后调用）。
+    pub fn clear_db_refresh(&mut self) {
+        self.db_refresh_requested = false;
+    }
+
+    /// 扫描当前目录，填充 entries（内容区）并重建文件夹树。
+    ///
+    /// 条目以文件系统为准：`assets/<current_path>` 下的直接子目录与文件都会列出，
+    /// 再从 [`AssetDatabase`] 补齐 UUID / 资源类型 / 大小等元信息。
+    /// 这样即使数据库还没扫描到新文件（或 `.meta` 生成失败），目录内容也能正常显示。
     pub fn scan_directory(&mut self, database: &AssetDatabase) {
         self.entries.clear();
-        self.selected_index = None;
+        self.selected_path = None;
+        self.error = None;
 
-        let project_root = database.project_root();
+        let project_root = database.project_root().to_path_buf();
 
-        // 构建文件夹树（基于文件系统扫描 assets/ 下的所有目录）
-        self.build_folder_tree(project_root);
+        // 1. 重建文件夹树（直接读文件系统，新增目录无需等数据库刷新）
+        self.build_folder_tree(&project_root);
 
-        // 获取当前目录下的直接子条目（来自 AssetDatabase）
-        let db_entries = database.entries_in_directory(&self.current_path);
-        for db_entry in db_entries {
-            let name = std::path::Path::new(&db_entry.path)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("")
-                .to_string();
-
-            let asset_type = AssetType::from_kind(db_entry.asset_type);
-            self.entries.push(AssetEntry {
-                name,
-                path: db_entry.path.clone(),
-                uuid: db_entry.uuid.clone(),
-                asset_type,
-                size_bytes: db_entry.file_size,
-            });
+        // 2. 解析当前目录的绝对路径；不存在时回退到 assets 根目录
+        let mut dir = project_root.join(&self.current_path);
+        if !dir.is_dir() {
+            let assets_dir = project_root.join("assets");
+            if assets_dir.is_dir() {
+                self.current_path = "assets".to_string();
+                dir = assets_dir;
+            } else {
+                self.error = Some(format!("目录不存在: {}", dir.display()));
+                self.sync_tree_expansion();
+                return;
+            }
         }
 
-        // 同时扫描当前目录下的直接子目录（文件系统层面）
-        let dir = format!("{}/{}", project_root.display(), self.current_path);
-        if let Ok(read_dir) = std::fs::read_dir(&dir) {
-            for entry in read_dir.flatten() {
-                let path = entry.path();
-                if !path.is_dir() {
-                    continue;
-                }
-                let name = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("")
-                    .to_string();
+        // 3. 列出当前目录下的直接子目录与文件
+        let read_dir = match std::fs::read_dir(&dir) {
+            Ok(rd) => rd,
+            Err(e) => {
+                self.error = Some(format!("无法读取目录 {}: {e}", dir.display()));
+                self.sync_tree_expansion();
+                return;
+            }
+        };
 
-                if name.starts_with('.') {
-                    continue;
-                }
-                if name.ends_with(".meta") {
-                    continue;
-                }
+        let mut folders: Vec<AssetEntry> = Vec::new();
+        let mut files: Vec<AssetEntry> = Vec::new();
 
-                let rel_path = format!("{}/{}", self.current_path, name);
-                self.entries.push(AssetEntry {
+        for entry in read_dir.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+
+            // 跳过隐藏文件与 .meta 伴生文件
+            if name.starts_with('.') || name.ends_with(".meta") {
+                continue;
+            }
+
+            let abs_path = entry.path();
+            let rel_path = format!("{}/{}", self.current_path, name);
+
+            if abs_path.is_dir() {
+                folders.push(AssetEntry {
                     name,
                     path: rel_path,
                     uuid: String::new(),
                     asset_type: AssetType::Folder,
                     size_bytes: 0,
                 });
+            } else {
+                let db_entry = database.entry_by_path(&rel_path);
+                let asset_type = db_entry
+                    .map(|e| AssetType::from_kind(e.asset_type))
+                    .unwrap_or_else(|| AssetType::from_filename(&name));
+                let size_bytes = db_entry
+                    .map(|e| e.file_size)
+                    .filter(|size| *size > 0)
+                    .or_else(|| entry.metadata().ok().map(|m| m.len()))
+                    .unwrap_or(0);
+                let uuid = db_entry.map(|e| e.uuid.clone()).unwrap_or_default();
+
+                files.push(AssetEntry {
+                    name,
+                    path: rel_path,
+                    uuid,
+                    asset_type,
+                    size_bytes,
+                });
             }
         }
 
         // 排序：目录在前，文件在后，同类型按名称排序
-        self.entries.sort_by(|a, b| {
-            match (a.asset_type == AssetType::Folder, b.asset_type == AssetType::Folder) {
-                (true, false) => std::cmp::Ordering::Less,
-                (false, true) => std::cmp::Ordering::Greater,
-                _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-            }
-        });
+        folders.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        files.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        self.entries = folders;
+        self.entries.extend(files);
 
-        // 同步展开状态：当前路径上的所有节点设为展开
+        // 4. 同步展开状态：当前路径上的所有节点设为展开
         self.sync_tree_expansion();
     }
 
@@ -350,7 +408,10 @@ impl AssetBrowser {
                 ui.add_space(*depth as f32 * 14.0);
                 let label = format!("{} \u{1F4C1} {}", arrow, name);
                 let label_rich = if is_current {
-                    egui::RichText::new(label).strong().color(egui::Color32::from_rgb(150, 200, 255))
+                    // 选中行已有高亮底色，文字沿用主题的选中描边色，避免与底色同色不可见
+                    egui::RichText::new(label)
+                        .strong()
+                        .color(ui.visuals().selection.stroke.color)
                 } else {
                     egui::RichText::new(label)
                 };
@@ -390,9 +451,12 @@ impl AssetBrowser {
 
     /// 导航到指定目录。
     fn navigate_to(&mut self, path: String) {
+        if self.current_path == path {
+            return;
+        }
         self.current_path = path;
         self.search_text.clear();
-        self.selected_index = None;
+        self.selected_path = None;
         self.path_dirty = true;
     }
 
@@ -526,86 +590,184 @@ impl AssetBrowser {
         });
     }
 
-    /// 渲染搜索栏。
+    /// 渲染搜索栏 + 类型过滤 + 刷新。
     fn render_toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label("\u{1F50D}");
             let search_response = ui.add(
                 egui::TextEdit::singleline(&mut self.search_text)
                     .hint_text("Search assets...")
-                    .desired_width(200.0),
+                    .desired_width(180.0),
             );
             if search_response.changed() {
-                self.selected_index = None;
+                self.selected_path = None;
+            }
+
+            ui.separator();
+
+            // 类型过滤器
+            egui::ComboBox::from_id_salt("asset_filter_combo")
+                .selected_text(self.filter.label())
+                .width(86.0)
+                .show_ui(ui, |ui| {
+                    for filter in AssetFilter::all() {
+                        if ui
+                            .selectable_label(self.filter == *filter, filter.label())
+                            .clicked()
+                        {
+                            self.filter = *filter;
+                            self.selected_path = None;
+                        }
+                    }
+                });
+
+            // 刷新：重新列出当前目录，并请求资源数据库全量重扫
+            if ui
+                .button("Refresh")
+                .on_hover_text("重新扫描当前目录（并刷新资源数据库）")
+                .clicked()
+            {
+                self.path_dirty = true;
+                self.db_refresh_requested = true;
             }
         });
     }
 
-    /// 渲染资源内容区（列表或网格视图）。
+    /// 渲染资源内容区（列表或网格视图）——显示当前目录下的子目录与文件。
     fn render_content(&mut self, ui: &mut egui::Ui, state: &mut EditorState) {
-        let filtered: Vec<AssetEntry> = self.entries
+        // 过滤：搜索文本 + 类型过滤（文件夹始终显示，便于继续向下导航）
+        let needle = self.search_text.to_lowercase();
+        let filtered: Vec<AssetEntry> = self
+            .entries
             .iter()
             .filter(|e| {
-                let search_match = self.search_text.is_empty()
-                    || e.name.to_lowercase().contains(&self.search_text.to_lowercase());
-                search_match
+                let type_match = e.asset_type == AssetType::Folder
+                    || self.filter.matches(e.asset_type);
+                let search_match = needle.is_empty() || e.name.to_lowercase().contains(&needle);
+                type_match && search_match
             })
             .cloned()
             .collect();
 
         let item_count = filtered.len();
         let view_mode = self.view_mode;
-        let selected_index = self.selected_index;
+        let selected_path = self.selected_path.clone();
 
+        // 空目录 / 读取失败 提示
+        if filtered.is_empty() {
+            ui.add_space(6.0);
+            let (text, color) = if let Some(err) = &self.error {
+                (err.clone(), egui::Color32::from_rgb(220, 120, 120))
+            } else if self.entries.is_empty() {
+                ("当前目录为空".to_string(), egui::Color32::GRAY)
+            } else {
+                ("没有匹配的资源".to_string(), egui::Color32::GRAY)
+            };
+            ui.label(egui::RichText::new(text).color(color));
+            ui.add_space(6.0);
+        }
+
+        // 渲染视图，收集点击结果（闭包里不能借用 &mut self）
+        let mut clicked: Option<(String, bool)> = None;
         egui::ScrollArea::vertical()
             .id_salt("asset_browser_content")
             .show(ui, |ui| {
-                match view_mode {
+                let hit = match view_mode {
                     ViewMode::List => {
-                        Self::render_list_view_static(ui, &filtered, selected_index, state);
+                        self.render_list_view(ui, &filtered, selected_path.as_deref(), state)
                     }
                     ViewMode::Grid => {
-                        Self::render_grid_view_static(ui, &filtered, selected_index, state);
+                        self.render_grid_view(ui, &filtered, selected_path.as_deref(), state)
                     }
+                };
+                if hit.is_some() {
+                    clicked = hit;
                 }
             });
+
+        // 单击选中条目；双击文件夹进入该目录
+        if let Some((path, double_clicked)) = clicked {
+            let is_folder = self
+                .entries
+                .iter()
+                .any(|e| e.path == path && e.asset_type == AssetType::Folder);
+            if is_folder && double_clicked {
+                self.navigate_to(path);
+            } else {
+                self.selected_path = Some(path);
+            }
+        }
 
         // 底部状态栏
         ui.add_space(2.0);
         ui.separator();
         ui.horizontal(|ui| {
-            ui.label(format!("{} items", item_count));
-            if let Some(idx) = self.selected_index {
-                if let Some(entry) = self.entries.get(idx) {
-                    if !entry.uuid.is_empty() {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(
-                                egui::RichText::new(format!("UUID: {} | {}", entry.uuid, Self::format_size(entry.size_bytes)))
-                                    .monospace()
-                                    .size(10.0)
-                                    .color(egui::Color32::GRAY),
-                            );
-                        });
-                    }
+            ui.label(format!(
+                "{} {}",
+                item_count,
+                if item_count == 1 { "item" } else { "items" }
+            ));
+            ui.separator();
+            ui.label(
+                egui::RichText::new(&self.current_path)
+                    .monospace()
+                    .size(10.0)
+                    .color(egui::Color32::GRAY),
+            );
+
+            if let Some(entry) = self
+                .selected_path
+                .as_ref()
+                .and_then(|path| self.entries.iter().find(|e| &e.path == path))
+            {
+                let mut info = entry.name.clone();
+                if entry.asset_type != AssetType::Folder {
+                    info.push_str(&format!(" | {}", Self::format_size(entry.size_bytes)));
                 }
+                if !entry.uuid.is_empty() {
+                    info.push_str(&format!(" | UUID: {}", &entry.uuid[..8.min(entry.uuid.len())]));
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(
+                        egui::RichText::new(info)
+                            .monospace()
+                            .size(10.0)
+                            .color(egui::Color32::GRAY),
+                    );
+                });
             }
         });
     }
 
-    /// 列表视图（静态方法，避免借用冲突）。
-    fn render_list_view_static(ui: &mut egui::Ui, filtered: &[AssetEntry], _selected_index: Option<usize>, state: &mut EditorState) {
+    /// 列表视图；返回被点击条目的路径与是否双击。
+    fn render_list_view(
+        &self,
+        ui: &mut egui::Ui,
+        filtered: &[AssetEntry],
+        selected_path: Option<&str>,
+        state: &mut EditorState,
+    ) -> Option<(String, bool)> {
+        let mut clicked = None;
         let available_width = ui.available_width();
         egui::Grid::new("asset_list_grid")
             .striped(true)
             .min_col_width(available_width * 0.45)
             .show(ui, |ui| {
                 for entry in filtered.iter() {
+                    let is_selected = selected_path == Some(entry.path.as_str());
                     let label = format!("{}  {}", entry.asset_type.icon(), entry.name);
-                    let response = ui.selectable_label(false, label);
-                    // Wrap with drag sense to enable drag-start detection
-                    let drag_response = ui.interact(response.rect, ui.next_auto_id(), egui::Sense::click_and_drag());
+                    // 用带 click_and_drag 语义的 Button 同时支持“选中”和“拖进场景”
+                    let response = ui.add(
+                        egui::Button::new(label)
+                            .selected(is_selected)
+                            .sense(egui::Sense::click_and_drag()),
+                    );
 
-                    if drag_response.drag_started()
+                    if response.clicked() || response.double_clicked() {
+                        clicked = Some((entry.path.clone(), response.double_clicked()));
+                    }
+
+                    if response.drag_started()
                         && entry.asset_type.is_draggable()
                         && !entry.uuid.is_empty()
                     {
@@ -630,10 +792,18 @@ impl AssetBrowser {
                     ui.end_row();
                 }
             });
+        clicked
     }
 
-    /// 网格视图（静态方法，避免借用冲突）。
-    fn render_grid_view_static(ui: &mut egui::Ui, filtered: &[AssetEntry], _selected_index: Option<usize>, state: &mut EditorState) {
+    /// 网格视图；返回被点击条目的路径与是否双击。
+    fn render_grid_view(
+        &self,
+        ui: &mut egui::Ui,
+        filtered: &[AssetEntry],
+        selected_path: Option<&str>,
+        state: &mut EditorState,
+    ) -> Option<(String, bool)> {
+        let mut clicked = None;
         let card_width = 96.0;
         let available = ui.available_width();
         let cols = (available / (card_width + 8.0)).max(1.0) as usize;
@@ -643,14 +813,16 @@ impl AssetBrowser {
             ui.horizontal(|ui| {
                 for idx in row_start..row_end {
                     let entry = &filtered[idx];
+                    let is_selected = selected_path == Some(entry.path.as_str());
 
-                    let (fill, stroke) = (
-                        egui::Color32::TRANSPARENT,
-                        egui::Stroke::new(1.0, egui::Color32::from_rgb(60, 60, 80)),
-                    );
+                    let stroke = if is_selected {
+                        egui::Stroke::new(1.5, egui::Color32::from_rgb(120, 170, 255))
+                    } else {
+                        egui::Stroke::new(1.0, egui::Color32::from_rgb(60, 60, 80))
+                    };
 
                     let resp = egui::Frame::none()
-                        .fill(fill)
+                        .fill(egui::Color32::TRANSPARENT)
                         .stroke(stroke)
                         .rounding(egui::Rounding::same(4.0))
                         .inner_margin(egui::Margin::same(4.0))
@@ -682,9 +854,19 @@ impl AssetBrowser {
                             });
                         });
 
-                    // Wrap with drag sense to enable drag-start detection
-                    let drag_response = ui.interact(resp.response.rect, ui.next_auto_id(), egui::Sense::click_and_drag());
-                    if drag_response.drag_started()
+                    // 卡片内容不可交互，用覆盖层统一处理选中与拖拽
+                    let card_id = egui::Id::new(("asset_card", entry.path.as_str()));
+                    let card_response = ui.interact(
+                        resp.response.rect,
+                        card_id,
+                        egui::Sense::click_and_drag(),
+                    );
+
+                    if card_response.clicked() || card_response.double_clicked() {
+                        clicked = Some((entry.path.clone(), card_response.double_clicked()));
+                    }
+
+                    if card_response.drag_started()
                         && entry.asset_type.is_draggable()
                         && !entry.uuid.is_empty()
                     {
@@ -696,6 +878,7 @@ impl AssetBrowser {
                 }
             });
         }
+        clicked
     }
 
     /// 渲染拖拽预览浮层。
@@ -744,5 +927,171 @@ impl AssetBrowser {
                     });
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 测试
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    /// 构造一个临时项目：assets/{models,scenes,empty} + 若干文件
+    ///
+    /// 目录放在 crate 的 `target/test_tmp/` 下（不用系统临时目录，避免沙箱/权限问题）。
+    fn temp_project(tag: &str) -> PathBuf {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("test_tmp")
+            .join(format!("{}_{}", tag, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("assets/models")).unwrap();
+        std::fs::create_dir_all(dir.join("assets/scenes")).unwrap();
+        std::fs::create_dir_all(dir.join("assets/empty")).unwrap();
+        std::fs::write(dir.join("assets/models/hero.glb"), b"fake glb").unwrap();
+        std::fs::write(dir.join("assets/models/hero.glb.meta"), b"{}").unwrap();
+        std::fs::write(dir.join("assets/readme.txt"), b"hello").unwrap();
+        std::fs::write(dir.join("assets/scenes/main.scene.json"), b"{}").unwrap();
+        dir
+    }
+
+    fn browser_for(dir: &PathBuf) -> AssetBrowser {
+        // 空数据库：验证内容区以文件系统为准，不依赖 .meta / 数据库索引
+        let db = AssetDatabase::new_empty(dir.to_str().unwrap());
+        let mut browser = AssetBrowser::new();
+        browser.scan_directory(&db);
+        browser
+    }
+
+    #[test]
+    fn root_directory_lists_files_and_folders() {
+        let dir = temp_project("root");
+        let browser = browser_for(&dir);
+
+        assert_eq!(browser.current_path, "assets");
+
+        let names: Vec<&str> = browser.entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"models"), "缺少子目录: {names:?}");
+        assert!(names.contains(&"scenes"), "缺少子目录: {names:?}");
+        assert!(names.contains(&"readme.txt"), "缺少文件: {names:?}");
+        assert!(!names.iter().any(|n| n.ends_with(".meta")), ".meta 不应显示: {names:?}");
+
+        // 目录排在文件之前
+        let first_file = browser
+            .entries
+            .iter()
+            .position(|e| e.asset_type != AssetType::Folder)
+            .unwrap();
+        assert!(browser.entries[..first_file]
+            .iter()
+            .all(|e| e.asset_type == AssetType::Folder));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn subdirectory_lists_its_own_files() {
+        let dir = temp_project("sub");
+        let db = AssetDatabase::new_empty(dir.to_str().unwrap());
+        let mut browser = AssetBrowser::new();
+
+        browser.current_path = "assets/models".to_string();
+        browser.scan_directory(&db);
+
+        let names: Vec<&str> = browser.entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, vec!["hero.glb"]);
+
+        // 类型从文件名推断（数据库为空时也能显示正确的资源类型）
+        assert_eq!(browser.entries[0].asset_type, AssetType::Model);
+        assert_eq!(browser.entries[0].path, "assets/models/hero.glb");
+        assert!(browser.entries[0].size_bytes > 0);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn empty_directory_shows_nothing_and_keeps_path() {
+        let dir = temp_project("empty");
+        let db = AssetDatabase::new_empty(dir.to_str().unwrap());
+        let mut browser = AssetBrowser::new();
+
+        browser.current_path = "assets/empty".to_string();
+        browser.scan_directory(&db);
+
+        assert!(browser.entries.is_empty());
+        assert!(browser.error.is_none());
+        assert_eq!(browser.current_path, "assets/empty");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn missing_directory_falls_back_to_assets_root() {
+        let dir = temp_project("missing");
+        let db = AssetDatabase::new_empty(dir.to_str().unwrap());
+        let mut browser = AssetBrowser::new();
+
+        browser.current_path = "assets/not_exists".to_string();
+        browser.scan_directory(&db);
+
+        assert_eq!(browser.current_path, "assets");
+        assert!(!browser.entries.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn navigation_marks_dirty_and_double_click_enters_folder() {
+        let dir = temp_project("nav");
+        let browser = browser_for(&dir);
+
+        // 根目录下能定位到 models 文件夹条目
+        let models = browser
+            .entries
+            .iter()
+            .find(|e| e.name == "models")
+            .expect("缺少 models 目录")
+            .clone();
+        assert_eq!(models.asset_type, AssetType::Folder);
+        assert_eq!(models.path, "assets/models");
+
+        let mut browser = browser;
+        browser.navigate_to(models.path.clone());
+        assert!(browser.needs_rescan());
+        assert_eq!(browser.current_path, "assets/models");
+
+        // 同一路径重复导航不再触发重扫
+        browser.clear_dirty();
+        browser.navigate_to(models.path.clone());
+        assert!(!browser.needs_rescan());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn filter_only_keeps_matching_type() {
+        let dir = temp_project("filter");
+        let mut browser = browser_for(&dir);
+
+        browser.filter = AssetFilter::Models;
+        let needle = browser.search_text.to_lowercase();
+        let filtered: Vec<&AssetEntry> = browser
+            .entries
+            .iter()
+            .filter(|e| {
+                (e.asset_type == AssetType::Folder || browser.filter.matches(e.asset_type))
+                    && (needle.is_empty() || e.name.to_lowercase().contains(&needle))
+            })
+            .collect();
+
+        // 文件夹始终保留，模型文件保留，其它类型被过滤
+        assert!(filtered.iter().any(|e| e.name == "models"));
+        assert!(filtered.iter().any(|e| e.name == "readme.txt") == false);
+        assert!(filtered.iter().any(|e| e.name == "main.scene.json") == false);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
