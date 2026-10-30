@@ -70,6 +70,9 @@ impl WSSServer {
                     Ok(stream) => stream,
                 };
                 trace!("wss accept client ip:{:?}", addr);
+                // 位置包是小包、低频：不关 Nagle 的话，33ms 一帧会被 delayed-ACK(40ms) 卡住，
+                // 变成 40~80ms 的成簇到达 —— 客户端外推后回拉；80ms 一帧反而正常，是经典症状。
+                let _ = stream.set_nodelay(true);
 
                 // A stalled client may not hold up the listener loop. This
                 // permit is retained only until TLS and WS handshakes finish.
@@ -154,6 +157,8 @@ impl WSSServer {
                     Ok(stream) => stream,
                 };
                 trace!("ws accept client ip:{:?}", addr);
+                // 同上：关闭 Nagle，避免小包被 delayed-ACK 卡成簇。
+                let _ = stream.set_nodelay(true);
 
                 let permit = match handshake_slots.clone().try_acquire_owned() {
                     Ok(permit) => permit,

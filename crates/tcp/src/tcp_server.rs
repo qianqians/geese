@@ -50,6 +50,7 @@ impl TcpServer {
 
                 info!("New TCP connection from: {}", addr);
 
+                socket.set_nodelay(true).expect("set_nodelay failed");
                 let (rd, wr) = io::split(socket);
                 {
                     let mut f_handle = _f_clone.as_ref().lock().await;
