@@ -107,6 +107,12 @@ impl NetWriter for TcpWriter {
         }
     }
 
+    /// buf 已经带了 4 字节帧头（`net::vec_transport::serialize_framed`），
+    /// 这里原样写出：不再整包拷贝、不再加帧。
+    async fn send_framed(&mut self, buf: &[u8]) -> bool {
+        self.wr.write_all(buf).await.is_ok()
+    }
+
     async fn close(&mut self) {
         let _ = self.wr.shutdown().await;
     }

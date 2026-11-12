@@ -34,8 +34,13 @@ impl Read for TVecTransport {
 
 impl Write for TVecTransport {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        // extend_from_slice 会自动扩容，永远不会短写
-        self.buf.lock().unwrap().extend_from_slice(buf);
+        // extend_from_slice 会自动扩容，永远不会短写。
+        // 用 into_inner() 兜住 poison：thrift 序列化有 panic 点，一旦在持锁时 panic，
+        // `.unwrap()` 会让之后**每一次发送**都接着 panic（hub-deadlock-audit.md D7）。
+        self.buf
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .extend_from_slice(buf);
         Ok(buf.len())
     }
 
@@ -47,6 +52,45 @@ impl Write for TVecTransport {
 /// 建一块新缓冲（每个 writer 一块即可）
 pub fn new_buf() -> Arc<StdMutex<Vec<u8>>> {
     Arc::new(StdMutex::new(Vec::with_capacity(256)))
+}
+
+/// 直接写进 `&mut Vec<u8>` 的 thrift 写传输：**全程无锁**。
+///
+/// `TVecTransport` 每次 `write()` 都要锁一次 `Arc<StdMutex<Vec<u8>>>`，
+/// 而 compact 协议一条消息会发起几十次 `write()`；给「序列化成一整包、
+/// 再交给写任务」的路径用这个，就没有这把锁了。
+pub struct VecWrite<'a>(pub &'a mut Vec<u8>);
+
+impl<'a> Write for VecWrite<'a> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+/// 序列化并加 4 字节小端长度帧头，返回**可直接 `write_all`** 的整包。
+///
+/// 帧头是 `NetPack` 的分包格式（`[u32 len][payload]`），所以多个这样的整包
+/// 可以首尾拼在一起一次写出，对端仍能正确分包 —— 这是"一次系统调用发多条消息"的基础。
+///
+/// 每次调用分配一个新 `Vec`（旧实现是 `mem::take` 复用缓冲，但那样没法把
+/// 所有权交给写任务）；相比旧路径仍然少一次整包 memcpy。
+pub fn serialize_framed<F>(serialize: F) -> Option<Vec<u8>>
+where
+    F: FnOnce(&mut Vec<u8>) -> bool,
+{
+    let mut bytes = Vec::with_capacity(256);
+    bytes.extend_from_slice(&[0u8; 4]);
+    if !serialize(&mut bytes) {
+        return None;
+    }
+    let len = (bytes.len() - 4) as u32;
+    bytes[0..4].copy_from_slice(&len.to_le_bytes());
+    Some(bytes)
 }
 
 /// 用一块**可复用**的缓冲做"序列化 + 发送"。
@@ -87,7 +131,7 @@ where
     if !serialize(TVecTransport::new(buf.clone())) {
         return None;
     }
-    let bytes = std::mem::take(&mut *buf.lock().unwrap());
+    let bytes = std::mem::take(&mut *buf.lock().unwrap_or_else(|e| e.into_inner()));
     if bytes.is_empty() {
         restore(buf, bytes);
         return None;    // 序列化失败（协议不完整）就不要发半个包
@@ -96,7 +140,7 @@ where
 }
 
 fn restore(buf: &Arc<StdMutex<Vec<u8>>>, bytes: Vec<u8>) {
-    let mut g = buf.lock().unwrap();
+    let mut g = buf.lock().unwrap_or_else(|e| e.into_inner());
     if g.capacity() < bytes.capacity() {
         *g = bytes;
     }

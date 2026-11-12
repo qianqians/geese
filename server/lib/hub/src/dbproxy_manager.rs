@@ -19,13 +19,14 @@ use proto::dbproxy::{
 
 use crate::hub_service_manager::StdMutex;
 use crate::dbproxy_msg_handle::DBCallbackMsgHandle;
+use crate::lock_watch::WatchMutex;
 use crate::conn_manager::ConnManager;
 
 
 pub async fn entry_dbproxy_service(
     _dbproxy_msg_handle: Arc<StdMutex<DBCallbackMsgHandle>>, 
-    _conn_mgr: Arc<Mutex<ConnManager>>,
-    _redis_mq_service: Arc<Mutex<RedisService>>,
+    _conn_mgr: Arc<WatchMutex<ConnManager>>,
+    _redis_mq_service: Arc<WatchMutex<RedisService>>,
     _consul_impl: Arc<Mutex<ConsulImpl>>,
     _close: Arc<Mutex<CloseHandle>>) -> String
 {

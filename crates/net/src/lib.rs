@@ -11,6 +11,15 @@ use tracing::error;
 pub trait NetWriter {
     async fn send(&mut self, buf: &[u8]) -> bool;
 
+    /// 写出一个**已经带好 4 字节长度帧头**的整包（可包含多条消息）。
+    ///
+    /// 给「每条连接一个写任务、合并发包」的路径用：调用方负责加帧头，
+    /// 实现方必须**原样写出**、不能再次加帧。默认实现按未加帧处理（保持旧实现不变），
+    /// 基于 TCP 的实现必须覆盖它。
+    async fn send_framed(&mut self, buf: &[u8]) -> bool {
+        self.send(buf).await
+    }
+
     async fn close(&mut self);
 }
 

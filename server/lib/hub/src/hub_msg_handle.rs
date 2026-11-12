@@ -1,4 +1,4 @@
-﻿use std::sync::Arc;
+use std::sync::Arc;
 
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
@@ -22,14 +22,17 @@ use proto::hub::{
     QueryServiceEntity
 };
 
-use crate::hub_service_manager::StdMutex;
-
 pub struct HubCallbackMsgHandle {
 }
 
 impl HubCallbackMsgHandle {
-    pub fn new() -> Arc<StdMutex<HubCallbackMsgHandle>> {
-        Arc::new(StdMutex::new(HubCallbackMsgHandle {}))
+    /// 零状态的回调分发表。
+    ///
+    /// 原来这里套了一层 `Arc<StdMutex<…>>`，但它没有任何字段 ——
+    /// 加锁纯属开销，而且 `std::sync::Mutex` 不可重入：一旦 Python handler
+    /// 里重入 `poll_conn_msg`，同一把锁会在同一线程上二次加锁而死锁。
+    pub fn new() -> Arc<HubCallbackMsgHandle> {
+        Arc::new(HubCallbackMsgHandle {})
     }
 
     pub fn do_reg_hub(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: RegServer) {

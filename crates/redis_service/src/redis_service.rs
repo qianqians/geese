@@ -71,7 +71,13 @@ impl RedisService {
         trace!("redis mq listen:{}", lname);
 
         let client = redis::Client::open(host)?;
+        // 命令连接：`acquire_lock` / `release_lock` / `set` / `get` / `lpush` 共用。
         let conn = Arc::new(Mutex::new(client.get_connection()?));
+        // 阻塞连接：**只给 `brpop` 用**。
+        // 原来 brpop 与所有命令共用同一条连接，而 brpop 每次会持锁阻塞最长 1s，
+        // 于是 hub 的每一次 `acquire_lock` / `release_lock` 都要排在它后面
+        // （hub-deadlock-audit.md D4：偶发 1s 级"假死"，并把 D1 的窗口放大数个量级）。
+        let pop_conn = Arc::new(Mutex::new(client.get_connection()?));
 
         let rds: Arc<Mutex<BTreeMap<String, (Arc<Mutex<RedisMQReader>>, Arc<Mutex<Box<dyn NetWriter + Send + 'static>>>)>>> = Arc::new(Mutex::new(BTreeMap::new()));
 
@@ -93,13 +99,25 @@ impl RedisService {
                 let vec_data: Vec<Vec<u8>>;
                 {
                     let pop_lname = lname.clone();
-                    let mut _c = conn.as_ref().lock().await;
-                    vec_data = match _c.brpop(pop_lname, 1.0) {
-                        Err(e) => {
+                    // brpop 是同步阻塞调用，必须丢到 blocking 池：
+                    // 直接在 runtime worker 上调用会卡死一个 worker（连带拖住调度给它的
+                    // 其它任务，包括那些正被 Python 主线程 block_on 等待的任务）。
+                    let guard = pop_conn.clone().lock_owned().await;
+                    vec_data = match tokio::task::spawn_blocking(move || {
+                        let mut g = guard;
+                        g.brpop(pop_lname, 1.0)
+                    })
+                    .await
+                    {
+                        Ok(Ok(_d)) => _d,
+                        Ok(Err(e)) => {
                             error!("RedisService brpop loop err:{}!", e);
                             continue;
-                        },
-                        Ok(_d) => _d
+                        }
+                        Err(e) => {
+                            error!("RedisService brpop task join err:{}!", e);
+                            continue;
+                        }
                     };
                     if vec_data.len() <= 0 {
                         continue;
@@ -201,7 +219,10 @@ impl RedisService {
                     // Lock already held by another, retry
                 },
                 Err(_) => {
-                    if let Ok(conn) = self.client.blocking_lock().get_connection() {
+                    // 重建连接。注意：不能用 `blocking_lock()` ——
+                    // 在 async 上下文里它会直接 panic（原实现即如此）。
+                    let new_conn = { self.client.lock().await.get_connection() };
+                    if let Ok(conn) = new_conn {
                         self.conn = Arc::new(Mutex::new(conn));
                     }
                 }
@@ -230,7 +251,10 @@ impl RedisService {
                     return Ok(());
                 },
                 Err(_) => {
-                    if let Ok(conn) = self.client.blocking_lock().get_connection() {
+                    // 重建连接。注意：不能用 `blocking_lock()` ——
+                    // 在 async 上下文里它会直接 panic（原实现即如此）。
+                    let new_conn = { self.client.lock().await.get_connection() };
+                    if let Ok(conn) = new_conn {
                         self.conn = Arc::new(Mutex::new(conn));
                     }
                 }
@@ -255,7 +279,10 @@ impl RedisService {
                     return Ok(());
                 },
                 Err(_) => {
-                    if let Ok(conn) = self.client.blocking_lock().get_connection() {
+                    // 重建连接。注意：不能用 `blocking_lock()` ——
+                    // 在 async 上下文里它会直接 panic（原实现即如此）。
+                    let new_conn = { self.client.lock().await.get_connection() };
+                    if let Ok(conn) = new_conn {
                         self.conn = Arc::new(Mutex::new(conn));
                     }
                 }
@@ -277,7 +304,10 @@ impl RedisService {
             match conn_ref.get(key.clone()) {
                 Ok(v) => return Ok(v),
                 Err(_) => {
-                    if let Ok(conn) = self.client.blocking_lock().get_connection() {
+                    // 重建连接。注意：不能用 `blocking_lock()` ——
+                    // 在 async 上下文里它会直接 panic（原实现即如此）。
+                    let new_conn = { self.client.lock().await.get_connection() };
+                    if let Ok(conn) = new_conn {
                         self.conn = Arc::new(Mutex::new(conn));
                     }
                 }
@@ -302,7 +332,10 @@ impl RedisService {
                     return Ok(());
                 },
                 Err(_) => {
-                    if let Ok(conn) = self.client.blocking_lock().get_connection() {
+                    // 重建连接。注意：不能用 `blocking_lock()` ——
+                    // 在 async 上下文里它会直接 panic（原实现即如此）。
+                    let new_conn = { self.client.lock().await.get_connection() };
+                    if let Ok(conn) = new_conn {
                         self.conn = Arc::new(Mutex::new(conn));
                     }
                 }

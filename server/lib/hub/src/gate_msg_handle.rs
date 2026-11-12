@@ -1,4 +1,4 @@
-﻿use std::sync::Arc;
+use std::sync::Arc;
 
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
@@ -19,13 +19,12 @@ use proto::hub::{
     ClientCallNtf,
 };
 
-use crate::hub_service_manager::StdMutex;
-
 pub struct GateCallbackMsgHandle {}
 
 impl GateCallbackMsgHandle {
-    pub fn new() -> Arc<StdMutex<GateCallbackMsgHandle>> {
-        Arc::new(StdMutex::new(GateCallbackMsgHandle{}))
+    /// 零状态的回调分发表；理由同 `HubCallbackMsgHandle::new`（避免不可重入的 std 锁）。
+    pub fn new() -> Arc<GateCallbackMsgHandle> {
+        Arc::new(GateCallbackMsgHandle {})
     }
 
     pub fn do_client_request_login(&mut self, py: Python<'_>, py_handle: Py<PyAny>, ev: ClientRequestLogin) {

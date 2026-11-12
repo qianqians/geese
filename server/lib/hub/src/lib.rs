@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use crate::lock_watch::WatchMutex;
 
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
@@ -78,6 +79,8 @@ mod hub_service_manager;
 mod conn_manager;
 mod hub_server;
 pub mod aoi_py;
+mod peer_writer;
+mod lock_watch;
 
 use crate::hub_server::HubServer;
 use crate::dbproxy_msg_handle::DBCallbackMsgHandle;
@@ -114,7 +117,11 @@ pub struct HubContext {
     offset_time: Arc<Mutex<OffsetTime>>,
     health_handle: Arc<Mutex<HealthHandle>>,
     consul_impl: Arc<Mutex<ConsulImpl>>,
-    server: Arc<Mutex<HubServer>>
+    server: Arc<WatchMutex<HubServer>>,
+    /// 消息泵句柄：直接持有，避免 `HubConnMsgPump::new` 再去 `try_lock(server)`
+    /// 忙等 500ms（server 锁被别的路径长时间占据时，那会直接让 Python 侧构造失败）。
+    conn_msg_handle: Arc<StdMutex<ConnCallbackMsgHandle>>,
+    db_msg_handle: Arc<StdMutex<DBCallbackMsgHandle>>,
 }
 
 /// Helper macro: clones the server Arc, blocks on the tokio runtime,
@@ -185,16 +192,20 @@ impl HubContext {
                 error!("Hub HubServer new faild {}!", e);
                 return Err(PyValueError::new_err("Hub HubServer new faild!"));
             },
-            Ok(_s) => Arc::new(Mutex::new(_s))
+            Ok(_s) => Arc::new(WatchMutex::new("HubServer", _s))
         };
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         let _s = server.clone();
         let rt_handle = rt.handle().clone();
-        rt.block_on(async move {
+        let (conn_msg_handle, db_msg_handle) = rt.block_on(async move {
             let mut _s_handle = _s.as_ref().lock().await;
             _s_handle.listen_hub_service().await;
             _s_handle.set_conn_rt_handle(rt_handle);
+            (
+                _s_handle.get_conn_msg_handle(),
+                _s_handle.get_db_msg_handle(),
+            )
         });
         //server.as_ref().blocking_lock().set_conn_rt_handle(rt.handle().clone());
         trace!("listen_hub_service rt.block_on end!");
@@ -233,7 +244,9 @@ impl HubContext {
             _listen_rt: rt,
             _health_rt: rt_join_health,
             consul_impl: _consul_impl_clone,
-            server: server.clone()
+            server: server.clone(),
+            conn_msg_handle: conn_msg_handle,
+            db_msg_handle: db_msg_handle
         })
     }
 
@@ -828,25 +841,10 @@ pub struct HubConnMsgPump {
 impl HubConnMsgPump {
     #[new]
     pub fn new(ctx: PyRefMut<HubContext>) -> PyResult<Self> {
-        let _server_handle = {
-            let mut attempts = 0;
-            loop {
-                match ctx.server.as_ref().try_lock() {
-                    Ok(guard) => break guard,
-                    Err(_) if attempts < 50 => {
-                        attempts += 1;
-                        std::thread::sleep(std::time::Duration::from_millis(10));
-                    }
-                    Err(_) => {
-                        error!("Failed to acquire server lock after 500ms");
-                        return Err(PyValueError::new_err("Failed to acquire server lock after 500ms"));
-                    },
-                }
-            }
-        };
-
-        Ok(HubConnMsgPump{
-            conn_msg_handle: _server_handle.get_conn_msg_handle()
+        // 直接复用 HubContext 里已持有的句柄：不再 try_lock(server) 忙等
+        // （那在 server 被长时间占用时会 500ms 后失败，见 D8）。
+        Ok(HubConnMsgPump {
+            conn_msg_handle: ctx.conn_msg_handle.clone(),
         })
     }
 
@@ -865,25 +863,8 @@ pub struct HubDBMsgPump {
 impl HubDBMsgPump {
     #[new]
     pub fn new(ctx: PyRefMut<HubContext>) -> PyResult<Self> {
-        let _server_handle = {
-            let mut attempts = 0;
-            loop {
-                match ctx.server.as_ref().try_lock() {
-                    Ok(guard) => break guard,
-                    Err(_) if attempts < 50 => {
-                        attempts += 1;
-                        std::thread::sleep(std::time::Duration::from_millis(10));
-                    }
-                    Err(_) => {
-                        error!("Failed to acquire server lock after 500ms");
-                        return Err(PyValueError::new_err("Failed to acquire server lock after 500ms"));
-                    },
-                }
-            }
-        };
-
-        Ok(HubDBMsgPump{
-            db_msg_handle: _server_handle.get_db_msg_handle()
+        Ok(HubDBMsgPump {
+            db_msg_handle: ctx.db_msg_handle.clone(),
         })
     }
 
