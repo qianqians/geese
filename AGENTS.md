@@ -4,25 +4,9 @@ This file provides guidance to Qoder (qoder.com) when working with code in this 
 
 ## 项目概述
 
-Geese 是一个 3D 游戏引擎/编辑器，核心为 Rust + wgpu 渲染管线，通过 PyO3 暴露 Python 脚本层。项目没有 Cargo workspace——`desktop/`、`server/`、`client/` 分别是独立的 Cargo 入口项目，通过 `path = "../crates/xxx"` 引用共享 crate。
+Geese 是一个 3D 游戏引擎，核心为 Rust + wgpu 渲染管线，通过 PyO3 暴露 Python 脚本层。项目没有 Cargo workspace——`server/`、`client/` 分别是独立的 Cargo 入口项目，通过 `path = "../crates/xxx"` 引用共享 crate。
 
 ## 构建与测试
-
-### 构建编辑器（desktop 应用）
-
-```bash
-# Debug 构建
-cd desktop && cargo build
-
-# Release 构建
-cd desktop && cargo build --release
-```
-
-运行编辑器：
-```
-python run_editor.py           # 直接打开项目编辑器
-python test_desktop.py          # 启动 Launcher → Editor 流程
-```
 
 ### 构建 server（游戏服务器端）
 
@@ -59,17 +43,15 @@ cd crates/scene && cargo test animation_graph_tests
 ### 构建配置
 
 - `.cargo/config.toml`：仅为 macOS 交叉编译 PyO3 cdylib 设置 linker 参数，Windows/Linux 无需关注
-- rust-analyzer 配置了三个 linked projects（见 `.vscode/settings.json`）：`client/Cargo.toml`、`server/Cargo.toml`、`desktop/Cargo.toml`。添加新 crate 后如需补全支持，需更新此列表
-- 各 crate 的 `edition` 不统一：客户端/编辑器侧多用 `2024`，服务端侧多用 `2021`
+- rust-analyzer 配置了两个 linked projects（见 `.vscode/settings.json`）：`client/Cargo.toml`、`server/Cargo.toml`。添加新 crate 后如需补全支持，需更新此列表
+- 各 crate 的 `edition` 不统一：客户端侧多用 `2024`，服务端侧多用 `2021`
 
 ## 架构概览
 
-### 三层结构
+### 两层结构
 
 ```
-desktop/          ← 编辑器 GUI 层 (egui + wgpu + PyO3)
-  ↓
-crates/           ← 共享引擎 crate（33 个，核心资产）
+crates/           ← 共享引擎 crate（核心资产）
   ↓
 server/ & client/ ← 游戏运行时（网络层）
 ```
@@ -78,8 +60,6 @@ server/ & client/ ← 游戏运行时（网络层）
 
 **渲染管线**（GPU 侧，无平台抽象，直接依赖 wgpu）：
 - `render` — wgpu 渲染器核心，同时提供 Forward+ 和 Deferred+ 两条管线，CLI 聚类光照、CSM 阴影、IBL、后处理链、骨骼蒙皮
-- `grid` — 动态世界空间网格渲染（用于编辑器视口辅助）
-- `lines` — 3D 线段渲染（禁止近平面裁剪，保证长线段可见）
 - `material` — PBR 材质、纹理句柄、采样器
 
 **场景与资源**（数据侧，不依赖 GPU）：
@@ -90,17 +70,7 @@ server/ & client/ ← 游戏运行时（网络层）
 **物理**：
 - `physics` — 物理引擎后端，支持 `pyo3` 和 `scene-builder` 两个 feature
 - `physics_client` — 远程物理的 TCP 客户端
-- `physics_manager` — 统一物理后端管理层：整合本地/远程两种模式，独立于编辑器和服务端
-
-**编辑器**（`crates/editor/`）：
-- 模块化面板架构：`viewport`、`hierarchy`、`inspector`、`asset_browser`、`bundle_panel`、`gizmo`、`physics_debug`
-- `CommandHistory` 撤销/重做系统，`SceneSerializer` 序列化
-- `PanelLayer` / `PanelLayerManager` 面板层级管理
-- `PlayMode` — 编辑器内运行模式切换
-
-**UI 框架**：
-- `ui` — egui 通用 UI 组件封装
-- `launcher` — 项目模板生成器，启动时选择模板 → 生成工程 → 打开 Editor
+- `physics_manager` — 统一物理后端管理层：整合本地/远程两种模式，独立于服务端
 
 **服务端架构**（`server/lib/`）：
 - `hub` — 游戏逻辑节点（Python 可扩展，通过 pyo3-async-runtimes 在 tokio 中运行 Python 协程）
@@ -133,10 +103,10 @@ server/ & client/ ← 游戏运行时（网络层）
 
 **Prefab 嵌套引用**：`PrefabNodeDef` 中 `mesh` 与 `prefab_ref` 互斥；循环检测使用 `visited + recursion_stack` 双集合 DFS；实例化递归有 `max_depth` 限制。
 
-**坐标系**：右手坐标系（cgmath），Y 轴朝上。编辑器视口中 `Y=0` 与窗口底部对齐。球坐标转笛卡尔时注意 pitch 符号。
+**坐标系**：右手坐标系（cgmath），Y 轴朝上。球坐标转笛卡尔时注意 pitch 符号。
 
-**渲染管线选择**：`ScenePipelineDescriptor` 中 `RenderingPath` 枚举决定使用 `ForwardPlusPipeline` 或 `DeferredPlusPipeline`。编辑器默认使用 Forward+。
+**渲染管线选择**：`ScenePipelineDescriptor` 中 `RenderingPath` 枚举决定使用 `ForwardPlusPipeline` 或 `DeferredPlusPipeline`。默认使用 Forward+。
 
 **资源路径**：所有资源加载通过 `AssetLoader`，使用 UUID + 文件路径映射，资源存储在项目 `config/` 目录中。
 
-**Python 脚本调用约定**：所有涉及 Python 的入口点（desktop、server hub）使用 PyO3 `extension-module` 模式，编译为 `cdylib`，通过 `python` 命令加载 `.dll`（Windows）或 `.dylib`（macOS）。在 Windows 上必须使用 `python` 而非 `python3` 命令。
+**Python 脚本调用约定**：所有涉及 Python 的入口点（server hub）使用 PyO3 `extension-module` 模式，编译为 `cdylib`，通过 `python` 命令加载 `.dll`（Windows）或 `.dylib`（macOS）。在 Windows 上必须使用 `python` 而非 `python3` 命令。

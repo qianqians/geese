@@ -2,12 +2,12 @@
 .SYNOPSIS
     Geese 引擎统一构建打包脚本
 .DESCRIPTION
-    构建 desktop、server、client 三个 Cargo 项目，将产物收集到 dist/ 目录，
+    构建 server、client 两个 Cargo 项目，将产物收集到 dist/ 目录，
     生成可直接运行的可执行文件包。
 .PARAMETER Profile
     构建模式: debug 或 release（默认 release）
 .PARAMETER Target
-    构建目标: all、desktop、server、client（默认 all）
+    构建目标: all、server、client（默认 all）
 .EXAMPLE
     .\build.ps1
     .\build.ps1 -Profile debug
@@ -53,7 +53,6 @@ function Build-Project {
     }
 }
 
-if ($Target -in @("all", "desktop")) { Build-Project "desktop" "desktop" }
 if ($Target -in @("all", "server"))  { Build-Project "server"  "server" }
 if ($Target -in @("all", "client"))  { Build-Project "client"  "client" }
 
@@ -64,88 +63,6 @@ $TargetDir = if ($Profile -eq "release") { "release" } else { "debug" }
 Write-Host "[PACK] Preparing dist/ directory..." -ForegroundColor Yellow
 if (Test-Path $Dist) { Remove-Item $Dist -Recurse -Force }
 New-Item -ItemType Directory -Path $Dist -Force | Out-Null
-
-# ── 4. 打包 desktop ──
-if ($Target -in @("all", "desktop")) {
-    Write-Host "[PACK] Packing desktop..." -ForegroundColor Yellow
-    $DesktopDist = Join-Path $Dist "desktop"
-    New-Item -ItemType Directory -Path $DesktopDist -Force | Out-Null
-
-    # 复制并重命名 pydesktop.dll -> pydesktop.pyd
-    $SrcDll = Join-Path $Root "desktop\target\$TargetDir\pydesktop.dll"
-    if (Test-Path $SrcDll) {
-        Copy-Item $SrcDll (Join-Path $DesktopDist "pydesktop.pyd") -Force
-        Write-Host "  -> pydesktop.pyd" -ForegroundColor Gray
-    } else {
-        Write-Host "[WARN] pydesktop.dll not found at $SrcDll" -ForegroundColor Red
-    }
-
-    # 生成 desktop/run.py
-    $RunPy = @"
-import sys, os, traceback
-import importlib.machinery, importlib.util
-
-_dir = os.path.dirname(os.path.abspath(__file__))
-
-# Load pydesktop extension
-_dll = os.path.join(_dir, 'pydesktop.pyd')
-_loader = importlib.machinery.ExtensionFileLoader('pydesktop', _dll)
-_spec = importlib.util.spec_from_loader('pydesktop', _loader, origin=_dll)
-pydesktop = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(pydesktop)
-
-project = sys.argv[1] if len(sys.argv) > 1 else os.path.join(_dir, 'projects', 'My')
-
-try:
-    pydesktop.open_editor(project)
-    print('Editor exited normally', flush=True)
-except SystemExit as e:
-    print(f'SystemExit: {e.code}', flush=True)
-except BaseException as e:
-    with open(os.path.join(_dir, 'editor_crash.txt'), 'w') as f:
-        f.write(f'{type(e).__name__}: {e}\n')
-        traceback.print_exc(file=f)
-    print(f'ERROR: {type(e).__name__}: {e}', flush=True)
-"@
-    Set-Content -Path (Join-Path $DesktopDist "run.py") -Value $RunPy -Encoding UTF8
-
-    # 生成 desktop/run_launcher.py（启动 Launcher 模式）
-    $LauncherPy = @"
-import sys, os, traceback
-import importlib.machinery, importlib.util
-
-_dir = os.path.dirname(os.path.abspath(__file__))
-
-_dll = os.path.join(_dir, 'pydesktop.pyd')
-_loader = importlib.machinery.ExtensionFileLoader('pydesktop', _dll)
-_spec = importlib.util.spec_from_loader('pydesktop', _loader, origin=_dll)
-pydesktop = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(pydesktop)
-
-try:
-    pydesktop.run()
-    print('Launcher exited normally', flush=True)
-except SystemExit as e:
-    print(f'SystemExit: {e.code}', flush=True)
-except BaseException as e:
-    with open(os.path.join(_dir, 'launcher_crash.txt'), 'w') as f:
-        f.write(f'{type(e).__name__}: {e}\n')
-        traceback.print_exc(file=f)
-    print(f'ERROR: {type(e).__name__}: {e}', flush=True)
-"@
-    Set-Content -Path (Join-Path $DesktopDist "run_launcher.py") -Value $LauncherPy -Encoding UTF8
-
-    # 复制示例项目
-    $ProjectSrc = Join-Path $Root "projects\My"
-    if (Test-Path $ProjectSrc) {
-        $ProjectDst = Join-Path $DesktopDist "projects\My"
-        New-Item -ItemType Directory -Path (Join-Path $DesktopDist "projects") -Force | Out-Null
-        Copy-Item $ProjectSrc $ProjectDst -Recurse -Force
-        Write-Host "  -> projects/My" -ForegroundColor Gray
-    }
-
-    Write-Host "[PACK] Desktop packed." -ForegroundColor Green
-}
 
 # ── 5. 打包 server ──
 if ($Target -in @("all", "server")) {
@@ -348,12 +265,10 @@ Rust:          $(& rustc --version)
 OS:            $([System.Environment]::OSVersion.VersionString)
 
 Output: dist/
-  desktop/   - pydesktop.pyd + run.py + run_launcher.py
   server/    - dbproxy.exe + gate.exe + pyhub.pyd + engine/ + config/ + start.ps1
   client/    - pyclient.pyd + engine/ + run.py
 
 Usage:
-  Desktop:  python dist/desktop/run.py [project_path]
   Server:   powershell -ExecutionPolicy Bypass -File dist/server/start.ps1
   Client:   python dist/client/run.py
 "@
@@ -368,7 +283,6 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Output: $Dist"
 Write-Host ""
 Write-Host "Usage:"
-Write-Host "  Desktop:  python dist/desktop/run.py"
 Write-Host "  Server:   powershell -ExecutionPolicy Bypass -File dist/server/start.ps1"
 Write-Host "  Client:   python dist/client/run.py"
 Write-Host ""

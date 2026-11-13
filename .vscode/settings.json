@@ -1,8 +1,7 @@
 {
     "rust-analyzer.linkedProjects": [
         "./client/Cargo.toml",
-        "./server/Cargo.toml",
-        "./desktop/Cargo.toml"
+        "./server/Cargo.toml"
     ],
     "files.watcherExclude": {
         "**/target": true
