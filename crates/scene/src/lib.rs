@@ -1,4 +1,4 @@
-mod material;
+mod gltf_material;
 pub mod octree;
 mod scene;
 pub mod scene_object;
@@ -30,6 +30,16 @@ pub use character_animation::{CharacterAnimationGraph, SpeedThresholds};
 pub use primitives::{PrimitiveKind, create_primitive_mesh};
 pub use script::ScriptComponent;
 
+// 材质数据层由 `material` crate 提供；这里再导出，方便场景/模型/动画代码直接使用
+// `scene::MaterialLibrary` / `scene::material_asset::*`。
+pub use ::material::asset as material_asset;
+pub use ::material::asset::{
+    append_missing_builtins, apply_material_assets, builtin_materials, default_material,
+    load_project_material_assets, load_project_materials, MaterialAsset, MaterialAssetError,
+    MaterialOverrideReport, BUILTIN_MATERIALS, DEFAULT_MATERIAL_NAME,
+};
+pub use ::material::{Material, MaterialHandle, MaterialLibrary};
+
 use asset::load;
 use std::collections::HashMap;
 
@@ -42,9 +52,9 @@ use gltf::animation::util::ReadOutputs;
 use gltf::mesh::Mesh;
 use gltf::mesh::Primitive;
 use gltf::mesh::util::ReadIndices;
-use material::load_material_library;
+use gltf_material::load_material_library;
 use math::AABB;
-use render::{MaterialHandle, ModelMesh, SkinHandle, Vertex};
+use render::{ModelMesh, SkinHandle, Vertex};
 use uuid::Uuid;
 
 fn import_document_aabb(node: &gltf::Node, bounds: &mut AABB) {

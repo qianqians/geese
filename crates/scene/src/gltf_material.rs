@@ -1,4 +1,8 @@
-use render::{
+//! glTF → [`material::Material`] 转换。
+//!
+//! 只做数据映射（glTF 的 PBR 参数/贴图槽位 → 材质数据），不涉及 GPU。
+
+use material::{
     AlphaMode, FilterMode, Material, MaterialLibrary, Sampler, Texture, TextureFormat,
     TextureHandle, WrapMode,
 };
@@ -43,9 +47,17 @@ pub fn load_material_library(
                 normal_texture: material
                     .normal_texture()
                     .map(|info| TextureHandle(info.texture().index())),
+                normal_scale: material
+                    .normal_texture()
+                    .map(|info| info.scale())
+                    .unwrap_or(1.0),
                 occlusion_texture: material
                     .occlusion_texture()
                     .map(|info| TextureHandle(info.texture().index())),
+                occlusion_strength: material
+                    .occlusion_texture()
+                    .map(|info| info.strength())
+                    .unwrap_or(1.0),
                 emissive_factor: material.emissive_factor(),
                 emissive_texture: material
                     .emissive_texture()

@@ -30,6 +30,7 @@ bytemuck = "1.16"
 pollster = "0.3"
 
 render = { path = "../render", features = ["instancing"] }
+material = { path = "../material" }
 scene = { path = "../scene", features = ["physics"] }
 camera = { path = "../camera" }
 physics = { path = "../physics", features = ["scene-builder"] }

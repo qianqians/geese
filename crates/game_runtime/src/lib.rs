@@ -20,8 +20,9 @@ use std::time::Instant;
 
 use cgmath::Point3;
 use config::{ConfigRenderingPath, EngineConfig};
+use material::asset as material_asset;
 use render::{
-    build_post_uniform, Light, Material, MaterialLibrary, PostChain, PostEffect,
+    build_post_uniform, Light, PostChain, PostEffect,
     PostProcessPipeline, RenderQueue, SceneRenderer, WgpuSceneRenderer,
     WgpuSceneRendererDescriptor,
 };
@@ -95,7 +96,6 @@ pub struct GameState {
     pub physics: PhysicsWorld,
     pub physics_scene_id: SceneId,
     pub camera: GameCamera,
-    pub materials: MaterialLibrary,
     pub depth_texture: wgpu::Texture,
     pub depth_view: wgpu::TextureView,
     pub last_frame: Instant,
@@ -214,12 +214,9 @@ impl GameState {
         };
         let renderer = WgpuSceneRenderer::new(&device, &queue, renderer_desc);
 
-        let default_mat = Material::default();
-        let scene_renderer = SceneRenderer::new(default_mat);
-
         // ── 场景加载 ──
         let scene_path = Path::new(project_dir).join(scene_file);
-        let scene = scene::loader::load_scene_from_file(
+        let mut scene = scene::loader::load_scene_from_file(
             &scene_path.to_string_lossy(),
             1000,
             8,
@@ -230,7 +227,35 @@ impl GameState {
             scene.nodes.len()
         );
 
-        let materials = MaterialLibrary::default();
+        // ── 材质：glTF 参数优先 → .material.json 增量覆盖 → 内置兜底 ──
+        // 1) 只补齐场景库里没有的内置默认材质，不覆盖模型自带的材质。
+        let appended = match material_asset::append_missing_builtins(&mut scene.materials) {
+            Ok(count) => count,
+            Err(err) => {
+                log::warn!("[material] 内置默认材质加载失败: {err}");
+                0
+            }
+        };
+        // 2) 项目 .material.json 按名字打补丁：只覆盖声明的变量，其余继承 glTF。
+        let report = match material_asset::load_project_material_assets(Path::new(project_dir)) {
+            Ok(assets) => {
+                material_asset::apply_material_assets(&mut scene.materials, &assets)
+            }
+            Err(err) => {
+                log::warn!("[material] 项目材质补丁加载失败: {err}");
+                material_asset::MaterialOverrideReport::default()
+            }
+        };
+        log::info!(
+            "[material] 场景材质 {} 个；内置兜底追加 {} 个；.material.json 覆盖 {} 个、新增 {} 个",
+            scene.materials.materials.len(),
+            appended,
+            report.patched,
+            report.added
+        );
+
+        let scene_renderer =
+            SceneRenderer::new(material_asset::default_material(&scene.materials));
 
         // ── 物理 ──
         let mut physics = PhysicsWorld::new();
@@ -270,7 +295,6 @@ impl GameState {
             physics,
             physics_scene_id,
             camera,
-            materials,
             depth_texture,
             depth_view,
             last_frame: Instant::now(),
@@ -349,7 +373,7 @@ impl GameState {
         self.renderer.update_lights(&self.queue, ambient, &lights);
 
         self.renderer
-            .prepare(&self.device, &self.queue, &self.materials, &queue);
+            .prepare(&self.device, &self.queue, &self.scene.materials, &queue);
 
         let output = self.surface.get_current_texture()?;
         let surface_view = output

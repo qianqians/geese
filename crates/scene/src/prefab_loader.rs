@@ -527,8 +527,13 @@ mod tests {
 
     #[test]
     fn load_prefab_manifest_from_minimal_json() {
-        let tmp = std::env::temp_dir().join("prefab_loader_test");
-        let _ = std::fs::create_dir_all(&tmp);
+        // 放在 crate 的 target/ 下：某些受限环境不允许写系统临时目录
+        let tmp = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("test-artifacts")
+            .join("prefab_loader_test");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
         let path = tmp.join("minimal.prefab.json");
         let json = r#"{"version":"1.0","name":"Minimal","nodes":[],"root_nodes":[]}"#;
         std::fs::write(&path, json).unwrap();

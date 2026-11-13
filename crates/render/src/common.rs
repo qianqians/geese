@@ -168,8 +168,8 @@ impl MaterialUniform {
             metallic_roughness_normal_occlusion: [
                 material.metallic_factor,
                 material.roughness_factor,
-                1.0, // normal_scale（GLTF 默认 1.0;当前 Material 未存值，用默认）
-                1.0, // occlusion_strength
+                material.normal_scale,
+                material.occlusion_strength,
             ],
             flags: [texture_flags, alpha_mode, 0, 0],
         }

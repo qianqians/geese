@@ -11,7 +11,8 @@ use std::path::Path;
 use cgmath::{Euler, Matrix4, Point3, Rad, SquareMatrix, Vector3};
 use cgmath::Matrix;
 use math::AABB;
-use render::{Material, MaterialLibrary, ModelMesh, AlphaMode};
+use material::{AlphaMode, Material, MaterialLibrary};
+use render::ModelMesh;
 use uuid::Uuid;
 
 use asset::database::AssetDatabase;
@@ -407,8 +408,10 @@ pub fn create_pbr_material(name: &str, color: [f32; 3]) -> Material {
         alpha_cutoff: 0.5,
         base_color_texture: None,
         normal_texture: None,
+        normal_scale: 1.0,
         metallic_roughness_texture: None,
         occlusion_texture: None,
+        occlusion_strength: 1.0,
         emissive_texture: None,
         double_sided: false,
         custom_shader: None,

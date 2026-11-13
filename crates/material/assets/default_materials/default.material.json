@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "name": "default",
+  "base_color": [0.5, 0.5, 0.5, 1.0],
+  "metallic": 0.0,
+  "roughness": 0.5,
+  "emissive": [0.0, 0.0, 0.0],
+  "normal_scale": 1.0,
+  "occlusion_strength": 1.0,
+  "double_sided": false,
+  "alpha": {
+    "mode": "opaque",
+    "cutoff": 0.5
+  }
+}

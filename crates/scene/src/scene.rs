@@ -6,7 +6,7 @@ use cgmath::{Matrix, SquareMatrix, Vector3};
 #[cfg(feature = "navmesh")]
 use navmesh::NavMesh;
 use math::AABB;
-use render::MaterialLibrary;
+use material::MaterialLibrary;
 use render::{RenderQueue, SceneRenderer};
 
 use avatar::{

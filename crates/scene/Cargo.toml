@@ -15,6 +15,7 @@ rmp-serde = "1"
 math = { path = "../math", version = "0.1.0" }
 camera = { path = "../camera", version = "0.1.0" }
 asset = { path = "../asset", version = "0.1.0" }
+material = { path = "../material", version = "0.1.0" }
 render = { path = "../render", version = "0.1.0", features = ["instancing"] }
 avatar = { path = "../avatar", version = "0.1.0" }
 event = { path = "../event", version = "0.1.0" }
