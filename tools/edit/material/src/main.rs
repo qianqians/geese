@@ -283,7 +283,7 @@ impl EditorState {
         }
 
         {
-            let mut egui_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let egui_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("egui_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &surface_view,
@@ -341,6 +341,7 @@ impl EditorState {
     }
 }
 
+#[allow(deprecated)] // `EventLoop::create_window` 与 `EventLoop::run` 沿用引擎 game_runtime 的写法
 fn main() {
     env_logger::init();
 

@@ -13,9 +13,6 @@ use render::Light;
 
 use crate::material_store::{LoadedMaterial, MaterialStore, StoreError};
 
-/// 预览用的球体材质句柄固定为 0（见 `sphere.rs`）。
-pub const PREVIEW_MATERIAL_HANDLE: usize = 0;
-
 pub struct EditorApp {
     store: MaterialStore,
     selected: usize,
