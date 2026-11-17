@@ -113,6 +113,12 @@ impl WgpuSceneRenderer {
         self.pipeline.update_lights(queue, ambient, lights);
     }
 
+    /// 丢弃已缓存的 GPU 资源。整体重建场景（旧网格释放、材质句柄重新分配）前调用，
+    /// 否则新资源可能命中以 CPU 指针/句柄为键的旧缓存条目，渲染出上一套几何或材质。
+    pub fn clear_resource_cache(&mut self) {
+        self.pipeline.clear_resource_cache();
+    }
+
     pub fn prepare(
         &mut self,
         device: &wgpu::Device,

@@ -348,6 +348,18 @@ impl GpuResourceCache {
             entity_resources: HashMap::new(),
         }
     }
+
+    /// 丢弃全部缓存条目。
+    ///
+    /// 缓存的键是 CPU 侧资源地址/句柄（`MeshCacheKey` 为顶点/索引指针 + 长度，
+    /// `textures` 为材质纹理句柄，`entity_resources` 为实体 id），而缓存只插不淘汰。
+    /// 调用方若整体重建场景（旧网格释放、句柄从 0 重新分配），新资源可能落进旧键里
+    /// 而绑定到过期 GPU 缓冲，因此必须在重建前清空。
+    pub fn clear(&mut self) {
+        self.mesh_buffers.clear();
+        self.textures.clear();
+        self.entity_resources.clear();
+    }
 }
 
 impl Default for GpuResourceCache {

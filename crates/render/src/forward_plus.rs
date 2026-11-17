@@ -525,6 +525,10 @@ impl ScenePipeline for ForwardPlusPipeline {
         RenderingPath::ForwardPlus
     }
 
+    fn clear_resource_cache(&mut self) {
+        self.cache.clear();
+    }
+
     fn resize(
         &mut self,
         _device: &wgpu::Device,

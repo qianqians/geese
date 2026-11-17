@@ -506,6 +506,10 @@ impl ScenePipeline for DeferredPlusPipeline {
         RenderingPath::DeferredPlus
     }
 
+    fn clear_resource_cache(&mut self) {
+        self.cache.clear();
+    }
+
     fn resize(
         &mut self,
         device: &wgpu::Device,

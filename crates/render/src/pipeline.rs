@@ -96,6 +96,12 @@ pub trait ScenePipeline {
 
     fn update_lights(&mut self, queue: &wgpu::Queue, ambient: [f32; 3], lights: &[Light]);
 
+    /// 丢弃已缓存的 GPU 资源（顶点/索引缓冲、纹理、实体 uniform）。
+    ///
+    /// 适用于「场景整体重建」：旧网格释放后新分配可能复用同一地址，命中
+    /// 缓存里以 CPU 指针为键的旧条目会画出上一套几何。重建前调用一次即可。
+    fn clear_resource_cache(&mut self);
+
     /// 上传本帧绘制命令所需的 GPU 资源（顶点 / 索引 / 材质 / 对象 uniform）。
     fn prepare(
         &mut self,
