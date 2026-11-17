@@ -20,7 +20,9 @@ serde_json = "1.0"
 egui = "0.29"
 egui-winit = "0.29"
 egui-wgpu = "0.29"
+rfd = "0.15"
 
 render = { path = "../../../crates/render" }
 material = { path = "../../../crates/material" }
 camera = { path = "../../../crates/camera" }
+edit-prefs = { path = "../prefs" }

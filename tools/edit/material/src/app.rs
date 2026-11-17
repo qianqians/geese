@@ -1,34 +1,45 @@
 //! 编辑器状态与 egui UI。
 //!
-//! 左侧材质列表 + 新建/保存，右侧 PBR 标量参数面板；预览球体由 `main.rs`
+//! 左侧项目/材质列表 + 新建/保存，右侧 PBR 标量参数面板；预览球体由 `main.rs`
 //! 每帧渲染到窗口背景，本模块只负责暴露当前编辑材质与轨道相机。
+//!
+//! 项目目录是可选的：启动时优先用命令行参数，其次用
+//! `%APPDATA%\geese\material-editor.json` 里上次的项目（仍然存在的话），都没有就
+//! 弹原生目录选择框。用户取消时停在「未选择项目」的空状态，不擅自往当前目录写
+//! 默认材质文件。
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use camera::{Camera, CameraMode};
 use cgmath::Point3;
+use edit_prefs::Prefs;
 use egui::Color32;
 use material::{AlphaMode, Material};
 use render::Light;
 
-use crate::material_store::{LoadedMaterial, MaterialStore, StoreError};
+use crate::material_store::{LoadedMaterial, MaterialStore};
+
+/// 记录文件：`%APPDATA%\geese\material-editor.json`。
+const PREFS_APP: &str = "material-editor";
+/// 记录键：上次的项目目录 + 上次选中的材质文件名。
+const PREFS_KEY: &str = "project";
 
 pub struct EditorApp {
-    store: MaterialStore,
+    /// 未选项目时为 `None`。
+    store: Option<MaterialStore>,
+    project_dir: Option<PathBuf>,
     selected: usize,
     dirty: bool,
     status: String,
     new_name: String,
     camera: Camera,
+    prefs: Prefs,
     pub lights: Vec<Light>,
     pub ambient: [f32; 3],
 }
 
 impl EditorApp {
-    pub fn new(project_dir: &Path) -> Result<Self, StoreError> {
-        let store = MaterialStore::open(project_dir)?;
-        let aspect = 1.0;
-
+    pub fn new() -> Self {
         let camera = Camera::new(
             CameraMode::Orbit {
                 yaw: -0.7,
@@ -38,86 +49,210 @@ impl EditorApp {
                 min_distance: 1.2,
                 max_distance: 20.0,
             },
-            aspect,
+            1.0,
         );
 
-        Ok(Self {
-            store,
+        Self {
+            store: None,
+            project_dir: None,
             selected: 0,
             dirty: false,
             status: String::new(),
             new_name: String::new(),
             camera,
+            prefs: Prefs::load(PREFS_APP),
             lights: vec![
                 Light::directional([-0.5, -1.0, -0.4], [1.0, 0.95, 0.9], 1.5),
                 Light::point([2.0, 2.0, 2.0], [0.6, 0.6, 1.0], 8.0, 20.0),
                 Light::point([-2.0, 0.5, 1.5], [1.0, 0.7, 0.5], 6.0, 20.0),
             ],
             ambient: [0.08, 0.08, 0.1],
-        })
+        }
+    }
+
+    /// 启动流程：命令行参数 → 上次记录的项目 → 都没有就弹目录选择框。
+    pub fn startup(&mut self, cli_project: Option<String>) {
+        if let Some(arg) = cli_project {
+            self.open_project(Path::new(&arg));
+            return;
+        }
+
+        let recorded = self
+            .prefs
+            .last_existing(PREFS_KEY)
+            .map(|entry| entry.to_path_buf());
+
+        match recorded {
+            Some(dir) => self.open_project(&dir),
+            None => self.open_project_dialog(),
+        }
+    }
+
+    /// 弹原生目录选择框；取消则维持当前状态。
+    pub fn open_project_dialog(&mut self) {
+        if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+            self.open_project(&dir);
+        }
+    }
+
+    /// 打开项目目录：会先在该目录补齐内置默认材质，然后加载全部 `.material.json`。
+    ///
+    /// 只有用户明确指定的目录才会走到这里——启动时不会凭空往工作目录写文件。
+    pub fn open_project(&mut self, dir: &Path) {
+        // 同一个项目才沿用上次选中的材质文件。
+        let wanted = self
+            .prefs
+            .last(PREFS_KEY)
+            .filter(|entry| entry.to_path_buf() == dir)
+            .map(|entry| entry.name.clone());
+
+        match MaterialStore::open(dir) {
+            Ok(store) => {
+                self.selected = wanted
+                    .and_then(|name| {
+                        store
+                            .materials()
+                            .iter()
+                            .position(|loaded| loaded.file_name == name)
+                    })
+                    .unwrap_or(0);
+                self.store = Some(store);
+                self.project_dir = Some(dir.to_path_buf());
+                self.dirty = false;
+                self.status.clear();
+                self.sync_prefs();
+            }
+            Err(err) => {
+                self.status = format!("打开项目 {} 失败: {err}", dir.display());
+                self.store = None;
+                self.project_dir = None;
+            }
+        }
+    }
+
+    /// 把「项目目录 + 当前选中的材质文件名」写回记录。
+    fn sync_prefs(&mut self) {
+        let Some(dir) = self.project_dir.clone() else {
+            return;
+        };
+        let name = self
+            .store
+            .as_ref()
+            .and_then(|store| store.materials().get(self.selected))
+            .map(|loaded| loaded.file_name.clone())
+            .unwrap_or_default();
+        self.prefs.set(PREFS_KEY, name, &dir);
     }
 
     /// 每帧构建全部 UI。
     pub fn ui(&mut self, ctx: &egui::Context) {
-        // ── 左：材质列表 / 新建 / 保存 ──
-        egui::SidePanel::left("materials")
-            .default_width(220.0)
-            .show(ctx, |ui| {
-                ui.heading("材质");
-                ui.add_space(4.0);
+        let mut open_dialog = false;
+        let mut clicked_material: Option<usize> = None;
 
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    let selected = self.selected;
-                    for (i, loaded) in self.store.materials().iter().enumerate() {
-                        let name = loaded
-                            .material
-                            .name
-                            .clone()
-                            .unwrap_or_else(|| loaded.file_name.clone());
-                        if ui.selectable_label(selected == i, name).clicked() {
-                            self.selected = i;
-                            self.status.clear();
+        {
+            let app = &mut *self;
+
+            // ── 左：项目 / 材质列表 / 新建 / 保存 ──
+            egui::SidePanel::left("materials")
+                .default_width(220.0)
+                .show(ctx, |ui| {
+                    ui.heading("材质");
+                    if let Some(dir) = &app.project_dir {
+                        ui.label(
+                            egui::RichText::new(dir.display().to_string())
+                                .weak()
+                                .small(),
+                        );
+                    }
+                    ui.add_space(4.0);
+
+                    match &app.store {
+                        None => {
+                            ui.label(egui::RichText::new("未选择项目").weak());
+                            ui.add_space(6.0);
+                            if ui.button("选择项目…").clicked() {
+                                open_dialog = true;
+                            }
+                        }
+                        Some(store) => {
+                            egui::ScrollArea::vertical()
+                                .max_height((ui.available_height() - 110.0).max(60.0))
+                                .show(ui, |ui| {
+                                    for (i, loaded) in store.materials().iter().enumerate() {
+                                        let name = loaded
+                                            .material
+                                            .name
+                                            .clone()
+                                            .unwrap_or_else(|| loaded.file_name.clone());
+                                        if ui.selectable_label(app.selected == i, name).clicked() {
+                                            clicked_material = Some(i);
+                                        }
+                                    }
+                                });
+
+                            ui.separator();
+                            ui.horizontal(|ui| {
+                                ui.label("新建");
+                                ui.text_edit_singleline(&mut app.new_name);
+                                if ui.button("创建").clicked() {
+                                    app.create_material();
+                                }
+                            });
+                            if ui.button("保存").clicked() {
+                                app.save();
+                            }
+                            ui.separator();
+                            if ui.button("更换项目…").clicked() {
+                                open_dialog = true;
+                            }
+                        }
+                    }
+
+                    ui.separator();
+                    ui.label(&app.status);
+                });
+
+            // ── 右：参数面板 ──
+            let idx = app.selected;
+            let has_store = app.store.is_some();
+            let mut params_changed = false;
+            egui::SidePanel::right("params")
+                .default_width(300.0)
+                .show(ctx, |ui| {
+                    ui.heading("参数");
+                    ui.add_space(4.0);
+                    match app.store.as_mut().and_then(|store| store.material_mut(idx)) {
+                        Some(m) => params_changed |= params_ui(ui, m),
+                        None => {
+                            if has_store {
+                                ui.label("没有选中材质");
+                            } else {
+                                ui.label("先在左侧选择一个项目目录");
+                            }
                         }
                     }
                 });
+            self.dirty |= params_changed;
+        }
 
-                ui.separator();
-                ui.horizontal(|ui| {
-                    ui.label("新建");
-                    ui.text_edit_singleline(&mut self.new_name);
-                    if ui.button("创建").clicked() {
-                        self.create_material();
-                    }
-                });
-                if ui.button("保存").clicked() {
-                    self.save();
-                }
-                ui.separator();
-                ui.label(&self.status);
-            });
+        if let Some(index) = clicked_material {
+            if index != self.selected {
+                self.selected = index;
+                self.status.clear();
+                self.sync_prefs();
+            }
+        }
 
-        // ── 右：参数面板 ──
-        let idx = self.selected;
-        let mut params_changed = false;
-        egui::SidePanel::right("params")
-            .default_width(300.0)
-            .show(ctx, |ui| {
-                ui.heading("参数");
-                ui.add_space(4.0);
-                if let Some(m) = self.store.material_mut(idx) {
-                    params_changed |= params_ui(ui, m);
-                } else {
-                    ui.label("没有选中材质");
-                }
-            });
-        self.dirty |= params_changed;
+        if open_dialog {
+            self.open_project_dialog();
+        }
     }
 
     /// 当前选中材质（供预览渲染）。
     pub fn preview_material(&self) -> Material {
         self.store
-            .materials()
-            .get(self.selected)
+            .as_ref()
+            .and_then(|store| store.materials().get(self.selected))
             .map(|loaded| loaded.material.clone())
             .unwrap_or_default()
     }
@@ -153,31 +288,39 @@ impl EditorApp {
             return;
         }
 
+        let Some(store) = self.store.as_mut() else {
+            self.status = "先选择一个项目目录".to_string();
+            return;
+        };
+
         let mut material = Material::default();
         material.name = Some(name.clone());
-        self.store.push(LoadedMaterial {
+        store.push(LoadedMaterial {
             file_name: format!("{name}.material.json"),
             material,
         });
-        self.selected = self.store.materials().len() - 1;
+        self.selected = store.materials().len() - 1;
         self.dirty = true;
         self.new_name.clear();
         self.status = format!("已创建 {name}（未保存）");
     }
 
     fn save(&mut self) {
+        let Some(store) = self.store.as_ref() else {
+            self.status = "先选择一个项目目录".to_string();
+            return;
+        };
+
         let idx = self.selected;
-        let result = self
-            .store
+        let result = store
             .materials()
             .get(idx)
-            .map(|loaded| self.store.save(&loaded.material));
+            .map(|loaded| store.save(&loaded.material));
 
         match result {
             Some(Ok(())) => {
                 self.dirty = false;
-                let name = self
-                    .store
+                let name = store
                     .materials()
                     .get(idx)
                     .map(|l| l.file_name.clone())
