@@ -1,15 +1,15 @@
 //! 材质编辑器入口：winit + wgpu + egui 集成。
 //!
-//! 用法：`material-editor [project_dir]`
-//! 不带参数时先读上次打开的项目（`%APPDATA%\geese\material-editor.json`），
-//! 没有记录或目录已不在，就弹原生目录选择框；取消则停在「未选择项目」的空状态。
-//! 读取/写入 `<project_dir>/assets/materials/*.material.json`，
+//! 用法：`material-editor --workdir <工作目录>`
+//! 工作目录是必填的，并且**就是项目目录**：读取/写入
+//! `<工作目录>/assets/materials/*.material.json`，记录写 `<工作目录>/.data/material-editor.json`。
 //! 窗口背景实时渲染一个球体预览当前材质。
 
 mod app;
 mod material_store;
 mod sphere;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use app::EditorApp;
@@ -70,7 +70,7 @@ struct EditorState {
 }
 
 impl EditorState {
-    async fn new(window: Arc<Window>, cli_project: Option<String>) -> Result<Self, Box<dyn std::error::Error>> {
+    async fn new(window: Arc<Window>, workdir: PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
         let size = window.inner_size();
 
         // ── wgpu 初始化 ──
@@ -164,9 +164,8 @@ impl EditorState {
         );
 
         // ── 编辑器状态 + 预览球体 ──
-        let mut app = EditorApp::new();
+        let mut app = EditorApp::new(workdir);
         app.update_aspect(size.width, size.height);
-        app.startup(cli_project);
         let sphere_object = SphereObject {
             mesh: sphere::generate_uv_sphere(64, 64),
             model: render::common::identity_matrix(),
@@ -348,7 +347,13 @@ impl EditorState {
 fn main() {
     env_logger::init();
 
-    let cli_project = std::env::args().nth(1);
+    let workdir = match edit_prefs::workdir_from_args() {
+        Ok(dir) => dir,
+        Err(message) => {
+            eprintln!("{message}");
+            std::process::exit(2);
+        }
+    };
 
     let event_loop = EventLoop::new().expect("创建事件循环失败");
     let window = Arc::new(
@@ -361,7 +366,7 @@ fn main() {
             .expect("创建窗口失败"),
     );
 
-    let mut state = pollster::block_on(EditorState::new(window.clone(), cli_project))
+    let mut state = pollster::block_on(EditorState::new(window.clone(), workdir))
         .expect("初始化材质编辑器失败");
 
     #[allow(deprecated)]

@@ -374,6 +374,7 @@ pub(crate) fn add_procedural_object(
     objects.push(SceneObject {
         entity_id,
         node: node_id,
+        mesh_name: None,
         local_aabb,
         aabb: local_aabb,
         center: Point3::new(0.0, 0.0, 0.0),

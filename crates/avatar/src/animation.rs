@@ -37,6 +37,8 @@ impl Default for Transform {
 pub struct SceneNode {
     pub id: usize,
     pub parent: Option<usize>,
+    /// 来自 glTF 的节点名（可读标识，仅用于展示/调试，不参与查找）。
+    pub name: Option<String>,
     pub children: Vec<usize>,
     pub objects: Vec<usize>,
     pub base_transform: Transform,
@@ -55,6 +57,7 @@ impl SceneNode {
         Self {
             id,
             parent,
+            name: None,
             children: Vec::new(),
             objects: Vec::new(),
             base_transform: transform,

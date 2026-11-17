@@ -1016,6 +1016,7 @@ impl Scene {
         self.objects.push(SceneObject {
             entity_id: entity_id.clone(),
             node: node_id,
+            mesh_name: None,
             local_aabb,
             aabb: local_aabb,
             center: cgmath::Point3::new(0.0, 0.0, 0.0),
@@ -1181,6 +1182,7 @@ mod tests {
         SceneObject {
             entity_id: String::new(),
             node,
+            mesh_name: None,
             local_aabb: aabb,
             aabb,
             center,

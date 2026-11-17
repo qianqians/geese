@@ -21,6 +21,8 @@ bitflags::bitflags! {
 pub struct SceneObject {
     pub entity_id: String,
     pub node: usize,
+    /// 来自 glTF 的网格名（可读标识，仅用于展示/调试，不参与查找）。
+    pub mesh_name: Option<String>,
     pub local_aabb: AABB,
     pub aabb: AABB,
     pub center: Point3<f32>,

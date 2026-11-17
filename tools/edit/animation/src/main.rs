@@ -1,14 +1,16 @@
 //! 骨骼动画预览入口：winit + wgpu + egui 集成。
 //!
-//! 用法：`animation-preview [model.gltf|model.glb]`
-//! 不带参数时先读上次打开的模型（`%APPDATA%\geese\animation-preview.json`），
-//! 没有记录或记录的文件已不在，就弹原生文件对话框要一个。
+//! 用法：`animation-preview --workdir <工作目录>`
+//! 工作目录是必填的：记录写在 `<workdir>/.data/animation-preview.json`，文件对话框也以它为
+//! 初始目录。模型只来自记录或对话框（不接受命令行直接指定）。
 //!
 //! 窗口背景每帧渲染模型的蒙皮网格（`scene::Scene` → Forward+），UI 由 egui 叠在上面。
 
 mod app;
 mod model;
+mod swap;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use app::PreviewApp;
@@ -42,7 +44,7 @@ struct PreviewState {
 }
 
 impl PreviewState {
-    async fn new(window: Arc<Window>, cli_model: Option<String>) -> Result<Self, Box<dyn std::error::Error>> {
+    async fn new(window: Arc<Window>, workdir: PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
         let size = window.inner_size();
 
         // ── wgpu 初始化 ──
@@ -121,10 +123,10 @@ impl PreviewState {
             false,
         );
 
-        // ── 预览状态：命令行参数 → 上次记录 → 弹窗 ──
-        let mut app = PreviewApp::new();
+        // ── 预览状态：读工作目录里的记录 → 否则弹窗 ──
+        let mut app = PreviewApp::new(workdir);
         app.update_aspect(size.width, size.height);
-        app.startup(cli_model);
+        app.startup();
 
         Ok(Self {
             window,
@@ -325,7 +327,13 @@ fn create_depth_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu:
 fn main() {
     env_logger::init();
 
-    let cli_model = std::env::args().nth(1);
+    let workdir = match edit_prefs::workdir_from_args() {
+        Ok(dir) => dir,
+        Err(message) => {
+            eprintln!("{message}");
+            std::process::exit(2);
+        }
+    };
 
     let event_loop = EventLoop::new().expect("创建事件循环失败");
     let window = Arc::new(
@@ -338,7 +346,7 @@ fn main() {
             .expect("创建窗口失败"),
     );
 
-    let mut state = pollster::block_on(PreviewState::new(window.clone(), cli_model))
+    let mut state = pollster::block_on(PreviewState::new(window.clone(), workdir))
         .expect("初始化骨骼动画预览失败");
 
     let _ = event_loop.run(move |event, window_target| {

@@ -348,6 +348,7 @@ fn instantiate_procedural_mesh(
     scene.objects.push(SceneObject {
         entity_id: entity_id.clone(),
         node: node_id,
+        mesh_name: None,
         local_aabb,
         aabb: local_aabb,
         center: Point3::new(0.0, 0.0, 0.0),

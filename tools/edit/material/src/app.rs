@@ -1,14 +1,13 @@
 //! 编辑器状态与 egui UI。
 //!
-//! 左侧项目/材质列表 + 新建/保存，右侧 PBR 标量参数面板；预览球体由 `main.rs`
-//! 每帧渲染到窗口背景，本模块只负责暴露当前编辑材质与轨道相机。
+//! 左侧材质列表 + 新建/保存，右侧 PBR 标量参数面板；预览球体由 `main.rs` 每帧渲染到
+//! 窗口背景，本模块只负责暴露当前编辑材质与轨道相机。
 //!
-//! 项目目录是可选的：启动时优先用命令行参数，其次用
-//! `%APPDATA%\geese\material-editor.json` 里上次的项目（仍然存在的话），都没有就
-//! 弹原生目录选择框。用户取消时停在「未选择项目」的空状态，不擅自往当前目录写
-//! 默认材质文件。
+//! 启动时必选一个**工作目录**（`--workdir`），在本工具里它就等于**项目目录**：材质从
+//! `<工作目录>/assets/materials/` 读写，记录写 `<工作目录>/.data/material-editor.json`。
+//! 项目在运行期间不可切换，因此没有「选择项目」入口。
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use camera::{Camera, CameraMode};
 use cgmath::Point3;
@@ -19,15 +18,16 @@ use render::Light;
 
 use crate::material_store::{LoadedMaterial, MaterialStore};
 
-/// 记录文件：`%APPDATA%\geese\material-editor.json`。
+/// 记录文件：`<工作目录>/.data/material-editor.json`。
 const PREFS_APP: &str = "material-editor";
-/// 记录键：上次的项目目录 + 上次选中的材质文件名。
+/// 记录键：上次选中的材质文件名（路径恒为工作目录）。
 const PREFS_KEY: &str = "project";
 
 pub struct EditorApp {
-    /// 未选项目时为 `None`。
+    /// 工作目录打不开时为 `None`，原因在 `status` 里。
     store: Option<MaterialStore>,
-    project_dir: Option<PathBuf>,
+    /// 启动参数指定的工作目录——本工具里等于项目目录。
+    workdir: PathBuf,
     selected: usize,
     dirty: bool,
     status: String,
@@ -39,7 +39,9 @@ pub struct EditorApp {
 }
 
 impl EditorApp {
-    pub fn new() -> Self {
+    /// 工作目录就是项目目录：构造时直接打开，不再有「选择项目」入口。
+    pub fn new(workdir: PathBuf) -> Self {
+        let prefs = Prefs::load_in(&workdir, PREFS_APP);
         let camera = Camera::new(
             CameraMode::Orbit {
                 yaw: -0.7,
@@ -52,61 +54,33 @@ impl EditorApp {
             1.0,
         );
 
-        Self {
+        let mut app = Self {
             store: None,
-            project_dir: None,
+            workdir,
             selected: 0,
             dirty: false,
             status: String::new(),
             new_name: String::new(),
             camera,
-            prefs: Prefs::load(PREFS_APP),
+            prefs,
             lights: vec![
                 Light::directional([-0.5, -1.0, -0.4], [1.0, 0.95, 0.9], 1.5),
                 Light::point([2.0, 2.0, 2.0], [0.6, 0.6, 1.0], 8.0, 20.0),
                 Light::point([-2.0, 0.5, 1.5], [1.0, 0.7, 0.5], 6.0, 20.0),
             ],
             ambient: [0.08, 0.08, 0.1],
-        }
+        };
+        app.open_project();
+        app
     }
 
-    /// 启动流程：命令行参数 → 上次记录的项目 → 都没有就弹目录选择框。
-    pub fn startup(&mut self, cli_project: Option<String>) {
-        if let Some(arg) = cli_project {
-            self.open_project(Path::new(&arg));
-            return;
-        }
+    /// 打开工作目录（= 项目目录）：会先在该目录补齐内置默认材质，然后加载全部
+    /// `.material.json`，并恢复上次选中的材质（不存在则选第 0 个）。
+    fn open_project(&mut self) {
+        let dir = self.workdir.clone();
+        let wanted = self.prefs.last(PREFS_KEY).map(|entry| entry.name.clone());
 
-        let recorded = self
-            .prefs
-            .last_existing(PREFS_KEY)
-            .map(|entry| entry.to_path_buf());
-
-        match recorded {
-            Some(dir) => self.open_project(&dir),
-            None => self.open_project_dialog(),
-        }
-    }
-
-    /// 弹原生目录选择框；取消则维持当前状态。
-    pub fn open_project_dialog(&mut self) {
-        if let Some(dir) = rfd::FileDialog::new().pick_folder() {
-            self.open_project(&dir);
-        }
-    }
-
-    /// 打开项目目录：会先在该目录补齐内置默认材质，然后加载全部 `.material.json`。
-    ///
-    /// 只有用户明确指定的目录才会走到这里——启动时不会凭空往工作目录写文件。
-    pub fn open_project(&mut self, dir: &Path) {
-        // 同一个项目才沿用上次选中的材质文件。
-        let wanted = self
-            .prefs
-            .last(PREFS_KEY)
-            .filter(|entry| entry.to_path_buf() == dir)
-            .map(|entry| entry.name.clone());
-
-        match MaterialStore::open(dir) {
+        match MaterialStore::open(&dir) {
             Ok(store) => {
                 self.selected = wanted
                     .and_then(|name| {
@@ -117,7 +91,6 @@ impl EditorApp {
                     })
                     .unwrap_or(0);
                 self.store = Some(store);
-                self.project_dir = Some(dir.to_path_buf());
                 self.dirty = false;
                 self.status.clear();
                 self.sync_prefs();
@@ -125,58 +98,48 @@ impl EditorApp {
             Err(err) => {
                 self.status = format!("打开项目 {} 失败: {err}", dir.display());
                 self.store = None;
-                self.project_dir = None;
             }
         }
     }
 
-    /// 把「项目目录 + 当前选中的材质文件名」写回记录。
+    /// 把「项目目录（= 工作目录） + 当前选中的材质文件名」写回记录。
     fn sync_prefs(&mut self) {
-        let Some(dir) = self.project_dir.clone() else {
-            return;
-        };
         let name = self
             .store
             .as_ref()
             .and_then(|store| store.materials().get(self.selected))
             .map(|loaded| loaded.file_name.clone())
             .unwrap_or_default();
-        self.prefs.set(PREFS_KEY, name, &dir);
+        let workdir = self.workdir.clone();
+        self.prefs.set(PREFS_KEY, name, &workdir);
     }
 
     /// 每帧构建全部 UI。
     pub fn ui(&mut self, ctx: &egui::Context) {
-        let mut open_dialog = false;
         let mut clicked_material: Option<usize> = None;
 
         {
             let app = &mut *self;
 
-            // ── 左：项目 / 材质列表 / 新建 / 保存 ──
+            // ── 左：工作目录 / 材质列表 / 新建 / 保存 ──
             egui::SidePanel::left("materials")
                 .default_width(220.0)
                 .show(ctx, |ui| {
                     ui.heading("材质");
-                    if let Some(dir) = &app.project_dir {
-                        ui.label(
-                            egui::RichText::new(dir.display().to_string())
-                                .weak()
-                                .small(),
-                        );
-                    }
+                    ui.label(
+                        egui::RichText::new(app.workdir.display().to_string())
+                            .weak()
+                            .small(),
+                    );
                     ui.add_space(4.0);
 
                     match &app.store {
                         None => {
-                            ui.label(egui::RichText::new("未选择项目").weak());
-                            ui.add_space(6.0);
-                            if ui.button("选择项目…").clicked() {
-                                open_dialog = true;
-                            }
+                            ui.label(egui::RichText::new("项目未能打开，见下方错误").weak());
                         }
                         Some(store) => {
                             egui::ScrollArea::vertical()
-                                .max_height((ui.available_height() - 110.0).max(60.0))
+                                .max_height((ui.available_height() - 96.0).max(60.0))
                                 .show(ui, |ui| {
                                     for (i, loaded) in store.materials().iter().enumerate() {
                                         let name = loaded
@@ -201,10 +164,6 @@ impl EditorApp {
                             if ui.button("保存").clicked() {
                                 app.save();
                             }
-                            ui.separator();
-                            if ui.button("更换项目…").clicked() {
-                                open_dialog = true;
-                            }
                         }
                     }
 
@@ -227,7 +186,7 @@ impl EditorApp {
                             if has_store {
                                 ui.label("没有选中材质");
                             } else {
-                                ui.label("先在左侧选择一个项目目录");
+                                ui.label("工作目录打不开，无法编辑材质");
                             }
                         }
                     }
@@ -241,10 +200,6 @@ impl EditorApp {
                 self.status.clear();
                 self.sync_prefs();
             }
-        }
-
-        if open_dialog {
-            self.open_project_dialog();
         }
     }
 

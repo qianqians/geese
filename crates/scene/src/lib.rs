@@ -242,6 +242,7 @@ fn load_gltf_mesh(
         objects.push(SceneObject {
             entity_id: Uuid::new_v4().to_string(),
             node: node_id,
+            mesh_name: mesh.name().map(str::to_string),
             local_aabb: AABB { min, max },
             aabb: AABB { min, max },
             center: center,
@@ -272,6 +273,8 @@ fn load_node_structure(
         parent,
         Transform::from_gltf(translation, rotation, scale),
     ));
+    // glTF 节点名：给子网格列表/调试提供一个可读标识（可能为 None）。
+    nodes[node_id].name = node.name().map(str::to_string);
     node_map.insert(node.index(), node_id);
 
     for child in node.children() {

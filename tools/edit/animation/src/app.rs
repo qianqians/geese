@@ -2,8 +2,10 @@
 //!
 //! 左侧是剪辑列表、底部是控制条与状态栏；中央留给 `main.rs` 每帧渲染的模型画面，
 //! 这里只画 UI 与空状态提示。相机交互（拖动旋转 / 滚轮缩放）由 `main.rs` 转发。
+//!
+//! 所有运行数据都在启动时指定的工作目录里：记录写 `<workdir>/.data/`。
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use camera::{Camera, CameraMode};
@@ -14,7 +16,7 @@ use render::Light;
 
 use crate::model::LoadedModel;
 
-/// 记录文件：`%APPDATA%\geese\animation-preview.json`。
+/// 记录文件：`<工作目录>/.data/animation-preview.json`。
 const PREFS_APP: &str = "animation-preview";
 /// 记录键：上次打开的模型。
 const PREFS_KEY: &str = "model";
@@ -24,10 +26,18 @@ enum Action {
     OpenDialog,
     SelectClip(usize),
     Seek(f32),
+    /// 弹原生对话框选替换源文件。
+    OpenSourceDialog,
+    /// 把当前选中的子网格换成源文件里这个下标的网格。
+    ApplySwap(usize),
+    RestoreSelected,
+    RestoreAll,
 }
 
 pub struct PreviewApp {
     model: Option<LoadedModel>,
+    /// 启动参数指定的工作目录；记录与文件对话框都围绕它。
+    workdir: PathBuf,
     camera: Camera,
     aspect: f32,
     playing: bool,
@@ -35,6 +45,12 @@ pub struct PreviewApp {
     resume_after_scrub: Option<bool>,
     /// 加载失败的说明，显示在状态栏。
     error: Option<String>,
+    /// 当前选中的子网格（替换目标），默认第 0 个。
+    selected_submesh: usize,
+    /// 源网格选择窗口是否打开。
+    source_picker_open: bool,
+    /// 最近一次替换失败的原因，显示在子网格段落下。
+    swap_error: Option<String>,
     prefs: Prefs,
     last_frame: Instant,
     pub lights: Vec<Light>,
@@ -42,9 +58,12 @@ pub struct PreviewApp {
 }
 
 impl PreviewApp {
-    pub fn new() -> Self {
+    pub fn new(workdir: PathBuf) -> Self {
+        let prefs = Prefs::load_in(&workdir, PREFS_APP);
+
         Self {
             model: None,
+            workdir,
             camera: Camera::new(
                 CameraMode::Orbit {
                     yaw: -0.7,
@@ -60,7 +79,10 @@ impl PreviewApp {
             playing: true,
             resume_after_scrub: None,
             error: None,
-            prefs: Prefs::load(PREFS_APP),
+            selected_submesh: 0,
+            source_picker_open: false,
+            swap_error: None,
+            prefs,
             last_frame: Instant::now(),
             lights: vec![
                 Light::directional([-0.5, -1.0, -0.4], [1.0, 0.95, 0.9], 1.5),
@@ -71,17 +93,12 @@ impl PreviewApp {
         }
     }
 
-    /// 启动流程：命令行参数 → 上次记录的模型 → 都没有就弹原生对话框。
-    pub fn startup(&mut self, cli_model: Option<String>) {
-        if let Some(arg) = cli_model {
-            self.open_model(Path::new(&arg));
-            return;
-        }
-
+    /// 启动流程：上次记录的模型（文件仍在）→ 弹窗 → 空状态。
+    pub fn startup(&mut self) {
         let recorded = self
             .prefs
             .last_existing(PREFS_KEY)
-            .map(|entry| entry.to_path_buf());
+            .map(|entry| entry.path.clone());
 
         match recorded {
             Some(path) => self.open_model(&path),
@@ -89,9 +106,10 @@ impl PreviewApp {
         }
     }
 
-    /// 弹原生文件对话框选模型；取消则维持当前状态。
+    /// 弹原生文件对话框选模型（初始目录为工作目录）；取消则维持当前状态。
     pub fn open_model_dialog(&mut self) {
         let picked = rfd::FileDialog::new()
+            .set_directory(&self.workdir)
             .add_filter("glTF 模型", &["gltf", "glb"])
             .pick_file();
         if let Some(path) = picked {
@@ -108,6 +126,9 @@ impl PreviewApp {
                 self.playing = true;
                 self.resume_after_scrub = None;
                 self.error = None;
+                self.selected_submesh = 0;
+                self.source_picker_open = false;
+                self.swap_error = None;
                 let name = model.name.clone();
                 self.model = Some(model);
                 self.prefs.set(PREFS_KEY, name, path);
@@ -117,6 +138,35 @@ impl PreviewApp {
                 self.error = Some(format!("加载 {} 失败：{err}", path.display()));
                 self.model = None;
             }
+        }
+    }
+
+    /// 弹原生文件对话框选替换源文件（初始目录为当前模型所在目录）；取消则不动。
+    fn open_source_dialog(&mut self) {
+        let start_dir = self
+            .model
+            .as_ref()
+            .and_then(|model| model.path.parent().map(Path::to_path_buf))
+            .unwrap_or_else(|| self.workdir.clone());
+
+        let picked = rfd::FileDialog::new()
+            .set_directory(start_dir)
+            .add_filter("glTF 模型", &["gltf", "glb"])
+            .pick_file();
+        let Some(path) = picked else {
+            return;
+        };
+
+        let Some(model) = &mut self.model else {
+            self.swap_error = Some("先加载一个模型".to_string());
+            return;
+        };
+        match model.load_source(&path) {
+            Ok(()) => {
+                self.source_picker_open = true;
+                self.swap_error = None;
+            }
+            Err(err) => self.swap_error = Some(format!("加载源文件失败: {err}")),
         }
     }
 
@@ -140,14 +190,16 @@ impl PreviewApp {
                 .show(ctx, |ui| app.status_bar(ui));
             egui::TopBottomPanel::bottom("controls")
                 .show(ctx, |ui| app.controls(ui, &mut actions));
-            egui::SidePanel::left("clips")
-                .default_width(220.0)
-                .show(ctx, |ui| app.clip_panel(ui, &mut actions));
+            egui::SidePanel::left("preview_left")
+                .default_width(260.0)
+                .show(ctx, |ui| app.side_panel(ui, &mut actions));
             // 中央不画背景，让 main.rs 渲染的 3D 画面透出来。
             egui::CentralPanel::default()
                 .frame(egui::Frame::none())
                 .show(ctx, |ui| app.empty_hint(ui, &mut actions));
         }
+
+        self.source_picker_window(ctx, &mut actions);
 
         for action in actions {
             match action {
@@ -163,7 +215,89 @@ impl PreviewApp {
                         model.seek(time);
                     }
                 }
+                Action::OpenSourceDialog => self.open_source_dialog(),
+                Action::ApplySwap(source_object) => {
+                    let target = self.selected_submesh;
+                    let result = self
+                        .model
+                        .as_mut()
+                        .map(|model| model.apply_swap(target, source_object));
+                    match result {
+                        Some(Ok(())) => self.swap_error = None,
+                        Some(Err(err)) => self.swap_error = Some(err),
+                        None => self.swap_error = Some("先加载一个模型".to_string()),
+                    }
+                }
+                Action::RestoreSelected => {
+                    let target = self.selected_submesh;
+                    if let Some(model) = &mut self.model {
+                        model.restore(target);
+                    }
+                    self.swap_error = None;
+                }
+                Action::RestoreAll => {
+                    if let Some(model) = &mut self.model {
+                        model.restore_all();
+                    }
+                    self.swap_error = None;
+                }
             }
+        }
+    }
+
+    /// 源文件已加载时的「选源网格」二级窗口；点一项即替换当前目标。
+    fn source_picker_window(&mut self, ctx: &egui::Context, actions: &mut Vec<Action>) {
+        if !self.source_picker_open {
+            return;
+        }
+        let Some(model) = &self.model else {
+            self.source_picker_open = false;
+            return;
+        };
+
+        let rows: Vec<(usize, String, String)> = model
+            .source_submeshes()
+            .into_iter()
+            .map(|view| (view.index, view.title(), view.detail()))
+            .collect();
+        let source_name = model.source_name().unwrap_or("未选择").to_string();
+        let target = self.selected_submesh;
+
+        let mut open = true;
+        let mut picked: Option<usize> = None;
+        egui::Window::new(format!("源网格 — {source_name}"))
+            .open(&mut open)
+            .resizable(true)
+            .default_width(320.0)
+            .show(ctx, |ui| {
+                ui.label(
+                    egui::RichText::new(format!("点一项即替换当前目标子网格 #{target}"))
+                        .weak()
+                        .small(),
+                );
+                ui.separator();
+                if rows.is_empty() {
+                    ui.label(egui::RichText::new("该文件没有可用的网格").weak());
+                }
+                egui::ScrollArea::vertical()
+                    .max_height(260.0)
+                    .show(ui, |ui| {
+                        for (index, title, detail) in &rows {
+                            if ui
+                                .selectable_label(false, format!("{title}\n{detail}"))
+                                .clicked()
+                            {
+                                picked = Some(*index);
+                            }
+                        }
+                    });
+            });
+
+        if let Some(index) = picked {
+            actions.push(Action::ApplySwap(index));
+            self.source_picker_open = false;
+        } else if !open {
+            self.source_picker_open = false;
         }
     }
 
@@ -253,11 +387,20 @@ impl PreviewApp {
 
                     ui.separator();
                     ui.label(format!("剪辑 {}", model.clips.len()));
+                    ui.separator();
+                    ui.label(format!("子网格 {}", model.scene.objects.len()));
                 }
                 None => {
                     ui.label(egui::RichText::new("未加载模型").weak());
                 }
             }
+
+            ui.separator();
+            ui.label(
+                egui::RichText::new(format!("工作目录 {}", self.workdir.display()))
+                    .weak()
+                    .small(),
+            );
 
             if let Some(err) = &self.error {
                 ui.separator();
@@ -339,10 +482,30 @@ impl PreviewApp {
         ui.add_space(4.0);
     }
 
-    fn clip_panel(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
+    fn side_panel(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
         ui.heading("剪辑");
         ui.add_space(4.0);
+        self.clip_section(ui, actions);
 
+        ui.add_space(8.0);
+        ui.separator();
+        ui.add_space(4.0);
+        self.submesh_section(ui, actions);
+
+        ui.separator();
+        if ui.button("打开模型…").clicked() {
+            actions.push(Action::OpenDialog);
+        }
+
+        ui.add_space(8.0);
+        ui.label(
+            egui::RichText::new("左键拖动旋转 · 滚轮缩放\n点击剪辑从头播放 · 点项切换替换目标")
+                .weak()
+                .small(),
+        );
+    }
+
+    fn clip_section(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
         match &self.model {
             None => {
                 ui.label(egui::RichText::new("未选择模型").weak());
@@ -360,18 +523,103 @@ impl PreviewApp {
                 }
             }
         }
+    }
 
-        ui.separator();
-        if ui.button("打开模型…").clicked() {
-            actions.push(Action::OpenDialog);
+    /// 子网格列表 + 替换入口。列表项点击即选中为替换目标，默认第 0 个。
+    fn submesh_section(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
+        // 先把要显示的数据取出来，避免闭包里与 `self` 的可变借用打架。
+        let rows: Vec<(usize, String, String, bool, Option<String>)> = match &self.model {
+            None => Vec::new(),
+            Some(model) => model
+                .submeshes()
+                .into_iter()
+                .map(|view| {
+                    let swapped = model.is_swapped(view.index);
+                    let origin = model.swap_origin(view.index);
+                    (view.index, view.title(), view.detail(), swapped, origin)
+                })
+                .collect(),
+        };
+        let source_name = self.model.as_ref().and_then(|m| m.source_name()).map(str::to_string);
+        let selected = self.selected_submesh;
+        let can_restore = self.model.as_ref().is_some_and(|m| m.is_swapped(selected));
+        let can_restore_all = self.model.as_ref().is_some_and(|m| m.has_swaps());
+
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("子网格").strong());
+            ui.label(
+                egui::RichText::new(format!("{}", rows.len()))
+                    .weak()
+                    .small(),
+            );
+        });
+        ui.add_space(2.0);
+
+        if rows.is_empty() {
+            ui.label(egui::RichText::new("没有可替换的子网格").weak().small());
         }
 
-        ui.add_space(8.0);
-        ui.label(
-            egui::RichText::new("左键拖动旋转 · 滚轮缩放\n点击剪辑从头播放")
-                .weak()
-                .small(),
-        );
+        let mut clicked: Option<usize> = None;
+        egui::ScrollArea::vertical()
+            .id_salt("submeshes")
+            .max_height(150.0)
+            .show(ui, |ui| {
+                for (index, title, detail, swapped, origin) in &rows {
+                    let is_selected = *index == selected;
+                    let mut label = title.clone();
+                    if *swapped {
+                        label.push_str("  [已替换]");
+                    }
+                    let response = ui.selectable_label(is_selected, label);
+                    ui.label(egui::RichText::new(detail).weak().small());
+                    if let Some(origin) = origin {
+                        ui.label(egui::RichText::new(origin).weak().small());
+                    }
+                    if response.clicked() {
+                        clicked = Some(*index);
+                    }
+                }
+            });
+
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            if ui.button("换源文件…").clicked() {
+                actions.push(Action::OpenSourceDialog);
+            }
+            if let Some(name) = &source_name {
+                if ui
+                    .button(format!("选源网格… ({name})"))
+                    .clicked()
+                {
+                    self.source_picker_open = true;
+                }
+            }
+        });
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(can_restore, egui::Button::new("恢复选中"))
+                .clicked()
+            {
+                actions.push(Action::RestoreSelected);
+            }
+            if ui
+                .add_enabled(can_restore_all, egui::Button::new("全部恢复"))
+                .clicked()
+            {
+                actions.push(Action::RestoreAll);
+            }
+        });
+
+        if let Some(err) = &self.swap_error {
+            ui.label(egui::RichText::new(err).color(Color32::from_rgb(0xe0, 0x6c, 0x75)).small());
+        }
+
+        if let Some(index) = clicked {
+            if index != self.selected_submesh {
+                self.selected_submesh = index;
+                self.swap_error = None;
+            }
+        }
     }
 
     fn empty_hint(&mut self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {

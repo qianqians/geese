@@ -19,34 +19,70 @@ tags: [tools, editor, animation, material]
 | 目录 | 包 | 作用 |
 | --- | --- | --- |
 | `prefs/` | `edit-prefs`（lib） | 共用：「上次打开的东西」记录 |
-| `material/` | `material-editor` | 编辑项目下 `assets/materials/*.material.json`，球体实时预览 |
+| `material/` | `material-editor` | 编辑工作目录下的 `assets/materials/*.material.json`，球体实时预览 |
 | `animation/` | `animation-preview` | 加载 glTF/GLB，播放/拖动它的骨骼动画剪辑，看蒙皮网格 |
+
+## 工作目录（`--workdir`）
+
+每个工具启动时**必须**指定一个工作目录：`<工具> --workdir <目录>`。
+
+- 缺参数、给出未知参数、`--workdir` 缺值 → 打印用法并以码 2 退出；目录不存在则自动创建。
+- 工作目录在本次运行内**不可切换**，换目录就是重启带另一个参数（UI 里没有切换入口）。
+- 工具的**运行数据全部落在工作目录内**，不写 `%APPDATA%` 或任何用户级配置目录：记录在 `<工作目录>/.data/<app>.json`。
+- 创建 `.data` 时顺手保证 `<工作目录>/.gitignore` 含 `.data/`——工作目录很可能本身就是 git 仓库。文件不存在则创建，已存在则**只在缺失时追加一行，从不覆盖**原有忽略规则。
 
 ## 共用约定：上次打开的东西（`edit-prefs`）
 
-- 记录落在系统配置目录：`<config_dir>/geese/<app>.json`（Windows 即 `%APPDATA%\geese\`），内容 `{ "entries": { "<key>": { "name", "path" } } }`。
-- 启动优先级统一为：**命令行参数 → 记录（且路径仍存在）→ 原生对话框（`rfd`）→ 空状态**。用户在对话框里取消，就停在空状态，工具不会自己挑一个目录/文件。
+- 记录固定写到 `<工作目录>/.data/<app>.json`，内容 `{ "entries": { "<key>": { "name", "path" } } }`。
+- **路径编码**：目标在工作目录内 → 存相对路径（分隔符统一为 `/`，整个工作目录可以搬家）；在工作目录外 → 存绝对路径；指向工作目录本身 → 存 `.`。对外暴露的 `LastOpened.path` 始终是已解析的绝对 `PathBuf`，调用方不需要知道存储形式。`.` 解析时会还原成工作目录本身（`workdir.join(".")` 与原路径在 `PathBuf` 上并不相等，这是个已用单测钉住的坑）。
+- 启动优先级统一为：**记录（且路径仍存在）→ 原生对话框（`rfd`）→ 空状态**。命令行不再直接指定被打开的资源（工作目录已经占了唯一的启动参数）。用户在对话框里取消，就停在空状态，工具不会自己挑一个文件。
 - 只有**成功**打开的资源才写记录；打开失败只报错、不覆盖记录，下一次启动还能重试同一路径。
-- 记录读写失败、坏 JSON、取不到配置目录都退化为空记录并打日志——工具本身绝不能因为记录文件而启动失败。
+- 记录读写失败、坏 JSON、`.data` 建不出来都退化为空记录并打日志——工具本身绝不能因为记录而启动失败。
 - 内容未变时不落盘（`Prefs::set` 内部短路），切换选中项导致的写盘不会成为高频 IO。
+- 旧版本写在 `%APPDATA%\geese\` 的记录**不迁移也不读取**：新工作目录从空记录开始。迁移规则需要长期维护「哪些工作目录已迁移过」，而丢的只是一次「上次打开」的便利。
 
 ## 工具契约
 
 ### `animation-preview`
 
-用法 `animation-preview [model.gltf|model.glb]`，记录键 `model`，记录的是模型文件的完整路径 + 文件名。
+用法 `animation-preview --workdir <工作目录>`，记录键 `model`，记录的是模型文件名 + 路径（工作目录内为相对路径）。模型**只**来自记录或文件对话框，对话框初始目录为工作目录。
 
 - **加载走引擎真实路径**：`scene::import_scene(path, 8, 6)` 一次拿到网格 / 蒙皮 / `MaterialLibrary` / 节点层级 / `AnimationClip`，因此 `scene` 的默认 features（`physics` + `navmesh`）也被拖进来——`manifest.rs` 用了 `physics::` 而没有任何 `cfg` 门禁，关掉 feature 无法编译。这是接受的编译成本，不是遗漏。
 - **每帧**：`Scene::update_animation(&mut player, dt)`；播放时 `dt` 为真实帧间隔，暂停/拖动时间轴时传 `0.0` 原地重采样。`avatar::sample_clip` 每次调用都会先把所有节点重置回 `base_transform` 再采样，所以 `dt = 0` 是定位到任意时间的合法手段，不需要第二套采样代码。
 - **渲染**：`Scene::render_queue(&scene_renderer, None)` —— `None` 表示不做视锥/octree 剔除，被动画驱动的对象一律参与（`update_animation` 不重建 octree，动画物体也只走 `dynamic_indices`）。
-- UI：左栏剪辑列表（点选即切剪辑并从头播）、底部 ComboBox + 播放/暂停/重置 + 可拖动时间轴（拖动期间暂停、松手恢复原播放状态）、底部状态栏显示文件名/路径/关节数/剪辑数。
+- UI：左栏剪辑列表（点选即切剪辑并从头播）、底部 ComboBox + 播放/暂停/重置 + 可拖动时间轴（拖动期间暂停、松手恢复原播放状态）、底部状态栏显示文件名/路径/关节数/剪辑数/工作目录。
 
 ### `material-editor`
 
-用法 `material-editor [project_dir]`，记录键 `project`，记录的是项目目录完整路径 + 上次选中的材质文件名。
+用法 `material-editor --workdir <工作目录>`，记录键 `project`，记录的是上次选中的材质文件名（路径恒为工作目录，存为 `.`）。
 
-- 项目目录是**可选**的：只有用户明确指定才调用 `MaterialStore::open`（其内部会 `ensure_default_material_files` 补齐内置材质）。启动时不再用当前工作目录兜底，避免在错误目录里凭空产生材质文件。这是有意改变的行为。
-- 记录里的目录与目标目录一致时，才用记录中的材质文件名定位选中项；否则落到第 0 个。切换选中材质即写回记录。
+- **工作目录就是项目目录**：材质从 `<工作目录>/assets/materials/` 读写，构造时直接 `MaterialStore::open`（其内部 `ensure_default_material_files` 补齐内置材质）。
+- 项目由启动参数唯一决定、运行期间不可切换，所以没有「选择项目/更换项目」入口；打不开时左栏显示错误文本。
+- 启动时用记录里的材质文件名定位选中项，不存在则落到第 0 个；切换选中材质即写回记录。
+
+### `animation-preview` 的子网格替换
+
+左栏「子网格」段可以把当前模型的某个对象换成另一个网格（来自同一个文件或另一个 glTF/GLB），动画照旧播放——手工试一次部件换装。实现分三层：`swap.rs`（纯算法）→ `model.rs`（源文件/记录/保留网格）→ `app.rs`（UI）。
+
+**入口**：点列表项选目标（默认第 0 个）→ 「换源文件…」→ 二级窗口「源网格」里点一项即替换。已替换的目标标 `[已替换]` 并显示来源，「恢复选中」/「全部恢复」换回原网格。
+
+**蒙皮规则**（节点没有名字，跨文件只能按关节下标对应）：
+
+| 目标 | 源 | 行为 |
+| --- | --- | --- |
+| 有 skin | 有 skin，关节数相同 | 新 `Skin` = 目标的 `joints` + 源的 `inverse_bind_matrices` |
+| 有 skin | 有 skin，关节数不同 | 拒绝，状态栏红字报两边关节数 |
+| 有 skin | 无 skin | 刚性换上（`skin = None`、`has_skin = false`），跟着目标节点变换 |
+| 无 skin | 无 skin | 纯几何替换 |
+| 无 skin | 有 skin | 拒绝（没有可对应的骨架） |
+
+拒绝路径不留下任何改动（已用单测钉住：skin 数量与句柄不变）。若两边关节**顺序**不同，画面会绑错骨头——这是无法用下标校验的前提，而不是可以容忍的巧合。
+
+**材质**：源文件加载时 `MaterialLibrary::append_library` 整库搬一次拿到偏移（纹理句柄由它重映射），替换时源网格的材质句柄只加偏移；同一路径重复载入复用已有容器。
+
+**被换下来的网格必须继续存活**：`render` 的 mesh 缓冲缓存键是「顶点指针 + 长度」且只插不淘汰（`crates/render/src/common.rs` 的 `compute_mesh_key` / `forward_plus.rs` 的 `cache.mesh_buffers`）。若旧网格被释放后新分配的顶点数组复用了同一地址，就会命中旧键渲染出上一套几何。因此 `swap::apply`/`swap::restore` 都把换下来的网格**返回给调用方**，由 `LoadedModel::retired_meshes` 持有、永不释放；代价只是一点内存。这是本模块最容易被后人「优化掉」的一处。
+
+**网格名字**：`crates/scene` 导入时把 glTF 的 node/mesh 名字记进 `SceneNode.name` / `SceneObject.mesh_name`（新增字段）。它们**只用于显示**，缺失时退化为 `节点 #id` / `网格 #index`，不参与任何查找。
 
 ## 已知限制
 
@@ -58,4 +94,7 @@ tags: [tools, editor, animation, material]
 
 - 不做骨骼线框/关节可视化、地面网格与坐标轴。
 - 不做速度倍率、循环开关、动画 marker 事件提示（原 `crates/editor/src/animation_panel.rs` 有过）。
-- 不支持把文件拖进窗口加载（模型/项目一律走「参数 → 记录 → 对话框」）。
+- 不支持把文件拖进窗口加载（模型一律走「记录 → 对话框」）。
+- 不做运行中切换工作目录，也不迁移旧 `%APPDATA%\geese\` 记录。
+- 不做工作目录内的文件浏览器（选模型仍用系统原生对话框，只是以工作目录为初始目录）。
+- 子网格替换不持久化（关闭即丢）、不写回资产文件、不支持按骨骼名重绑。

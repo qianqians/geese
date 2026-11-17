@@ -24,5 +24,6 @@ rfd = "0.15"
 render = { path = "../../../crates/render", features = ["instancing"] }
 material = { path = "../../../crates/material" }
 camera = { path = "../../../crates/camera" }
+math = { path = "../../../crates/math" }
 scene = { path = "../../../crates/scene" }
 edit-prefs = { path = "../prefs" }
