@@ -3,14 +3,15 @@ id: tools-edit
 type: module-design
 status: draft
 title: tools/edit — 开发者单用途小工具
-tags: [tools, editor, animation, material]
+tags: [tools, editor, animation, material, scene]
+references: [render-gpu-cache]
 ---
 
 ## 是什么
 
 `tools/edit/` 放**单用途的开发者窗口工具**：一个目录一个工具，各自是独立的 Cargo bin 包（`cargo build` 直接在该目录里跑，不接入 `build.ps1`，也不进 `.vscode/settings.json` 的 linkedProjects）。它们不参与游戏运行时，只把引擎的某个数据侧能力单独拿出来看/改。
 
-大而全的编辑器（原 `crates/editor/`）已整体移除——新增编辑能力时**优先加一个这样的小工具**，而不是重建一个多面板编辑器。
+大而全的编辑器（原 `crates/editor/`）已整体移除——新增编辑能力时**优先加一个这样的小工具**，而不是重建一个多面板编辑器。`scene` 是这条规则的边界形态：它确实有三个面板，但职责仍然单一（只把 `.scene.json` 变成看得见的场景），不是原来那种一个窗口管全部资产、模式、打包、物理调试的全能编辑器。
 
 统一的窗口栈：`winit 0.30` + `wgpu 22.1` + `egui / egui-winit / egui-wgpu 0.29`，3D 画面渲染到窗口背景，egui 叠在上面；相机的轨道交互只在指针不落在 UI 上时生效（`egui_ctx.wants_pointer_input()`）。
 
@@ -20,6 +21,7 @@ tags: [tools, editor, animation, material]
 | --- | --- | --- |
 | `prefs/` | `edit-prefs`（lib） | 共用：「上次打开的东西」记录 |
 | `material/` | `material-editor` | 编辑工作目录下的 `assets/materials/*.material.json`，球体实时预览 |
+| `scene/` | `edit-scene`（bin `scene`） | 编辑工作目录下的 `assets/scenes/*.scene.json`：左栏拖模型、中间预览、右栏改 JSON |
 | `animation/` | `animation-preview` | 加载 glTF/GLB，播放/拖动它的骨骼动画剪辑，看蒙皮网格 |
 
 ## 工作目录（`--workdir`）
@@ -60,8 +62,22 @@ tags: [tools, editor, animation, material]
 - 项目由启动参数唯一决定、运行期间不可切换，所以没有「选择项目/更换项目」入口；打不开时左栏显示错误文本。
 - 启动时用记录里的材质文件名定位选中项，不存在则落到第 0 个；切换选中材质即写回记录。
 
-### `animation-preview` 的子网格替换
+### `scene`
 
+用法 `scene --workdir <工作目录>`（包 `edit-scene`），记录键 `scene`，记录的是上次编辑的场景文件。三栏：左可选模型、中场景预览、右场景 JSON。
+
+- **输入**：左栏递归扫 `<工作目录>/assets/models` 的 `.gltf`/`.glb`（跳过隐藏目录与符号链接、深度上限 8，按子目录分组）；场景文件从记录/本工作目录下的 `assets/scenes` 选，`新建` 从 `SceneManifest::empty` 开一个无路径的文档。
+- **预览**：`scene::load_scene_from_manifest(..., database = None)` → `Scene::render_queue(&renderer, None)`，与运行时的加载路径一致；环境光/方向光取自 manifest 的 `environment`，空光照时给一盏默认方向光。相机是轨道相机，取景用**各对象 aabb 的并集**（`Scene::bounds` 在空场景/微小场景下是 ± 100 默认盒或含模型导入的畸形边界，会给出离谱距离），距离下限 2.5。
+- **拖入模型**：从左侧按住拖到中间，落点 = 光标射线与 `y = 0` 平面的交点（接近水平时截断在 1000 单位）；松手往 `models` 末尾追加 `{id, path, transform.translation}`——`id` 由文件名净化后去重，`path` 相对场景文件目录（无法相对化时写绝对路径），`translation` 保留两位小数。写入方式是「解析 → 改值 → 2 空格 pretty → 整段替换」，因此光标位置会丢；当前文本解析失败时**拒绝拖入**并提示先修 JSON。落点写完后相机焦点挪到该点。
+- **改 JSON**：右栏是可编辑全文（等宽 + 行号 + 「格式化」）。停止输入 400ms 后解析并重建；解析或加载失败时画面停在上一版有效场景，错误写进右栏底部与状态栏，不弹窗。同一份文本只尝试一次（失败后不会每帧重试）。
+- **保存**：`保存` 按钮 / `Ctrl+S`；此外每次**成功**应用后也会自动写回当前文件（内容未变不写）；还没路径的场景（新建）在第一次成功应用时弹一次「另存为」，用户取消后不再纠缠、继续只在内存里编辑。打开/保存成功才写记录。
+- **重建前必须调 `WgpuSceneRenderer::clear_resource_cache()`**（见 `render-gpu-cache`）：旧网格释放后新顶点数组可能复用同一地址，命中旧指针键会画出上一套几何。
+- **egui-wgpu 0.29 的坑**：`Renderer::render` 只读 `update_buffers` 填好的顶点/索引切片，漏调就 `unwrap` 空切片 panic。本工具已在渲染前调用；其它工具出现同样 panic 同理处理。
+- **中文字体**：egui 内置字体不含 CJK，启动时按候选列表加载系统字体（`msyh.ttc` / `simhei.ttf` / `PingFang.ttc` / Noto CJK），都没找到就只打日志、退化为默认字体。
+
+已知限制：每次应用都**整场景重建**（重新导入所有 glTF），大场景下每次停顿都会顿一下——没有增量更新，也没有导入缓存；`prefab_instances` 不实例化、原样保留，状态栏提示「N 个 prefab 实例未预览」；`objects` 里程序化物体的 `scale` 引擎加载器不作用到网格（只参与 bounds 计算），预览里看到的是 1 倍尺寸，这是 loader 现状而非本工具的取舍。
+
+### `animation-preview` 的子网格替换
 左栏「子网格」段可以把当前模型的某个对象换成另一个网格（来自同一个文件或另一个 glTF/GLB），动画照旧播放——手工试一次部件换装。实现分三层：`swap.rs`（纯算法）→ `model.rs`（源文件/记录/保留网格）→ `app.rs`（UI）。
 
 **入口**：点列表项选目标（默认第 0 个）→ 「换源文件…」→ 二级窗口「源网格」里点一项即替换。已替换的目标标 `[已替换]` 并显示来源，「恢复选中」/「全部恢复」换回原网格。
