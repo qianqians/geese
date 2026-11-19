@@ -77,6 +77,8 @@ references: [render-gpu-cache]
 - **egui-wgpu 0.29 的坑**：`Renderer::render` 只读 `update_buffers` 填好的顶点/索引切片，漏调就 `unwrap` 空切片 panic。本工具已在渲染前调用；其它工具出现同样 panic 同理处理。
 - **中文字体**：egui 内置字体不含 CJK，启动时按候选列表加载系统字体（`msyh.ttc` / `simhei.ttf` / `PingFang.ttc` / Noto CJK），都没找到就只打日志、退化为默认字体。
 
+`script` 字段（物件的 Python behavior）在这里只被原样保留、**不执行**——运行的脚本见 `game-runtime-behaviors`。
+
 已知限制：每次应用都**整场景重建**（重新导入所有 glTF），大场景下每次停顿都会顿一下——没有增量更新，也没有导入缓存；`prefab_instances` 不实例化、原样保留，状态栏提示「N 个 prefab 实例未预览」；`objects` 里程序化物体的 `scale` 引擎加载器不作用到网格（只参与 bounds 计算），预览里看到的是 1 倍尺寸，这是 loader 现状而非本工具的取舍。
 
 ### `animation-preview` 的子网格替换

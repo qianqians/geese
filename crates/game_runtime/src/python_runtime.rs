@@ -289,6 +289,8 @@ pub fn run_game(
             8,
         )
     };
+    #[cfg(feature = "behaviors")]
+    let mut behavior_host = crate::behaviors::BehaviorHost::new(&crate::behaviors::project_root());
     let mut physics = PhysicsWorld::new();
     let physics_scene_id = physics.create_scene(PhyVec3::new(0.0, -9.81, 0.0));
     let aspect = size.width as f32 / size.height.max(1) as f32;
@@ -314,7 +316,14 @@ pub fn run_game(
         window_target.set_control_flow(ControlFlow::Poll);
         match event {
             Event::WindowEvent { event, .. } => match event {
-                WindowEvent::CloseRequested => window_target.exit(),
+                WindowEvent::CloseRequested => {
+                    #[cfg(feature = "behaviors")]
+                    if let Err(error) = Python::with_gil(|py| behavior_host.end(py)) {
+                        log::error!("[behavior] end() 出错：{error}");
+                        std::process::exit(1);
+                    }
+                    window_target.exit();
+                }
                 WindowEvent::Resized(sz) => {
                     if sz.width == 0 || sz.height == 0 {
                         minimized = true;
@@ -344,6 +353,11 @@ pub fn run_game(
                 } => {
                     let pressed = es == ElementState::Pressed;
                     if kc == KeyCode::Escape {
+                        #[cfg(feature = "behaviors")]
+                        if let Err(error) = Python::with_gil(|py| behavior_host.end(py)) {
+                            log::error!("[behavior] end() 出错：{error}");
+                            std::process::exit(1);
+                        }
                         window_target.exit();
                         return;
                     }
@@ -379,6 +393,26 @@ pub fn run_game(
                         .bind(py)
                         .call_method1("update", (&bridge_py, dt));
                 });
+
+                // ── behavior 脚本：场景里的脚本集合变了就重建，然后每帧 update ──
+                #[cfg(feature = "behaviors")]
+                {
+                    let outcome = Python::with_gil(|py| -> PyResult<bool> {
+                        behavior_host.sync(py, &scene)?;
+                        if behavior_host.is_empty() {
+                            return Ok(false);
+                        }
+                        behavior_host.update(py, &mut scene, dt)?;
+                        Ok(true)
+                    });
+                    match outcome {
+                        Ok(_) => {}
+                        Err(error) => {
+                            log::error!("[behavior] {error}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
 
                 scene.update_world_transforms();
 

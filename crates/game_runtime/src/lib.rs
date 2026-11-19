@@ -8,6 +8,9 @@ pub mod script_host;
 #[cfg(feature = "python-runtime")]
 pub mod python_runtime;
 
+#[cfg(feature = "behaviors")]
+pub mod behaviors;
+
 #[cfg(target_os = "ios")]
 pub mod ios;
 
@@ -110,6 +113,10 @@ pub struct GameState {
     hdr_texture: wgpu::Texture,
     hdr_view: wgpu::TextureView,
     frame_index: u64,
+
+    /// 场景物件的 Python behavior 脚本宿主（feature `behaviors`）。
+    #[cfg(feature = "behaviors")]
+    pub behaviors: crate::behaviors::BehaviorHost,
 }
 
 impl GameState {
@@ -305,6 +312,8 @@ impl GameState {
             hdr_texture,
             hdr_view,
             frame_index: 0,
+            #[cfg(feature = "behaviors")]
+            behaviors: crate::behaviors::BehaviorHost::new(Path::new(project_dir)),
         })
     }
 
@@ -461,6 +470,21 @@ fn create_hdr_texture(
 /// - `window`: 游戏窗口
 /// - `project_dir`: 项目目录路径
 /// - `scene_file`: 场景文件路径（相对于 project_dir）
+/// 退出前让所有脚本跑一次 `end()`；出错按约定打日志并让进程以非零码退出。
+#[cfg(feature = "behaviors")]
+fn shutdown_behaviors(state: &mut GameState) {
+    if state.behaviors.is_empty() {
+        return;
+    }
+    if let Err(error) = pyo3::Python::with_gil(|py| state.behaviors.end(py)) {
+        log::error!("[behavior] end() 出错：{error}");
+        std::process::exit(1);
+    }
+}
+
+#[cfg(not(feature = "behaviors"))]
+fn shutdown_behaviors(_state: &mut GameState) {}
+
 pub fn run_event_loop(
     event_loop: EventLoop<()>,
     window: winit::window::Window,
@@ -469,6 +493,10 @@ pub fn run_event_loop(
 ) {
     let project_dir = project_dir.to_string();
     let scene_file = scene_file.to_string();
+
+    // behavior 脚本用 pyo3：显式初始化解释器（`extension-module` 模式不会自动初始化）。
+    #[cfg(feature = "behaviors")]
+    pyo3::prepare_freethreaded_python();
 
     let mut state = pollster::block_on(GameState::new(window, &project_dir, &scene_file))
         .expect("Failed to initialize game");
@@ -484,7 +512,10 @@ pub fn run_event_loop(
 
         match event {
             Event::WindowEvent { event, .. } => match event {
-                WindowEvent::CloseRequested => window_target.exit(),
+                WindowEvent::CloseRequested => {
+                    shutdown_behaviors(&mut state);
+                    window_target.exit();
+                }
                 WindowEvent::Resized(size) => {
                     state.handle_resize(size.width, size.height);
                 }
@@ -498,7 +529,10 @@ pub fn run_event_loop(
                 } => {
                     let pressed = element_state == ElementState::Pressed;
                     match key_code {
-                        KeyCode::Escape => window_target.exit(),
+                        KeyCode::Escape => {
+                            shutdown_behaviors(&mut state);
+                            window_target.exit();
+                        }
                         _ => {
                             if pressed {
                                 keys_pressed.insert(key_code);
@@ -556,6 +590,29 @@ pub fn run_event_loop(
                     }
                 }
                 mouse_delta = (0.0, 0.0);
+
+                // ── behavior 脚本：场景里的脚本集合变了就重建，然后每帧 update ──
+                #[cfg(feature = "behaviors")]
+                {
+                    let GameState { behaviors, scene, .. } = &mut state;
+                    let outcome = pyo3::Python::with_gil(|py| -> pyo3::PyResult<bool> {
+                        behaviors.sync(py, scene)?;
+                        if behaviors.is_empty() {
+                            return Ok(false);
+                        }
+                        behaviors.update(py, scene, dt)?;
+                        Ok(true)
+                    });
+                    match outcome {
+                        // 脚本改的是节点的局部变换，得重算世界矩阵后才会生效
+                        Ok(true) => scene.update_world_transforms(),
+                        Ok(false) => {}
+                        Err(error) => {
+                            log::error!("[behavior] {error}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
 
                 // 物理
                 state.update(dt);
@@ -638,6 +695,9 @@ pub fn launch_python_game(
 
     // 初始化 Python 解释器（多次调用安全）
     pyo3::prepare_freethreaded_python();
+
+    #[cfg(feature = "behaviors")]
+    crate::behaviors::set_project_root(std::path::Path::new(project_path));
 
     // 将 <project_path>/game 加入 sys.path
     pyo3::Python::with_gil(|py| {

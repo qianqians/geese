@@ -57,6 +57,8 @@ references: [tools-edit]
 
 顺序：`$GEESE_BIN_DIR` → `geese` 自己所在目录 → 仓库根下各 `target/{debug,release}`。仓库根 = 向上第一个含 `tools/edit` 的目录；`geese_game` 在 `target/` 与 `crates/game_runtime/target/` 两处都查。全都没有 → 报错码 1，列出找过的完整路径 + 该跑的 `cargo build`。
 
+启动调试窗口时会把 Python 的 `sys.base_prefix` 前置到子进程 `PATH`：`geese_game` 链接了 `python3XX.dll`，而 PATH 上通常只有 python 的启动 shim（见 `game-runtime-behaviors`）。
+
 进程存活与终止走系统命令（Windows `tasklist` / `taskkill /T /F`，类 Unix `kill -0` / `-TERM` / `-KILL`），不为这点功能引入平台 crate。
 
 ## 推迟

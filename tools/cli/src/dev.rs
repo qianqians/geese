@@ -175,13 +175,22 @@ pub fn remove_state_if_pid(root: &Path, pid: u32) {
 }
 
 /// 前台启动并阻塞到窗口关闭；返回子进程退出码（拿不到时按 0）。
+///
+/// 顺带把 Python 安装目录前置到子进程的 `PATH`：`geese_game` 链接了 `python3XX.dll`，
+/// 而 PATH 上通常只有 python 的启动 shim，不含真正装 DLL 的 `sys.base_prefix`。
 pub fn run_foreground(root: &Path, launch: &Launch) -> Result<i32, String> {
-    let mut child = Command::new(&launch.program)
+    let mut command = Command::new(&launch.program);
+    command
         .args(&launch.args)
         .current_dir(root)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    if let Some(path) = python_enhanced_path() {
+        command.env("PATH", path);
+    }
+
+    let mut child = command
         .spawn()
         .map_err(|e| format!("启动 {} 失败：{e}", launch.program.display()))?;
 
@@ -270,6 +279,30 @@ pub fn terminate(pid: u32, wait: Duration) -> Result<(), String> {
         std::thread::sleep(Duration::from_millis(50));
     }
     Err(format!("进程 {pid} 在 {:?} 内没有退出", wait))
+}
+
+/// 在 `PATH` 前面插上 Python 的 `sys.base_prefix`（`python3XX.dll` 所在目录）。
+///
+/// 找不到 python 就返回 `None`，让子进程照常启动——此时缺 DLL 的错误由系统报出来。
+fn python_enhanced_path() -> Option<std::ffi::OsString> {
+    let output = Command::new("python")
+        .args(["-c", "import sys; print(sys.base_prefix)"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        log::warn!("`python` 不可用，调试窗口可能因为找不到 python3XX.dll 而启动失败");
+        return None;
+    }
+    let prefix = String::from_utf8(output.stdout).ok()?.trim().to_string();
+    if prefix.is_empty() {
+        return None;
+    }
+
+    let mut paths = vec![PathBuf::from(&prefix)];
+    if let Some(existing) = std::env::var_os("PATH") {
+        paths.extend(std::env::split_paths(&existing));
+    }
+    std::env::join_paths(paths).ok()
 }
 
 fn unix_now() -> u64 {

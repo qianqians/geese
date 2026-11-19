@@ -12,9 +12,11 @@ name = "geese_game"
 path = "src/main.rs"
 
 [features]
-default = []
+default = ["behaviors"]
 python-scripting = []
 python-runtime = ["pyo3", "py_engine"]
+# 场景物件的 Python behavior 脚本；默认开启，让 `geese run` 直接能跑脚本。
+behaviors = ["python-runtime"]
 render-graph = ["render/render-graph"]
 
 [dependencies]
@@ -41,6 +43,7 @@ math = { path = "../math" }
 config = { path = "../config" }
 avatar = { path = "../avatar" }
 
+uuid = "1"
 # Feature-gated (python-runtime)
 pyo3 = { version = "0.26.0", features = ["extension-module"], optional = true }
 py_engine = { path = "../py_engine", optional = true }
