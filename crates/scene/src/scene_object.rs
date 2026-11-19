@@ -35,6 +35,11 @@ pub struct SceneObject {
     /// 如果此对象由 Prefab 实例化而来，记录来源 Prefab UUID。
     /// 用于支持 "刷新 Prefab 实例" 功能。
     pub prefab_source: Option<String>,
+    /// entity 类型标记：程序化对象取 manifest 的 `object_type`，模型条目为 `"model"`。
+    /// 脚本通过 `self.entity_type` 读它，目前只作标识。
+    pub entity_type: String,
+    /// 挂在对象上的 Python 脚本声明（见 [`crate::ScriptDef`]）。运行时据此实例化 behavior。
+    pub scripts: Vec<crate::ScriptDef>,
 }
 
 impl RenderObject for SceneObject {

@@ -1030,6 +1030,8 @@ impl Scene {
             joint_matrices: vec![],
             dirty: DirtyFlags::all(),
             prefab_source: None,
+            entity_type: String::new(),
+            scripts: Vec::new(),
         });
 
         if is_static {
@@ -1192,6 +1194,8 @@ mod tests {
             joint_matrices: Vec::new(),
             dirty: DirtyFlags::all(),
             prefab_source: None,
+            entity_type: String::new(),
+            scripts: Vec::new(),
         }
     }
 

@@ -8,6 +8,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::script::ScriptDef;
+
 /// 场景清单——`.scene.json` 文件的顶级结构。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SceneManifest {
@@ -66,6 +68,9 @@ pub struct ModelRef {
     /// 角色控制器组件定义。None 表示无角色控制器。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub character_controller: Option<CharacterControllerDef>,
+    /// 挂在这个模型条目上的 Python 脚本。运行时绑到该模型的根对象上。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub script: Vec<ScriptDef>,
     // ── 以下为旧格式兼容字段（仅反序列化，不序列化输出）──
     /// [deprecated] 旧格式 collision_enabled —— 自动迁移到 physics.collision_enabled
     #[serde(default, skip_serializing, alias = "collision_enabled")]
@@ -313,6 +318,9 @@ pub struct SceneObjectDef {
     /// 角色控制器组件定义。None 表示无角色控制器。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub character_controller: Option<CharacterControllerDef>,
+    /// 挂在这个物件上的 Python 脚本。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub script: Vec<ScriptDef>,
     // ── 旧格式兼容字段（仅反序列化）──
     /// [deprecated] 旧格式 body_kind —— 自动迁移到 physics.body_kind
     #[serde(default, skip_serializing, alias = "body_kind")]

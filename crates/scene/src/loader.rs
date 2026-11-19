@@ -102,6 +102,24 @@ pub fn load_scene_from_manifest(
             }
         }
 
+        // 把 manifest 里的脚本挂到该模型的根对象上（glTF 可能有多个根节点，挂第一个），
+        // 并把根对象的 entity 类型标为 `model`——脚本里读 `self.entity_type` 就是它。
+        let root_object = scene
+            .objects
+            .iter()
+            .position(|obj| {
+                scene
+                    .nodes
+                    .get(obj.node)
+                    .map(|node| node.parent.is_none())
+                    .unwrap_or(false)
+            });
+        if let Some(index) = root_object {
+            let object = &mut scene.objects[index];
+            object.entity_type = "model".to_string();
+            object.scripts = model.script.clone();
+        }
+
         // 偏移 skin 中的 joint 引用
         for skin in &mut scene.skins {
             for joint in &mut skin.joints {
@@ -205,6 +223,8 @@ pub fn load_scene_from_manifest(
             obj_def.position,
             obj_def.rotation_euler.unwrap_or([0.0, 0.0, 0.0]),
             obj_def.tag.clone(),
+            &obj_def.object_type,
+            obj_def.script.clone(),
         );
 
         // 更新全局 AABB
@@ -335,6 +355,7 @@ fn transform_aabb_merge(mut target: AABB, matrix: Matrix4<f32>) -> AABB {
 }
 
 /// 添加程序化生成的对象。
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn add_procedural_object(
     nodes: &mut Vec<SceneNode>,
     objects: &mut Vec<SceneObject>,
@@ -342,6 +363,8 @@ pub(crate) fn add_procedural_object(
     position: [f32; 3],
     rotation_euler: [f32; 3],
     _tag: Option<String>,
+    entity_type: &str,
+    scripts: Vec<crate::ScriptDef>,
 ) {
     let entity_id = Uuid::new_v4().to_string();
     let node_id = nodes.len();
@@ -384,6 +407,8 @@ pub(crate) fn add_procedural_object(
         joint_matrices: vec![],
         dirty: DirtyFlags::all(),
         prefab_source: None,
+        entity_type: entity_type.to_string(),
+        scripts,
     });
 }
 
@@ -446,6 +471,7 @@ mod tests {
             physics: None,
             navmesh: None,
             character_controller: None,
+            script: Vec::new(),
             _body_kind: None,
         });
         manifest.objects.push(SceneObjectDef {
@@ -458,6 +484,7 @@ mod tests {
             physics: None,
             navmesh: None,
             character_controller: None,
+            script: Vec::new(),
             _body_kind: None,
         });
 

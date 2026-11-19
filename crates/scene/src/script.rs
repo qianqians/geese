@@ -1,13 +1,39 @@
 //! 场景 Python 脚本绑定。
 //!
+//! - [`ScriptDef`]: 场景 JSON 里挂在物件上的脚本声明（路径 / 类名 / props），纯数据。
 //! - [`ScriptComponent`]: 脚本组件数据（路径、类名、属性），无 pyo3 依赖即可序列化。
 //! - [`ScriptSystem`]（feature-gated `python_script`）: PyO3 脚本引擎，调用 `on_update(dt)`。
 //!
-//! 设计:
-//! - 默认不启用 pyo3。`ScriptComponent` 数据结构无 pyo3 依赖即可使用。
-//! - `ScriptSystem` 在 `Scene::scripts` 上操作，不侵入 `SceneObject`。
+//! 运行时真正驱动 behavior 的是 `game_runtime` 的 `behaviors` 模块——这里只负责
+//! “场景里声明了哪些脚本、挂在哪个对象上”，不依赖 pyo3。
 
 use std::collections::HashMap;
+
+// ---------------------------------------------------------------------------
+// ScriptDef — 场景 JSON 里的脚本声明
+// ---------------------------------------------------------------------------
+
+/// 场景条目上的一条脚本声明：`{ "path": "scripts/cube.py", "class": "cube" }`。
+///
+/// `path` 相对工程根；`class` 是脚本里的类名（该类应继承 `behavior`）；
+/// `props` 会以关键字参数传给类构造函数，供关卡参数调参。
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ScriptDef {
+    pub path: String,
+    pub class: String,
+    #[serde(default)]
+    pub props: serde_json::Map<String, serde_json::Value>,
+}
+
+impl ScriptDef {
+    pub fn new(path: impl Into<String>, class: impl Into<String>) -> Self {
+        Self {
+            path: path.into(),
+            class: class.into(),
+            props: serde_json::Map::new(),
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // ScriptComponent — 始终可用（无 pyo3 依赖）
@@ -256,6 +282,27 @@ pub use python_script::ScriptSystem;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn script_def_parses_with_and_without_props() {
+        let bare: ScriptDef = serde_json::from_str(r#"{ "path": "scripts/cube.py", "class": "cube" }"#)
+            .unwrap();
+        assert_eq!(bare.path, "scripts/cube.py");
+        assert_eq!(bare.class, "cube");
+        assert!(bare.props.is_empty(), "props 缺省为空表");
+
+        let with_props: ScriptDef = serde_json::from_str(
+            r#"{ "path": "s.py", "class": "C", "props": { "speed": 2.5, "name": "a" } }"#,
+        )
+        .unwrap();
+        assert_eq!(with_props.props["speed"], serde_json::json!(2.5));
+        assert_eq!(with_props.props["name"], serde_json::json!("a"));
+
+        // 回写后仍能读回（场景编辑器存盘路径）
+        let text = serde_json::to_string(&with_props).unwrap();
+        let round: ScriptDef = serde_json::from_str(&text).unwrap();
+        assert_eq!(round, with_props);
+    }
 
     #[test]
     fn script_component_new() {

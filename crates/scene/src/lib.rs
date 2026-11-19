@@ -28,7 +28,7 @@ pub use gameplay_physics::{CapsuleController, CharacterControllerType, Character
 pub use navmesh;
 pub use character_animation::{CharacterAnimationGraph, SpeedThresholds};
 pub use primitives::{PrimitiveKind, create_primitive_mesh};
-pub use script::ScriptComponent;
+pub use script::{ScriptComponent, ScriptDef};
 
 // 材质数据层由 `material` crate 提供；这里再导出，方便场景/模型/动画代码直接使用
 // `scene::MaterialLibrary` / `scene::material_asset::*`。
@@ -252,6 +252,8 @@ fn load_gltf_mesh(
             joint_matrices: Vec::new(),
             dirty: DirtyFlags::all(),
             prefab_source: None,
+            entity_type: String::new(),
+            scripts: Vec::new(),
         });
         object_indices.push(object_index);
     }

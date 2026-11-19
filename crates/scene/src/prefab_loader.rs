@@ -362,6 +362,9 @@ fn instantiate_procedural_mesh(
         joint_matrices: vec![],
         dirty: DirtyFlags::all(),
         prefab_source: None,
+        entity_type: object_type.to_string(),
+        // Prefab 节点绑脚本推迟：manifest 里还没有 prefab 侧的 script 字段。
+        scripts: Vec::new(),
     });
 
     // 默认标记为 static

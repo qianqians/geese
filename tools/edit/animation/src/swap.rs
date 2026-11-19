@@ -304,6 +304,8 @@ mod tests {
             joint_matrices: Vec::new(),
             dirty: DirtyFlags::empty(),
             prefab_source: None,
+            entity_type: String::new(),
+            scripts: Vec::new(),
         };
 
         Scene::new(
