@@ -13,6 +13,8 @@ references: [render-gpu-cache]
 
 大而全的编辑器（原 `crates/editor/`）已整体移除——新增编辑能力时**优先加一个这样的小工具**，而不是重建一个多面板编辑器。`scene` 是这条规则的边界形态：它确实有三个面板，但职责仍然单一（只把 `.scene.json` 变成看得见的场景），不是原来那种一个窗口管全部资产、模式、打包、物理调试的全能编辑器。
 
+这三个工具和引擎运行时由 `geese` 命令行拉起（见 `tools-cli`）：`geese scene` / `material` / `animation` 找工程根并用 `--workdir` 传进来。
+
 统一的窗口栈：`winit 0.30` + `wgpu 22.1` + `egui / egui-winit / egui-wgpu 0.29`，3D 画面渲染到窗口背景，egui 叠在上面；相机的轨道交互只在指针不落在 UI 上时生效（`egui_ctx.wants_pointer_input()`）。
 
 ## 组成

@@ -136,14 +136,39 @@ pub fn write_state(root: &Path, state: &DevState) -> Result<(), String> {
 }
 
 /// 只在记录里的 pid 仍是自己那个子进程时才删除，避免和 `reload` 刚写的新记录打架。
+///
+/// 「读 → 比较 → 删除」不是原子的：`reload` 很可能在我们读完旧记录、还没删之前写进新记录。
+/// 所以先把文件**改名挪开**拿到独占，再核对内容——挪开的就是刚写进来的新记录时，原样放回去。
 pub fn remove_state_if_pid(root: &Path, pid: u32) {
-    if let Some(state) = read_state(root) {
-        if state.pid == pid {
-            let path = state_path(root);
-            if let Err(error) = fs::remove_file(&path) {
-                if error.kind() != std::io::ErrorKind::NotFound {
-                    log::warn!("删除 {} 失败：{error}", path.display());
-                }
+    let Some(state) = read_state(root) else {
+        return;
+    };
+    if state.pid != pid {
+        return;
+    }
+
+    let path = state_path(root);
+    let scratch = root
+        .join(DEV_DIR)
+        .join(format!(".dev.json.{pid}.tmp"));
+    if let Err(error) = fs::rename(&path, &scratch) {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            log::warn!("挪开 {} 失败（{error}）", path.display());
+        }
+        return;
+    }
+
+    let grabbed = fs::read_to_string(&scratch)
+        .ok()
+        .and_then(|text| serde_json::from_str::<DevState>(&text).ok());
+    match grabbed {
+        Some(moved) if moved.pid == pid => {
+            let _ = fs::remove_file(&scratch);
+        }
+        _ => {
+            // 挪走的是别人刚写的新记录：放回去；放不回去（已被新记录占位）就丢弃旧的。
+            if fs::rename(&scratch, &path).is_err() {
+                let _ = fs::remove_file(&scratch);
             }
         }
     }
@@ -158,13 +183,7 @@ pub fn run_foreground(root: &Path, launch: &Launch) -> Result<i32, String> {
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
-        .map_err(|e| {
-            format!(
-                "启动 {} 失败：{e}（构建命令：{}）",
-                launch.program.display(),
-                Binary::Game.build_hint()
-            )
-        })?;
+        .map_err(|e| format!("启动 {} 失败：{e}", launch.program.display()))?;
 
     let pid = child.id();
     let state = DevState {
@@ -325,8 +344,38 @@ mod tests {
     }
 
     #[test]
-    fn broken_state_file_is_ignored() {
-        let root = tmp("broken");
+    fn removal_keeps_a_newer_record() {
+        let root = tmp("state-newer");
+        let old_state = DevState {
+            pid: 111,
+            cwd: root.display().to_string(),
+            argv: vec!["a".into()],
+            kind: "scene".into(),
+            started_at: 1,
+        };
+        let new_state = DevState {
+            pid: 222,
+            ..old_state.clone()
+        };
+
+        // 旧 run 先是读到自己的记录；期间 reload 写入了新记录，然后旧 run 才执行「删除」
+        write_state(&root, &old_state).unwrap();
+        let _ = read_state(&root);
+        write_state(&root, &new_state).unwrap();
+
+        // 删除时挪开的是新记录 → 必须原样放回
+        remove_state_if_pid(&root, 111);
+        assert_eq!(read_state(&root), Some(new_state), "新记录不能被旧 run 删掉");
+
+        // 自己的记录仍在时才会被删
+        remove_state_if_pid(&root, 222);
+        assert_eq!(read_state(&root), None);
+
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn broken_state_file_is_ignored() {        let root = tmp("broken");
         fs::create_dir_all(root.join(DEV_DIR)).unwrap();
         fs::write(state_path(&root), "{ not json").unwrap();
         assert_eq!(read_state(&root), None);
